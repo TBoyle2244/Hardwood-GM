@@ -597,6 +597,31 @@ function finishProfile(pos, raw, year) {
 // Anchors: [rank among about 400 players, rating].
 const RANK_CURVE = [[1, 95], [5, 89], [15, 83], [30, 78], [60, 72], [110, 65], [180, 58], [260, 51], [330, 45], [400, 40]];
 function rankRating(rank, n) { const r = rank * 400 / Math.max(n, 50); return Math.round(interp(RANK_CURVE, r)); }
+// Later seasons (optional import): how good each player really became. Rated on the same rank scale.
+function futureRatings(future) {
+  const years = Object.keys(future || {}); if (!years.length) return null;
+  const best = {};
+  for (const y of years) {
+    const rows = mergeSeason(future[y] || []); if (!rows.length) continue;
+    const raw = rows.map(r => rateRow(r, null, false).ovr + Math.random() * 0.01);
+    const ord = raw.map((v, i) => i).sort((a, b) => raw[b] - raw[a]);
+    ord.forEach((i, k) => { const r = rows[i], v = rankRating(k + 1, rows.length);
+      for (const key of [r['Player-additional'] ? 'id:' + r['Player-additional'] : null, 'n:' + r.Player]) if (key && (best[key] == null || v > best[key])) best[key] = v; });
+  }
+  return best;
+}
+// Players 27 and under get their potential from what they actually became; anyone gone from the league by then has little left.
+function applyFuture(p, r, fut) {
+  if (!fut || p.age > 27) return;
+  const f = (r['Player-additional'] && fut['id:' + r['Player-additional']]) || fut['n:' + r.Player];
+  p.pot = f != null ? clamp(f + R.int(-2, 2), p.ovr, 99) : clamp(p.ovr + R.int(0, 3), p.ovr, 99);
+  p.fut = f != null;
+}
+// Dispersal-draft players: teams see a scouting guess, not the truth, until the season ends.
+function scoutVeteran(p) {
+  const guess = p.ovr + (p.age <= 25 ? (26 - p.age) * 2 : 0);
+  p.scout = clamp(Math.round(guess + R.norm() * 3), 35, 95); p.reveal = 1976;
+}
 function playerFromSeason(L, r, team, adv, year, ovrOverride) {
   const aba = /^(DNA|INA|NYA|SAA|KEN|SSL|VIR|UTS|SDS|SDA)$/.test(r._tm);
   const rt = rateRow(r, adv, aba);
@@ -807,12 +832,15 @@ function newLeague(imports, userKey, opts) {
   const order = raw.map((v, i) => i).sort((a, b) => raw[b] - raw[a]), rankOf = {};
   order.forEach((i, k) => rankOf[i] = k + 1);
   pg.forEach((r, i) => r._ovr = rankRating(rankOf[i], pg.length));
+  const fut = futureRatings(im.future);
   for (const r of pg) {
     let team;
     if (DISPERSAL_CODES.includes(r._tm)) team = -4;
     else if (codeTo[r._tm] != null) team = codeTo[r._tm];
     else team = -1;
     const p = playerFromSeason(L, r, team, advBy[r._key] || advBy['n:' + r.Player], 1975, r._ovr);
+    applyFuture(p, r, fut);
+    if (team === -4) scoutVeteran(p);
     if (team >= 0) counts[team] = (counts[team] || 0) + 1;
     if (team === -1 && num(r.MP) < 8) { p.team = -2; delete L.players[p.id]; }
   }
@@ -854,7 +882,9 @@ function startDispersal(L) {
   L.disp = { order, round: 1, i: 0, rounds: 3, log: [], started: false };
   L.phase = 'dispersal';
 }
-function dispPool(L) { return roster(L, -4).sort((a, b) => value(b) - value(a)); }
+// What a team can see of a dispersal player: his scouting grade stands in for potential.
+function dispValue(p) { return value(Object.assign({}, p, { pot: p.scout != null ? p.scout : p.pot })); }
+function dispPool(L) { return roster(L, -4).sort((a, b) => dispValue(b) - dispValue(a)); }
 function dispOnClock(L) {
   const D = L.disp; if (!D || D.round > D.rounds || !dispPool(L).length) return null;
   return D.order[D.i];
@@ -873,7 +903,7 @@ function dispAI(L) {
   while ((tid = dispOnClock(L)) != null && tid !== L.user) {
     const best = dispPool(L)[0], mine = roster(L, tid).sort((a, b) => value(b) - value(a));
     const bar = mine[9] ? value(mine[9]) : 40, taken = L.disp.log.filter(x => x.tid === tid && x.pid).length;
-    if (best && value(best) > bar + 2 && taken < 2 && Math.random() < 0.9) dispPick(L, best.id); else dispPass(L);
+    if (best && dispValue(best) > bar + 2 && taken < 2 && Math.random() < 0.9) dispPick(L, best.id); else dispPass(L);
   }
 }
 function beginDispersal(L) { L.disp.started = true; dispAI(L); }
@@ -2551,9 +2581,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-10-27b';
+const APP_VERSION = '2026-10-27c';
 let L = null;                                              // league
-let IM = { pg: {}, adv: {}, drafts: {} };                  // imported Basketball-Reference data
+let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // imported Basketball-Reference data
 const ui = { tab: 'home', grp: 'ALL', lg: 'stand', leadKey: 'pts', resWeek: null, open: null, confirm: null,
   tradeTeam: null, give: [], get: [], faGrp: 'ALL', draftGrp: 'ALL', msg: null, impYear: 1977 };
 
@@ -2776,7 +2806,7 @@ function vDispersal() {
     const pos = D.order.indexOf(L.user) + 1;
     h = `<section class="card hero"><div class="eyebrow">August 5, 1976 · ABA dispersal draft</div><h2>The Colonels and Spirits are gone</h2>
       <p>${pool.length} players from Kentucky and St. Louis are available. Teams pick in reverse order of their 1975-76 records; you pick <b>${pos}${pos === 1 ? 'st' : pos === 2 ? 'nd' : pos === 3 ? 'rd' : 'th'}</b> each round. Up to three rounds, and any team can pass. You take on the player's contract.</p>
-      <p class="small">In real history Chicago took Artis Gilmore first, and Portland grabbed both Maurice Lucas and Moses Malone. Anyone not taken becomes a free agent.</p>
+      <p class="small">SCOUT is your scouts' guess at each player's ceiling. Every team is guessing too; true potential shows after the 1976-77 season. In real history Chicago took Artis Gilmore first, and Portland grabbed both Maurice Lucas and Moses Malone. Anyone not taken becomes a free agent.</p>
       <div class="row"><button class="btn primary" data-act="dispBegin">Begin the dispersal draft</button><button class="btn" data-act="dispEnd">Skip it (pass on every pick)</button></div></section>`;
   } else if (c == null) {
     h = `<section class="card hero"><div class="eyebrow">Dispersal draft</div><h2>The dispersal draft is over</h2><div class="row"><button class="btn primary" data-act="dispEnd">Open training camp</button></div></section>`;
@@ -2786,7 +2816,7 @@ function vDispersal() {
   }
   h += `<section class="card"><div class="split"><h3>Available</h3><span class="small">${pool.length} players</span></div><div class="list">${pool.map(p => `
     <div class="pl"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}<div class="pl-sub">Age ${p.age} · ${statLineFrom(p)}</div></div>
-    <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">POT</span>${rating(p.pot)}</div></div>
+    <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></div>
     <div class="pl-btns">${mine ? `<button class="btn sm primary" data-act="dispPick" data-id="${p.id}">Take him</button>` : ''}</div></div>`).join('') || '<p>Nobody left.</p>'}</div></section>`;
   const log = D.log.filter(x => x.pid);
   if (log.length) h += `<section class="card"><h3>Picks</h3><div class="list">${log.map(x => { const p = L.players[x.pid]; return `<div class="pl"><div class="pl-main"><span class="pos">${esc(L.teams[x.tid].abbr)}</span><div class="pl-name">${esc(p ? p.name : '?')}<div class="pl-sub">Round ${x.round}</div></div>${p ? `<div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div>` : ''}</div></div>`; }).join('')}</div></section>`;
@@ -3327,6 +3357,15 @@ function vData() {
     <label class="fld">CSV text<textarea id="impText" rows="5" placeholder="Paste the CSV here"></textarea></label>
     <div class="row"><button class="btn primary" data-act="import">Import</button></div>
     <label class="fld">Or choose files (draft files need the year in the name, like draft1977.csv)<input id="impFiles" type="file" accept=".csv,.txt,text/csv,text/plain" multiple></label></section>`;
+  const fy = Object.keys(IM.future || {}).sort();
+  h += `<section class="card"><h3>Later seasons (for potential)</h3>
+    <p class="small">Optional, but import these before you start a league. For players 27 and under in 1976, potential comes from how good they really became. Without them, it's a random guess from age and production. Use the per-game page for each season (the same kind of table as step 1):</p>
+    <ol class="steps"><li><code>basketball-reference.com/leagues/NBA_1979_per_game.html</code></li><li><code>basketball-reference.com/leagues/NBA_1982_per_game.html</code></li></ol>
+    <p class="small">Each player's best of those seasons counts. Set the season's ending year (1979 for 1978-79), paste, and import.</p>
+    <label class="fld">Season ending year<input id="futYear" type="number" inputmode="numeric" min="1977" max="1990" value="${ui.futYear || 1979}"></label>
+    <label class="fld">CSV text<textarea id="futText" rows="4" placeholder="Paste the later season's per-game CSV here"></textarea></label>
+    <div class="row"><button class="btn primary" data-act="importFut">Import later season</button></div>
+    <p class="small">Imported: ${fy.length ? fy.map(y => `<b>${y}</b> (${IM.future[y].length})`).join(', ') : 'none yet'}</p></section>`;
   h += `<section class="card"><h3>1975-76 players imported</h3><div class="grid26">${cells}</div>
     <p class="small">Players per team, using each player's last team that season. KEN and SSL make up the dispersal pool. Rosters only matter when you start a new league.</p>
     <p class="small">Advanced tables: ${(IM.adv.NBA || []).length ? 'NBA ✓' : 'NBA –'} · ${(IM.adv.ABA || []).length ? 'ABA ✓' : 'ABA –'}</p>
@@ -3372,7 +3411,7 @@ function act(a, el) {
       if (ui.confirm !== id) { ui.confirm = id; render(); return; }
       ui.confirm = null;
       if (id === 'reset') { L = null; DB.set('league', null); ui.tab = 'home'; flash('League deleted. Your imported data is still here.'); }
-      else if (id === 'clearImp') { IM = { pg: {}, adv: {}, drafts: {} }; flash('Imported data cleared.'); }
+      else if (id === 'clearImp') { IM = { pg: {}, adv: {}, drafts: {}, future: {} }; flash('Imported data cleared.'); }
       else if (id.startsWith('fire')) { const e = G.fireCoach(L, id.slice(4)); flash(e || 'Coach fired. Hire a replacement before opening night.'); }
       else if (id.startsWith('rel')) { G.release(L, +id.slice(3)); ui.open = null; flash('Player released.'); }
       break;
@@ -3447,6 +3486,16 @@ function act(a, el) {
     case 'tsSort': ui.tsSort = id || 'w'; break;
     case 'statPlayer': ui.statPid = id ? +id : null; if (id) { ui.tab = 'stats'; ui.box = null; window.scrollTo(0, 0); } break;
     case 'hurt': { const p = L.players[+id]; const e = G.setPlayHurt(L, +id, !p.playHurt); if (e) flash(e); else flash(p.playHurt ? `${p.name} will play through the injury.` : `${p.name} will rest until healthy.`); break; }
+    case 'importFut': {
+      try {
+        const y = +(ui.futYear || 1979), res = G.parseBRef($('#futText').value);
+        if (res.kind !== 'pergame') throw new Error('That is not a per-game table. Use the leagues/NBA_' + y + '_per_game.html page.');
+        if (y < 1977 || y > 1990) throw new Error('Set a season ending year between 1977 and 1990.');
+        IM.future = IM.future || {}; IM.future[y] = res.rows;
+        flash(`Imported the ${y - 1}-${String(y).slice(2)} season: ${res.rows.length} rows. Start a new league to use it.`);
+      } catch (e) { flash(e.message); }
+      break;
+    }
     case 'import': {
       const text = $('#impText').value;
       try { flash(storeImport(G.parseBRef(text), +ui.impYear)); } catch (e) { flash(e.message); }
@@ -3476,6 +3525,7 @@ document.addEventListener('change', e => {
   else if (t.id === 'youth') { me().coach.youth = t.checked; save(); }
   else if (t.id === 'pickTeam') ui.newTeam = t.value;
   else if (t.id === 'impYear') ui.impYear = +t.value;
+  else if (t.id === 'futYear') ui.futYear = +t.value;
   else if (t.id === 'impFiles' && t.files.length) onFiles([...t.files]);
   else if (t.id === 'loadSave' && t.files[0]) {
     t.files[0].text().then(s => {
@@ -3490,7 +3540,7 @@ document.addEventListener('input', e => { if (e.target.id === 'tempo') { const h
 (async function boot() {
   await DB.open();
   const [l, im] = await Promise.all([DB.get('league'), DB.get('imports')]);
-  if (im && im.pg) IM = Object.assign({ pg: {}, adv: {}, drafts: {} }, im);
+  if (im && im.pg) IM = Object.assign({ pg: {}, adv: {}, drafts: {}, future: {} }, im);
   if (l && l.teams) { L = l; G.ensureLeague(L); }
   render();
   if ('serviceWorker' in navigator && location.protocol === 'https:' && !/claude\.ai|claudeusercontent/.test(location.host)) {
