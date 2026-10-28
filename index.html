@@ -593,12 +593,19 @@ function finishProfile(pos, raw, year) {
   o.t3 = raw && raw.t3r != null && lg > 0 ? clamp(raw.t3r / lg, 0, 3.5) : b.t3 * (1 + R.norm() * 0.25);
   return o;
 }
-function playerFromSeason(L, r, team, adv, year) {
+// Ratings are spread by league rank so stars land in the 80s and 90s whatever the season's raw numbers look like.
+// Anchors: [rank among about 400 players, rating].
+const RANK_CURVE = [[1, 95], [5, 89], [15, 83], [30, 78], [60, 72], [110, 65], [180, 58], [260, 51], [330, 45], [400, 40]];
+function rankRating(rank, n) { const r = rank * 400 / Math.max(n, 50); return Math.round(interp(RANK_CURVE, r)); }
+function playerFromSeason(L, r, team, adv, year, ovrOverride) {
   const aba = /^(DNA|INA|NYA|SAA|KEN|SSL|VIR|UTS|SDS|SDA)$/.test(r._tm);
   const rt = rateRow(r, adv, aba);
+  if (ovrOverride != null) rt.ovr = ovrOverride;
   const pos = posFrom(r.Pos, rt.prof);
   const age = (num(r.Age) || 25) + 1;
-  const growth = age <= 25 ? R.int(2, 10) * (27 - age) / 4 : (age <= 27 ? R.int(0, 3) : 0);
+  // Young players who already produce get the most room to grow (a 21-year-old starter can become a star).
+  const prod = rt.prof ? clamp((rt.prof.pts + rt.prof.reb * 0.7 + rt.prof.ast * 0.9 - 22) / 10, 0, 1.5) * Math.min(1, rt.mp / 20) : 0;
+  const growth = age <= 25 ? R.int(2, 10) * (27 - age) / 4 * (1 + prod) : (age <= 27 ? R.int(0, 3) : 0);
   const pot = clamp(Math.round(rt.ovr + growth), rt.ovr, 99);
   return mkPlayer(L, { name: r.Player, pos, age, ovr: rt.ovr, pot, team, yrs: Math.max(0, age - 22 - (age > 30 ? 1 : 0)), real: true, bref: r['Player-additional'] || null,
     prof: finishProfile(pos, rt.prof, year), college: '' });
@@ -796,12 +803,16 @@ function newLeague(imports, userKey, opts) {
   const advRows = mergeSeason(((im.adv || {}).NBA || []).concat((im.adv || {}).ABA || []));
   const advBy = {}; advRows.forEach(r => { advBy[r._key] = r; advBy['n:' + r.Player] = advBy['n:' + r.Player] || r; });
   const counts = {};
+  const raw = pg.map(r => rateRow(r, advBy[r._key] || advBy['n:' + r.Player], /^(DNA|INA|NYA|SAA|KEN|SSL|VIR|UTS|SDS|SDA)$/.test(r._tm)).ovr + Math.random() * 0.01);
+  const order = raw.map((v, i) => i).sort((a, b) => raw[b] - raw[a]), rankOf = {};
+  order.forEach((i, k) => rankOf[i] = k + 1);
+  pg.forEach((r, i) => r._ovr = rankRating(rankOf[i], pg.length));
   for (const r of pg) {
     let team;
     if (DISPERSAL_CODES.includes(r._tm)) team = -4;
     else if (codeTo[r._tm] != null) team = codeTo[r._tm];
     else team = -1;
-    const p = playerFromSeason(L, r, team, advBy[r._key] || advBy['n:' + r.Player], 1975);
+    const p = playerFromSeason(L, r, team, advBy[r._key] || advBy['n:' + r.Player], 1975, r._ovr);
     if (team >= 0) counts[team] = (counts[team] || 0) + 1;
     if (team === -1 && num(r.MP) < 8) { p.team = -2; delete L.players[p.id]; }
   }
@@ -813,7 +824,7 @@ function newLeague(imports, userKey, opts) {
     if (tid == null || names.has(r.Player)) continue;
     const p = prospectFromDraft(L, r, 1976, 18);
     p.team = tid; p.draft = { year: 1976, rnd: p.realPick.rnd, pick: p.realPick.pick };
-    if (p.realPick.rnd >= 4 && Math.random() < 0.6) { delete L.players[p.id]; continue; } // most late picks never made a camp
+    if ((p.realPick.rnd >= 4 && Math.random() < 0.8) || (p.realPick.rnd === 3 && Math.random() < 0.5)) { delete L.players[p.id]; continue; } // most late picks never made a camp
     rookieDeal(L, p, 1976, p.realPick.pick, p.realPick.rnd);
   }
   const gen = [];
@@ -1517,7 +1528,7 @@ function creditStats(L, tid, pts, rat, opp, coach, oppCoach, ot, poss) {
   ftm = Math.max(0, ftm);
   const twoM = Math.max(0, (pts - ftm - 3 * tpm) / 2);
   // who takes and makes the shots
-  const sc = M.map((x, i) => mins[i] * x.p.prof.pts * Math.exp((eff(x.p) - 64) / (oppCoach.def === 'jordan' ? 80 : coach.off === 'iso' ? 32 : 50)));
+  const sc = M.map((x, i) => mins[i] * x.p.prof.pts * Math.exp((eff(x.p) - 64) / (oppCoach.def === 'jordan' ? 95 : coach.off === 'iso' ? 42 : 65)));
   const sc3 = M.map((x, i) => mins[i] * x.p.prof.t3 * Math.sqrt(x.p.prof.pts) * Math.exp((eff(x.p) - 64) / 60));
   const scF = M.map((x, i) => sc[i] * (1.2 - Math.min(1, x.p.prof.t3) * 0.3));
   const p2 = M.map(x => clamp(E.p2 + (x.p.prof.fg - 0.47) * 0.8 + (eff(x.p) - 64) * 0.0015, 0.33, 0.7));
@@ -2540,7 +2551,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-10-27a';
+const APP_VERSION = '2026-10-27b';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {} };                  // imported Basketball-Reference data
 const ui = { tab: 'home', grp: 'ALL', lg: 'stand', leadKey: 'pts', resWeek: null, open: null, confirm: null,
