@@ -1,6 +1,6 @@
 /* Hardwood GM offline cache. Uses its own cache names and never touches other apps' caches. */
 const PREFIX = 'hardwood-gm-';
-const CACHE = PREFIX + 'v3';
+const CACHE = PREFIX + 'v7';
 const CORE = ['./', 'index.html', 'manifest.json', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
@@ -9,6 +9,14 @@ self.addEventListener('activate', e => {
 // Serve from cache right away, then refresh the cache in the background when online.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  // The page itself: try the network first (bypassing the browser's 10-minute cache) so new versions load right away.
+  if (e.request.mode === 'navigate') {
+    e.respondWith(caches.open(CACHE).then(async c => {
+      try { const r = await fetch(e.request.url, { cache: 'no-cache' }); if (r && r.ok) { c.put('index.html', r.clone()); return r; } } catch (err) { /* offline */ }
+      return (await c.match('index.html')) || (await c.match('./')) || Response.error();
+    }));
+    return;
+  }
   e.respondWith(caches.open(CACHE).then(async c => {
     const hit = await c.match(e.request, { ignoreSearch: true });
     const net = fetch(e.request).then(r => { if (r && (r.ok || r.type === 'opaque')) c.put(e.request, r.clone()); return r; }).catch(() => null);

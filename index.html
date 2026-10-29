@@ -237,6 +237,19 @@ input[type=range] { width: 100%; accent-color: var(--field); }
 .offopt { width: 100%; padding: 10px 12px; gap: 10px; margin-top: 6px; }
 .offopt .pl-name { display: flex; flex-direction: column; gap: 2px; font-weight: 600; }
 .offopt .pl-sub { white-space: normal; }
+.decide { border-color: var(--gold); border-width: 2px; }
+.opts { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 6px; }
+.optb { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; padding: 10px 12px; height: auto; white-space: normal; }
+.optb .small { opacity: .85; font-weight: 400; }
+.btn.primary.optb .small { color: inherit; }
+.kv { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 6px 0; }
+.kv > div { display: flex; flex-direction: column; align-items: center; background: var(--bg); border-radius: 8px; padding: 6px 2px; }
+.kv .lbl { font-size: 11px; }
+.kv b { font-family: var(--cond); font-size: 17px; }
+.kv { grid-template-columns: repeat(6, 1fr); }
+.kv .w2 { grid-column: span 2; }
+.rb td { white-space: nowrap; }
+.rb td.l.small { white-space: normal; }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -606,21 +619,21 @@ function futureRatings(future) {
     const raw = rows.map(r => rateRow(r, null, false).ovr + Math.random() * 0.01);
     const ord = raw.map((v, i) => i).sort((a, b) => raw[b] - raw[a]);
     ord.forEach((i, k) => { const r = rows[i], v = rankRating(k + 1, rows.length);
-      for (const key of [r['Player-additional'] ? 'id:' + r['Player-additional'] : null, 'n:' + r.Player]) if (key && (best[key] == null || v > best[key])) best[key] = v; });
+      for (const key of [r['Player-additional'] ? 'id:' + r['Player-additional'] : null, 'n:' + r.Player, 'n:' + cleanName(r.Player)]) if (key && (best[key] == null || v > best[key])) best[key] = v; });
   }
   return best;
 }
 // Players 27 and under get their potential from what they actually became; anyone gone from the league by then has little left.
 function applyFuture(p, r, fut) {
   if (!fut || p.age > 27) return;
-  const f = (r['Player-additional'] && fut['id:' + r['Player-additional']]) || fut['n:' + r.Player];
+  const f = (r['Player-additional'] && fut['id:' + r['Player-additional']]) || fut['n:' + r.Player] || fut['n:' + cleanName(r.Player)];
   p.pot = f != null ? clamp(f + R.int(-2, 2), p.ovr, 99) : clamp(p.ovr + R.int(0, 3), p.ovr, 99);
   p.fut = f != null;
 }
 // Dispersal-draft players: teams see a scouting guess, not the truth, until the season ends.
 function scoutVeteran(p) {
   const guess = p.ovr + (p.age <= 25 ? (26 - p.age) * 2 : 0);
-  p.scout = clamp(Math.round(guess + R.norm() * 3), 35, 95); p.reveal = 1976;
+  p.scout = clamp(Math.round(guess + R.norm() * 3), p.ovr, 95); p.reveal = 1976;
 }
 function playerFromSeason(L, r, team, adv, year, ovrOverride) {
   const aba = /^(DNA|INA|NYA|SAA|KEN|SSL|VIR|UTS|SDS|SDA)$/.test(r._tm);
@@ -640,13 +653,20 @@ function playerFromSeason(L, r, team, adv, year, ovrOverride) {
 // It ignores his pro career.
 const BIG_SCHOOLS = /^(UCLA|Kentucky|North Carolina|UNC|Indiana|Kansas|Louisville|Duke|Michigan|Syracuse|Georgetown|Villanova|Notre Dame|Marquette|Arizona|UNLV|Connecticut|UConn|Michigan State|Maryland|NC State)/i;
 function slotGrade(overall) { return 47 + 33 * Math.exp(-(Math.max(1, overall) - 1) / 14); }
-function prospectFromDraft(L, r, year, teamsN) {
+// What a career's win shares say about a player's peak: ~0 WS a fringe player, ~80 a good starter, ~150 an MVP-level star.
+function careerFromWS(ws) { return 46 + Math.sqrt(Math.max(0, ws)) * 3.8; }
+function truePot(slot, r, fut) {
+  const ws = has(r.WS) ? Math.max(0, num(r.WS)) : null;
+  // real careers decide most of it; the slot and luck only nudge
+  let pot = ws == null ? Math.round(0.3 * slot + 0.7 * (42 + R.int(0, 6)) + R.norm() * 4) : Math.round(0.2 * slot + 0.8 * careerFromWS(ws) + R.norm() * 2.5);
+  const f = fut && ((r['Player-additional'] && fut['id:' + r['Player-additional']]) || fut['n:' + cleanName(r.Player)]);
+  if (f != null) pot = Math.max(pot, f + R.int(-1, 1));   // later seasons you imported show what he became
+  return clamp(pot, 38, 99);
+}
+function prospectFromDraft(L, r, year, teamsN, fut) {
   const overall = num(r.Pk) || num(r.Rk) || 300, college = r.College || r['College/Univ'] || '';
   const slot = slotGrade(overall);
-  // what he actually becomes: part draft slot, part real career, plus luck
-  const ws = has(r.WS) ? Math.max(0, num(r.WS)) : null;
-  const career = ws == null ? 42 + R.int(0, 6) : 47 + Math.sqrt(ws) * 3.5;
-  const pot = clamp(Math.round(0.35 * slot + 0.65 * career + R.norm() * 5), 38, 99);
+  const pot = truePot(slot, r, fut);
   const ovr = clamp(pot - R.int(6, 16), 34, 82);
   const scout = clamp(Math.round(slot + (BIG_SCHOOLS.test(college) ? 1.5 : 0) + R.norm() * 3.5), 40, 92);
   // style comes from his career per-game line when he had one
@@ -654,14 +674,26 @@ function prospectFromDraft(L, r, year, teamsN) {
     fg: has(r['FG%']) ? num(r['FG%']) : null, ft: has(r['FT%']) ? num(r['FT%']) : null, t3r: null } : null;
   const pos = posFrom(r.Pos, raw ? { ast: raw.ast, reb: raw.reb } : null);
   const rnd = r._rnd || Math.ceil(overall / teamsN);
-  return mkPlayer(L, { name: r.Player, pos, age: num(r.Age) || R.int(20, 22), ovr, pot, team: -3, yrs: 0, college, real: true, scout, reveal: year,
+  return mkPlayer(L, { name: cleanName(r.Player), pos, age: num(r.Age) || R.int(20, 22), ovr, pot, team: -3, yrs: 0, college, real: true, scout, reveal: year,
     prof: finishProfile(pos, raw, year), realPick: { rnd, pick: overall, tm: (r.Tm || r.Team || '').toUpperCase() } });
 }
-function genProspect(L, year) {
+// Generated prospects follow the same curve as real classes: the pick slot sets expectations,
+// and a long-tailed "career" decides who actually becomes a star (a few per class, many busts).
+function genProspect(L, year, pk) {
+  pk = pk || R.int(30, 120);
   const pos = R.pick(['PG', 'SG', 'SF', 'PF', 'C', 'SF', 'SG', 'PF']);
-  const pot = clamp(Math.round(50 + R.norm() * 9), 38, 94);
-  const ovr = clamp(pot - R.int(6, 16), 34, 76);
-  return mkPlayer(L, { pos, age: R.int(20, 23), ovr, pot, team: -3, college: R.pick(COLLEGES), real: false, reveal: year, scout: clamp(Math.round(pot + R.norm() * 7), 40, 90) });
+  const slot = slotGrade(pk);
+  let career;
+  if (Math.random() < Math.max(0.25, 0.97 - pk * 0.012)) {
+    const mu = Math.log(Math.max(1.2, 40 * Math.exp(-(pk - 1) / 16)));
+    const ws = clamp(Math.exp(mu + R.norm() * 0.95) - 1, 0, 250);
+    career = careerFromWS(ws);
+  } else career = 42 + R.int(0, 6);
+  const pot = clamp(Math.round(0.2 * slot + 0.8 * career + R.norm() * 2.5), 38, 99);
+  const ovr = clamp(pot - R.int(6, 16), 34, 82);
+  const college = R.pick(COLLEGES);
+  return mkPlayer(L, { pos, age: R.int(20, 23), ovr, pot, team: -3, college, real: false, reveal: year,
+    scout: clamp(Math.round(slot + (BIG_SCHOOLS.test(college) ? 1.5 : 0) + R.norm() * 3.5), 40, 92) });
 }
 
 /* ---------- difficulty ---------- */
@@ -804,6 +836,9 @@ function ensureLeague(L) {
   if (!L.retired) archivePlayers(L);
   ensureContracts(L);
   if (L.phase === 'offseason') ensureFA(L);
+  if (!L.jerseys) { L.jerseys = {}; Object.values(L.retired || {}).forEach(p => retireJerseys(L, p, !!(p.hof > 0), true)); }
+  L.decisions = L.decisions || [];
+  L.perks = L.perks || {};
 }
 function mkTeam(id, key, abbr, city, name) {
   const A = alignFor(1976); let conf = 'East', div = 'Atlantic';
@@ -850,7 +885,7 @@ function newLeague(imports, userKey, opts) {
   for (const r of d76) {
     const tid = codeTo[(r.Tm || r.Team || '').toUpperCase()];
     if (tid == null || names.has(r.Player)) continue;
-    const p = prospectFromDraft(L, r, 1976, 18);
+    const p = prospectFromDraft(L, r, 1976, 18, fut);
     p.team = tid; p.draft = { year: 1976, rnd: p.realPick.rnd, pick: p.realPick.pick };
     if ((p.realPick.rnd >= 4 && Math.random() < 0.8) || (p.realPick.rnd === 3 && Math.random() < 0.5)) { delete L.players[p.id]; continue; } // most late picks never made a camp
     rookieDeal(L, p, 1976, p.realPick.pick, p.realPick.rnd);
@@ -869,6 +904,7 @@ function newLeague(imports, userKey, opts) {
   ensureStaff(L);
   aiStyles(L, false);
   startDispersal(L);
+  L.decisions = []; L.decided = {}; L.perks = {}; L.jerseys = {};
   return L;
 }
 
@@ -1041,6 +1077,33 @@ function aiSignings(L, offseason) {
       p.team = t.id; setContract(p, sal, y, offseason ? contractYears(p) : 1); counts[p.pos]++; size++;
     }
   }
+  placeLeftovers(L, offseason);
+}
+// A good player nobody could fit (full rosters, no cap room) takes the best deal anyone can still offer,
+// and that team cuts its weakest player to make room, as real teams do.
+function placeLeftovers(L, offseason) {
+  const y = capYear(L), max = rules(L.year).rosterMax, cap = capFor(y);
+  const left = freeAgents(L).filter(p => p.retiredYear == null && p.ovr >= 60 && p.age <= 34).sort((a, b) => value(b) - value(a));
+  for (const p of left) {
+    let best = null;
+    for (const t of L.teams) {
+      if (t.id === L.user) continue;
+      const ros = roster(L, t.id), worst = ros.slice().sort((a, b) => value(a) - value(b))[0];
+      if (ros.length >= max && (!worst || value(worst) > value(p) - 6)) continue;
+      const pay = payroll(L, t.id, y) - (ros.length >= max && worst ? (salFor(worst, y) || 0) : 0);
+      let sal = cap == null ? marketValue(L, p, y) * 0.8 : Math.max(0, cap - pay);
+      if (mleFree(L, t.id, y)) sal = Math.max(sal, mleAmount(y));
+      const tax = taxLine(y); if (tax != null && pay + sal > tax) sal = Math.max(0, tax - pay);
+      sal = Math.min(sal, marketValue(L, p, y)); sal = Math.max(sal, minSalary(y));
+      const score = sal + (value(p) - value(worst || p)) * 0.01;
+      if (!best || score > best.score) best = { t, sal, worst: ros.length >= max ? worst : null, score };
+    }
+    if (!best) continue;
+    if (best.worst) release(L, best.worst.id);
+    useException(L, best.t.id, best.sal, y);
+    p.team = best.t.id; setContract(p, best.sal, y, offseason ? R.int(1, 2) : 1);
+    if (p.ovr >= 68) addNews(L, `${best.t.abbr} signed ${p.pos} ${p.name} at a bargain ${money(best.sal)} after he went unsigned.`);
+  }
 }
 function sign(L, pid) { return signFA(L, pid); }
 // In season, AI teams short of bodies sign the best free agents to minimum deals.
@@ -1104,6 +1167,7 @@ function pkgText(L, pkg) {
 }
 function validPkg(L, tid, pkg) { return (pkg.players || []).every(id => L.players[id] && L.players[id].team === tid) && (pkg.picks || []).every(id => { const k = pickById(L, id); return k && k.own === tid; }); }
 function execTrade(L, a, b, aGive, bGive) {
+  (aGive.players || []).concat(bGive.players || []).forEach(id => { const p = L.players[id]; if (p.tradeReq || p.promise) { delete p.tradeReq; delete p.promise; addMor(p, 25); } });
   (aGive.players || []).forEach(id => L.players[id].team = b); (bGive.players || []).forEach(id => L.players[id].team = a);
   (aGive.picks || []).forEach(id => pickById(L, id).own = b); (bGive.picks || []).forEach(id => pickById(L, id).own = a);
   [a, b].forEach(t => { const T = L.teams[t]; if (T.dc) T.dc = T.dc.filter(id => L.players[id] && L.players[id].team === t); });
@@ -1118,7 +1182,7 @@ function receiverWeight(L, tid, incoming, outgoing) {
   const inc = (incoming.players || []).map(id => L.players[id]);
   const after = roster(L, tid).filter(p => !out.has(p.id)).concat(inc).sort((a, b) => value(b) - value(a));
   const keep = new Set(after.slice(0, max).map(p => p.id));
-  return inc.reduce((s, p) => s + playerWeight(p) * (keep.has(p.id) ? 1 : 0.05), 0) + (incoming.picks || []).reduce((s, id) => s + pickWeight(L, pickById(L, id)), 0);
+  return inc.reduce((s, p) => s + playerWeight(p) * (keep.has(p.id) ? 1 : 0.05) * (p.tradeReq ? 0.85 : 1), 0) + (incoming.picks || []).reduce((s, id) => s + pickWeight(L, pickById(L, id)), 0);
 }
 function tradeVerdict(L, partner, give, get) {
   const g = receiverWeight(L, partner, give, get), r = pkgWeight(L, get);
@@ -1218,6 +1282,52 @@ function acceptOffer(L, id) {
   return null;
 }
 function rejectOffer(L, id) { L.offers = (L.offers || []).filter(x => x.id !== id); }
+
+/* ---------- trading block ---------- */
+// The user lists players and picks; every AI team that wants them builds its best offer.
+// want: { kind: 'any' | 'players' | 'picks' | 'young', pos: 'ALL' | position }
+function shopBlock(L, give, want) {
+  ensurePicks(L);
+  want = want || { kind: 'any', pos: 'ALL' };
+  if (pastDeadline(L)) return { offers: [], msg: 'The trade deadline has passed. Trading reopens after the playoffs.' };
+  if (!(give.players || []).length && !(give.picks || []).length) return { offers: [], msg: 'Put at least one player or pick on the block.' };
+  if (!validPkg(L, L.user, give)) return { offers: [], msg: 'Something on the block is no longer on your team.' };
+  L.offers = (L.offers || []).filter(o => !o.block);
+  if (!L.nextOfferId) L.nextOfferId = 1;
+  const D = diff(L), found = [], max = rules(L.year).rosterMax, inSeason = L.phase === 'regular' || L.phase === 'playoffs';
+  for (const t of R.shuffle(L.teams.filter(x => x.id !== L.user))) {
+    const worth = receiverWeight(L, t.id, give, {});           // what the block is worth to this team
+    if (worth <= 0) continue;
+    const keep = new Set(roster(L, t.id).sort((a, b) => value(b) - value(a)).slice(0, 2).map(p => p.id)); // they never give up their two best
+    let items = roster(L, t.id).filter(p => !keep.has(p.id)).map(p => ({ t: 'p', id: p.id, w: playerWeight(p), p }))
+      .concat(teamPicks(L, t.id).map(k => ({ t: 'k', id: k.id, w: pickWeight(L, k) })));
+    if (want.kind === 'players') items = items.filter(i => i.t === 'p');
+    if (want.kind === 'picks') items = items.filter(i => i.t === 'k');
+    if (want.kind === 'young') items = items.filter(i => i.t === 'k' || i.p.age <= 25);
+    const target = worth / (D.tradeAsk * (D.offer[0] + Math.random() * (D.offer[1] - D.offer[0]) * 0.5 + 0.1));
+    const pkg = { players: [], picks: [] }; let got = 0;
+    // the position you asked for comes first: the best player there they can afford to send
+    if (want.pos && want.pos !== 'ALL' && want.kind !== 'picks') {
+      const p = items.filter(i => i.t === 'p' && i.p.pos === want.pos && i.w <= target * 1.05).sort((a, b) => b.w - a.w)[0];
+      if (!p) continue;
+      pkg.players.push(p.id); got += p.w; items = items.filter(i => i !== p);
+    }
+    for (const it of items.map(i => Object.assign(i, { r: i.w * (0.85 + Math.random() * 0.3) })).sort((a, b) => b.r - a.r)) {
+      if (got >= target * 0.85 || pkg.players.length + pkg.picks.length >= 4) break;
+      if (got + it.w > target * 1.02) continue;
+      (it.t === 'p' ? pkg.players : pkg.picks).push(it.id); got += it.w;
+    }
+    if (got < target * 0.6 || (!pkg.players.length && !pkg.picks.length)) continue;
+    if (!tradeVerdict(L, t.id, give, pkg).ok) continue;
+    if (tradeCapMsg(L, L.user, t.id, give, pkg)) continue;
+    if (inSeason && roster(L, L.user).length - (give.players || []).length + pkg.players.length > max) continue;
+    found.push({ id: L.nextOfferId++, from: t.id, give: pkg, get: { players: (give.players || []).slice(), picks: (give.picks || []).slice() }, exp: L.phase === 'regular' ? L.day + 7 : -1, block: true, w: got });
+  }
+  found.sort((a, b) => b.w - a.w);
+  const best = found.slice(0, 5);
+  L.offers = L.offers.concat(best);
+  return { offers: best, msg: best.length ? `${best.length} team${best.length > 1 ? 's' : ''} made an offer.` : 'No team made an offer that fits. Try asking for something different, or add more to the block.' };
+}
 function aiTrades(L, wanted, tries) { let done = 0; for (let i = 0; i < tries && done < wanted; i++) if (aiTradeOnce(L)) done++; return done; }
 
 /* ---------- coaching staff ---------- */
@@ -1243,7 +1353,8 @@ function staffBonus(L, tid, coach) {
   const off = st.oc ? (st.oc.r - 60) * 0.08 * (st.oc.pref === c.off ? 1 : 0.5) : -1.2;
   const def = st.dc ? (st.dc.r - 60) * 0.08 * (st.dc.pref === c.def ? 1 : 0.5) : -1.2;
   const gd = st.hc ? (st.hc.r - 60) * 0.05 : -1;
-  return { off, def, gd };
+  const an = tid === L.user && L.perks && L.perks.analytics ? 0.6 : 0;
+  return { off: off + an, def, gd };
 }
 function lastWP(t) { const s = t.hist[t.hist.length - 1]; return s ? s.w / Math.max(1, s.w + s.l) : 0.5; }
 function coachWindow(L) { return ['dispersal', 'season-over', 'draft', 'offseason', 'preseason'].includes(L.phase); }
@@ -1340,7 +1451,7 @@ function judgeSeason(L) {
   if (dep === 5) d += 25; else if (dep === 4) d += 10;
   d += (wp - 0.5) * 16;
   const tax = luxuryTax(L, L.user, L.year);
-  if (tax > 0) { d -= Math.min(15, 4 + tax / avgSalary(L.year) * 3); }
+  if (tax > 0) { d -= Math.min(15, 4 + tax / avgSalary(L.year) * 3) * (L.perks && L.perks.taxOK ? 0.35 : 1); }
   const before = J.sec;
   J.sec = clamp(Math.round(J.sec + d), 0, 100);
   if (J.hist.length === 0) J.sec = Math.max(J.sec, 20);
@@ -1367,7 +1478,7 @@ function careerScore(p) {
   let s = 0;
   for (const y in p.hist) { const h = p.hist[y]; s += (h.pts || 0) * 0.012 + (h.reb || 0) * 0.012 + (h.ast || 0) * 0.016 + ((h.stl || 0) + (h.blk || 0)) * 0.02 + (h.g || 0) * 0.04; }
   s += Math.max(0, (p.peak || p.ovr) - 70) * 6;
-  for (const a of p.awards || []) s += ({ mvp: 70, fmvp: 30, alnba: 22, dpoy: 30, roy: 6, smoy: 5, mip: 3 })[a.a] || 0;
+  for (const a of p.awards || []) s += ({ mvp: 70, fmvp: 30, alnba: 22, alnba2: 12, alnba3: 7, alldef: 8, alldef2: 4, allstar: 9, asgmvp: 4, dpoy: 30, roy: 6, smoy: 5, mip: 3, ptsT: 8 })[a.a] || 0;
   s += (p.rings || 0) * 8;
   return s;
 }
@@ -1383,10 +1494,167 @@ function inductHOF(L) {
     p.hof = L.year;
     const teams = [...new Set(Object.values(p.hist).map(h => h.tm).filter(x => x != null))];
     L.hof.push({ y: L.year, id: p.id, name: p.name, pos: p.pos, teams, score: Math.round(s) });
+    retireJerseys(L, p, true);
   }
   for (const c of cand) if (!c.p.hof && L.year >= c.p.retiredYear + 24) c.p.hof = -1;
   if (cls.length) addNews(L, `Hall of Fame class of ${L.year + 1}: ${cls.map(c => c.p.pos + ' ' + c.p.name).join(', ')}.`);
 }
+
+
+/* ---------- record book & retired jerseys ---------- */
+const JERSEY_LINE = 420;
+// A player's body of work for one franchise: his stats there, awards won there, titles won there.
+function franchiseScore(L, p, tid) {
+  const champ = {}; (L.champs || []).forEach(c => champ[c.y] = c.champ);
+  let s = 0, n = 0;
+  for (const y in p.hist) {
+    const h = p.hist[y]; if (h.tm !== tid) continue;
+    n++; s += (h.pts || 0) * 0.012 + (h.reb || 0) * 0.012 + (h.ast || 0) * 0.016 + ((h.stl || 0) + (h.blk || 0)) * 0.02 + (h.g || 0) * 0.04;
+    if (champ[y] === tid) s += 8;
+  }
+  for (const a of p.awards || []) { const h = p.hist[a.y]; if (h && h.tm === tid) s += ({ mvp: 70, fmvp: 30, alnba: 22, alnba2: 12, alnba3: 7, alldef: 8, alldef2: 4, allstar: 9, asgmvp: 4, dpoy: 30, roy: 6, smoy: 5, mip: 3, ptsT: 8 })[a.a] || 0; }
+  return { s, n };
+}
+function retireJerseys(L, p, hofNow, quiet) {
+  L.jerseys = L.jerseys || {};
+  const tids = [...new Set(Object.values(p.hist).map(h => h.tm).filter(x => x != null && L.teams[x]))];
+  const sc = tids.map(tid => Object.assign({ tid }, franchiseScore(L, p, tid))).sort((a, b) => b.s - a.s);
+  sc.forEach((x, i) => {
+    const list = L.jerseys[x.tid] = L.jerseys[x.tid] || [];
+    if (list.some(j => j.pid === p.id)) return;
+    if (!(x.n >= 4 && (x.s >= JERSEY_LINE || (hofNow && i === 0)))) return;
+    const ys = Object.keys(p.hist).filter(y => p.hist[y].tm === x.tid).map(Number);
+    list.push({ pid: p.id, name: p.name, pos: p.pos, y: p.retiredYear || L.year, from: Math.min(...ys), to: Math.max(...ys) });
+    const t = L.teams[x.tid];
+    if (!quiet) addNews(L, x.tid === L.user ? `Your franchise will retire ${p.pos} ${p.name}'s jersey. He played ${x.n} seasons for the ${t.name}.` : `The ${t.city} ${t.name} retire ${p.pos} ${p.name}'s jersey.`);
+  });
+}
+function seasonDone(L, y) { return y < L.year || (y === L.year && ['season-over', 'draft', 'offseason'].includes(L.phase)); }
+// Single-season and career records, for the whole league (tid == null) or one franchise.
+function recordBook(L, tid) {
+  const fr = tid != null, all = allPlayers(L), N = 10;
+  const top = (arr, n) => arr.sort((a, b) => b.v - a.v).slice(0, n || N);
+  const sea = { pts: [], reb: [], ast: [], stl: [], blk: [], tpm: [], ptsT: [], fgp: [], ftp: [] }, car = { pts: [], reb: [], ast: [], stl: [], blk: [], tpm: [], g: [], ppg: [] };
+  for (const p of all) {
+    const tot = {}; let seasons = 0;
+    for (const y in p.hist) {
+      const h = p.hist[y], yy = +y;
+      if (!h.g || (fr && h.tm !== tid) || !seasonDone(L, yy)) continue;
+      seasons++;
+      for (const k of ['pts', 'reb', 'ast', 'stl', 'blk', 'tpm', 'g', 'fgm', 'fga', 'ftm', 'fta']) tot[k] = (tot[k] || 0) + (h[k] || 0);
+      const gq = rules(yy).games * 0.7, sc = rules(yy).games / 82, base = { p, y: yy, tm: h.tm };
+      if (h.g >= gq) for (const k of ['pts', 'reb', 'ast', 'stl', 'blk']) if (h[k]) sea[k].push(Object.assign({ v: h[k] / h.g }, base));
+      if (h.tpm) sea.tpm.push(Object.assign({ v: h.tpm }, base));
+      if (h.pts) sea.ptsT.push(Object.assign({ v: h.pts }, base));
+      if ((h.fgm || 0) >= 300 * sc) sea.fgp.push(Object.assign({ v: h.fgm / h.fga }, base));
+      if ((h.ftm || 0) >= 125 * sc) sea.ftp.push(Object.assign({ v: h.ftm / h.fta }, base));
+    }
+    if (!seasons) continue;
+    const b = { p, seasons };
+    for (const k of ['pts', 'reb', 'ast', 'stl', 'blk', 'tpm', 'g']) if (tot[k]) car[k].push(Object.assign({ v: tot[k] }, b));
+    if (tot.g >= (fr ? 250 : 400)) car.ppg.push(Object.assign({ v: tot.pts / tot.g }, b));
+  }
+  for (const k in sea) top(sea[k]); for (const k in car) top(car[k]);
+  for (const k in sea) sea[k] = sea[k].slice(0, N); for (const k in car) car[k] = car[k].slice(0, N);
+  // team seasons
+  const ts = [];
+  for (const t of L.teams) { if (fr && t.id !== tid) continue; for (const h of t.hist) if (!h.pre && h.w + h.l) ts.push({ tid: t.id, y: h.y, w: h.w, l: h.l, wp: h.w / (h.w + h.l), diff: (h.pf - h.pa) / (h.w + h.l), res: h.res }); }
+  const best = ts.slice().sort((a, b) => b.wp - a.wp).slice(0, fr ? 5 : 10), worst = ts.slice().sort((a, b) => a.wp - b.wp).slice(0, fr ? 5 : 10);
+  const titles = {}; (L.champs || []).forEach(c => { if (!fr || c.champ === tid) (titles[c.champ] = titles[c.champ] || []).push(c.y); });
+  const out = { season: sea, career: car, best, worst, titles };
+  if (fr) {
+    const t = L.teams[tid], hs = t.hist.filter(h => !h.pre);
+    out.summary = { seasons: hs.length, w: hs.reduce((x, h) => x + h.w, 0), l: hs.reduce((x, h) => x + h.l, 0),
+      playoffs: hs.filter(h => /^Won|^Lost in (?!play-in)/.test(h.res || '')).length, finals: (L.champs || []).filter(c => c.champ === tid || c.loser === tid).length };
+    out.jerseys = (L.jerseys && L.jerseys[tid] || []).slice().sort((a, b) => a.y - b.y);
+    out.hof = (L.hof || []).filter(x => x.teams.includes(tid));
+  }
+  return out;
+}
+
+/* ---------- moments from real history: choices at the time they happened ---------- */
+const OLYMPICS = [1992, 1996, 2000, 2004, 2008, 2012, 2016, 2021];
+function bestOnRoster(L) { return roster(L, L.user).sort((a, b) => b.ovr - a.ovr)[0]; }
+const DECISIONS = [
+  { id: 'three79', y: 1979, eyebrow: 'Fall 1979 · Coaching staff', title: 'The three-point line arrives',
+    text: () => 'The NBA adds the ABA\'s three-point line this season. Your assistants want to bring in a shooting coach and spend camp on the long ball.',
+    note: 'In real history most teams barely used it. The league averaged under 3 attempts a game for years.',
+    opts: [{ k: 'a', label: 'Hire the shooting coach', fx: 'Your players shoot threes a bit better and take more. The owner pays for it.' }, { k: 'b', label: 'Ignore it', fx: 'Nothing changes.' }] },
+  { id: 'cap83', y: 1983, eyebrow: 'Summer 1983 · Owner\'s office', title: 'A salary cap is coming',
+    text: L => `Owners and players agreed to the NBA's first salary cap, starting in ${seasonLabel(1984)}. Teams can still go over it to keep their own players. The owner asks whether to lock up your core now.`,
+    note: 'In real history, teams that signed their stars before the cap kept them for years.',
+    opts: [{ k: 'a', label: 'Lock up the core', fx: 'Your three best players with deals ending by 1985 get 5-year extensions at a premium. They\'re thrilled; the owner winces at the bill.' }, { k: 'b', label: 'Stay flexible', fx: 'The owner likes the caution.' }] },
+  { id: 'intl96', y: 1996, eyebrow: 'Summer 1996 · Scouting', title: 'Talent is coming from overseas',
+    text: () => 'More good players are coming from Europe, South America, and Africa. Your scouting director wants to open an international office.',
+    note: 'In real history, teams that scouted overseas early landed players like Dirk Nowitzki and Manu Ginóbili late in drafts.',
+    opts: [{ k: 'a', label: 'Open the office', fx: '+3 prospect workouts every draft from now on. Costs the owner money.' }, { k: 'b', label: 'Not yet', fx: 'Nothing changes.' }] },
+  { id: 'tax02', y: 2002, eyebrow: 'Fall 2002 · Owner\'s office', title: 'The luxury tax begins',
+    text: L => `This season, payroll above ${money(taxLine(2002))} is taxed dollar for dollar. You ask the owner where he stands.`,
+    note: 'In real history some owners paid the tax every year to win; others never went near it.',
+    opts: [{ k: 'a', label: '"Spend to win"', fx: 'He\'ll pay the tax with far less complaint. But he wants results: job security drops now.' }, { k: 'b', label: '"Stay under it"', fx: 'He likes the discipline: job security rises now, and paying the tax still angers him.' }] },
+  { id: 'stats07', y: 2007, eyebrow: 'Fall 2007 · Front office', title: 'A stats analyst wants a job',
+    text: () => 'A young analyst says box scores miss most of the game. He wants to track shot locations and lineups, and help with scouting.',
+    note: 'In real history, Houston hired Daryl Morey in 2006. Within ten years every team had an analytics staff.',
+    opts: [{ k: 'a', label: 'Hire him', fx: 'Slightly better offense from smarter lineups, and +2 prospect workouts every draft. Small cost.' }, { k: 'b', label: 'Pass', fx: 'Nothing changes.' }] },
+  { id: 'lock98', y: 1998, eyebrow: 'Fall 1998 · League office', title: 'The owners lock out the players',
+    text: () => 'Talks broke down, and the owners shut the league down. The season will be cut to 50 games. Your owner wants to know where you stand.',
+    note: 'In real history the lockout lasted 204 days and cancelled the All-Star Game.',
+    opts: [{ k: 'a', label: 'Stand with the owners', fx: 'Owner pleased (job security up). Your players resent it (morale down).' }, { k: 'b', label: 'Push for a deal', fx: 'Your players appreciate it (morale up). The owner doesn\'t (job security down).' }, { k: 'c', label: 'Stay out of it', fx: 'Nothing changes.' }] },
+  { id: 'lock11', y: 2011, eyebrow: 'Fall 2011 · League office', title: 'Another lockout',
+    text: () => 'The owners locked the players out again over revenue sharing. The season will start on Christmas Day with 66 games. Your owner wants to know where you stand.',
+    note: 'In real history the 2011 lockout lasted 161 days.',
+    opts: [{ k: 'a', label: 'Stand with the owners', fx: 'Owner pleased (job security up). Your players resent it (morale down).' }, { k: 'b', label: 'Push for a deal', fx: 'Your players appreciate it (morale up). The owner doesn\'t (job security down).' }, { k: 'c', label: 'Stay out of it', fx: 'Nothing changes.' }] },
+  { id: 'olymp', ys: OLYMPICS, eyebrow: y => `Summer ${y} · USA Basketball`, title: y => y === 1992 ? 'The Dream Team wants your star' : 'The Olympic team wants your star',
+    when: L => { const p = bestOnRoster(L); return p && p.ovr >= 80 ? { pid: p.id } : null; },
+    text: (L, d) => { const p = L.players[d.pid]; return `${L.year === 1992 ? 'For the first time, NBA players can play in the Olympics. ' : ''}USA Basketball wants ${p.pos} ${p.name} on the team this summer.`; },
+    note: y => y === 1992 ? 'In real history the Dream Team won its eight games by an average of 44 points.' : 'Playing is an honor, but it means a summer without rest.',
+    opts: [{ k: 'a', label: 'Let him play', fx: 'He loves it (morale way up). Some risk he starts the season hurt.' }, { k: 'b', label: 'Ask him to rest', fx: 'He\'s upset you asked (morale down).' }] }
+];
+function checkDecisions(L) {
+  L.decisions = L.decisions || []; L.decided = L.decided || {};
+  for (const D of DECISIONS) {
+    const ok = D.ys ? D.ys.includes(L.year) : D.y === L.year;
+    const key = D.id + (D.ys ? L.year : '');
+    if (!ok || L.decided[key] || L.decisions.some(x => x.key === key)) continue;
+    const ctx = D.when ? D.when(L) : {}; if (!ctx) continue;
+    const v = f => typeof f === 'function' ? f(L.year) : f;
+    const d = Object.assign({ key, id: D.id, y: L.year }, ctx);
+    d.eyebrow = v(D.eyebrow); d.title = v(D.title); d.note = v(D.note); d.text = D.text(L, d);
+    d.opts = D.opts.map(o => ({ k: o.k, label: o.label, fx: o.fx }));
+    L.decisions.push(d);
+    addNews(L, `Decision needed: ${d.title}. See the Office tab.`);
+  }
+}
+function answerDecision(L, key, k) {
+  const i = (L.decisions || []).findIndex(x => x.key === key); if (i < 0) return 'That decision is no longer open.';
+  const d = L.decisions[i], o = d.opts.find(x => x.k === k); if (!o) return 'Pick one of the options.';
+  L.decisions.splice(i, 1); L.decided = L.decided || {}; L.decided[key] = k;
+  const J = L.job, sec = n => J.sec = clamp(J.sec + n, 0, 100), mine = roster(L, L.user);
+  L.perks = L.perks || {};
+  let msg = '';
+  if (d.id === 'three79' && k === 'a') { mine.forEach(p => { if (p.prof) p.prof.t3 = Math.min(1.6, p.prof.t3 * 1.15 + 0.03); }); sec(-2); msg = 'You hired a shooting coach. Your players are working on the three.'; }
+  if (d.id === 'cap83' && k === 'a') {
+    const y = L.year; const core = mine.filter(p => p.con && p.con.exp <= 1985).sort((a, b) => value(b) - value(a)).slice(0, 3);
+    core.forEach(p => { setContract(p, marketValue(L, p, y) * 1.1, y, 5); p.mor = Math.min(100, mor(p) + 10); });
+    sec(-4); msg = core.length ? `You extended ${core.map(p => p.name).join(', ')} through ${y + 4}.` : 'None of your top players had deals ending soon, so there was no one to extend.';
+  }
+  if (d.id === 'cap83' && k === 'b') { sec(4); msg = 'You stayed flexible. The owner approves.'; }
+  if (d.id === 'intl96' && k === 'a') { L.perks.intl = true; sec(-3); msg = 'Your international scouting office is open: +3 workouts every draft.'; }
+  if (d.id === 'tax02') { L.perks.taxOK = k === 'a'; sec(k === 'a' ? -6 : 4); msg = k === 'a' ? 'The owner will pay the tax to win, but expects a contender.' : 'The owner wants payroll under the tax line.'; }
+  if (d.id === 'stats07' && k === 'a') { L.perks.analytics = true; sec(-2); msg = 'You hired an analyst. Lineups get smarter, and you get +2 workouts every draft.'; }
+  if (d.id === 'lock98' || d.id === 'lock11') {
+    if (k === 'a') { sec(8); mine.forEach(p => addMor(p, -12)); msg = 'You backed the owners. Your locker room noticed.'; }
+    if (k === 'b') { sec(-8); mine.forEach(p => addMor(p, 8)); msg = 'You spoke up for a deal. Your players appreciated it; the owner did not.'; }
+  }
+  if (d.id === 'olymp') {
+    const p = L.players[d.pid];
+    if (p && k === 'a') { addMor(p, 18); if (Math.random() < 0.15) { p.inj = R.int(5, 20); msg = `${p.name} played in the Olympics and came back with a minor injury (${p.inj} days).`; } else msg = `${p.name} played in the Olympics and is in great spirits.`; }
+    if (p && k === 'b') { addMor(p, -20); msg = `${p.name} skipped the Olympics. He is not happy about it.`; }
+  }
+  addNews(L, `${d.title}: ${o.label.replace(/"/g, '')}. ${msg}`.trim());
+  return null;
+}
+function scoutVisits(L) { const P = L.perks || {}; return SCOUT_VISITS + (P.intl ? 3 : 0) + (P.analytics ? 2 : 0); }
 
 /* ---------- morale & holdouts ---------- */
 function mor(p) { return p.mor == null ? 60 : p.mor; }
@@ -1403,6 +1671,7 @@ function weeklyMorale(L, res) {
   }
 }
 function seasonMorale(L) {
+  for (const p of roster(L, L.user)) if (p.tradeReq && mor(p) >= 45) { delete p.tradeReq; addNews(L, `${p.name} has dropped his trade request.`); }
   for (const t of L.teams) {
     const po = poDepth(L, t.id) >= 1;
     for (const p of roster(L, t.id)) { let d = (60 - mor(p)) * 0.2 + (po ? 4 : 0); if (underpaid(L, p)) d -= 15; addMor(p, d); }
@@ -1424,6 +1693,43 @@ function renegotiate(L, pid, quiet) {
   if (p.holdout) { delete p.holdout; if (!quiet) addNews(L, `${p.pos} ${p.name} ends his holdout with a new deal: ${yrs} yrs at ${money(sal)}.`); }
   else if (!quiet) addNews(L, `${L.teams[p.team].abbr} gave ${p.pos} ${p.name} a new deal: ${yrs} yrs at ${money(sal)}.`);
   return null;
+}
+// Trade requests: a good player who is angry about his minutes or about losing asks to be moved.
+// While he waits, the locker room sours a little each week.
+function tradeRequestWeek(L) {
+  const t = L.teams[L.user], wp = t.w / Math.max(1, t.w + t.l), mins = {};
+  minutesFor(L, L.user).forEach(x => mins[x.p.id] = x.min);
+  for (const p of roster(L, L.user)) {
+    if (p.promise) {
+      p.promise.weeks++;
+      if ((mins[p.id] || 0) < p.promise.min) p.promise.strikes++;
+      if (p.promise.strikes >= 2) { delete p.promise; p.noPromise = true; addMor(p, -25); p.tradeReq = { y: L.year, why: 'promise' }; addNews(L, `${p.pos} ${p.name} says you broke your promise about his minutes. He wants out, now.`); }
+      else if (p.promise.weeks >= 6) { delete p.promise; addMor(p, 10); addNews(L, `${p.pos} ${p.name} got the minutes you promised and is happy again.`); }
+      continue;
+    }
+    if (p.tradeReq || p.holdout || p.ovr < 66 || mor(p) >= 30 || !(p.yrs > 0) || L.phase !== 'regular') continue;
+    const benched = (mins[p.id] || 0) < 22, losing = t.w + t.l >= 10 && wp < 0.4;
+    if ((!benched && !losing) || Math.random() > 0.3) continue;
+    p.tradeReq = { y: L.year, why: benched ? 'minutes' : 'losing' };
+    addNews(L, `TRADE REQUEST: ${p.pos} ${p.name} wants out of ${t.city}, ${benched ? 'unhappy with his minutes' : 'tired of losing'}.`);
+  }
+  const n = roster(L, L.user).filter(p => p.tradeReq).length;
+  if (n) for (const p of roster(L, L.user)) if (!p.tradeReq) addMor(p, -0.4 * n);
+}
+function promiseMinutes(L, pid) {
+  const p = L.players[pid]; if (!p || p.team !== L.user || !p.tradeReq) return 'He has not asked for a trade.';
+  if (p.noPromise) return 'He no longer believes your promises.';
+  if (p.tradeReq.why !== 'minutes') return 'This is not about minutes. Only winning, or a trade, will fix it.';
+  delete p.tradeReq; p.promise = { min: 26, weeks: 0, strikes: 0 }; addMor(p, 20);
+  addNews(L, `You promised ${p.name} a bigger role. He'll give you six weeks. Play him at least 26 minutes a game.`);
+  return null;
+}
+function talkDown(L, pid) {
+  const p = L.players[pid]; if (!p || p.team !== L.user || !p.tradeReq) return 'He has not asked for a trade.';
+  if (p.tradeReq.talked === L.year) return 'You already tried that this season.';
+  p.tradeReq.talked = L.year;
+  if (Math.random() < 0.35) { delete p.tradeReq; addMor(p, 15); addNews(L, `${p.name} withdrew his trade request after a meeting with you.`); return null; }
+  addMor(p, -5); return `${p.name} still wants out.`;
 }
 function holdoutWeek(L) {
   for (const p of roster(L, L.user)) if (p.holdout) {
@@ -1484,7 +1790,7 @@ function makeSchedule(L) {
 /* ---------- game simulation ---------- */
 function ratings(L, tid, coach) {
   const c = coach || L.teams[tid].coach, M = minutesFor(L, tid, c), fw = FOCUS_W[c.off] || FOCUS_W.bal;
-  let top = 45, pg = 45, bigBest = 45, o = 0, ow = 0, d = 0, mt = 0, inS = 0, inM = 0, outS = 0, outM = 0, reb = 0, stl = 0, blk = 0, t3 = 0, tov = 0, ast = 0, young = 0;
+  let top = 45, pg = 45, bigBest = 45, o = 0, ow = 0, d = 0, mt = 0, inS = 0, inM = 0, outS = 0, outM = 0, reb = 0, stl = 0, blk = 0, t3 = 0, tov = 0, ast = 0, young = 0; const stars = [];
   for (const { p, min } of M) {
     const e = eff(p), pr = p.prof, big = isBig(p);
     const ov = e + clamp((pr.pts + pr.ast * 0.7 - 17.5) * 0.3, -4, 4);
@@ -1494,11 +1800,13 @@ function ratings(L, tid, coach) {
     if (big) { inS += dv * min; inM += min; } else { outS += ov * min; outM += min; }
     reb += pr.reb * min; stl += pr.stl * min; blk += pr.blk * min; t3 += pr.t3 * min; tov += pr.tov * min; ast += pr.ast * min;
     if (p.age <= 25) young += min;
+    if (min >= 20) stars.push(e);
     if (min >= 12) { top = Math.max(top, e); if (isGuard(p)) pg = Math.max(pg, e); if (big) bigBest = Math.max(bigBest, e); }
   }
   mt = mt || 1;
   const r = { mins: M, off: ow ? o / ow : 40, def: d / mt, in: inM ? inS / inM : 45, out: outM ? outS / outM : 45,
     reb: reb / mt, stl: stl / mt, blk: blk / mt, t3: t3 / mt, tov: tov / mt, ast: ast / mt, youth: young / mt, top, pg, bigBest };
+  stars.sort((a, b) => b - a); r.star = Math.max(0, (stars[0] || 0) - 78) + 0.5 * Math.max(0, (stars[1] || 0) - 78);
   r.off += offBonus(L, r, c.off) / 0.55;
   const st = M.filter(x => x.start).map(x => x.p), g = st.filter(isGuard).length, b = st.filter(isBig).length;
   if (st.length === 5) { if (!g) r.off -= 4; if (!b) r.def -= 4; if (b >= 4) r.off -= 2; if (g >= 4) r.def -= 2; }
@@ -1508,9 +1816,13 @@ function ratings(L, tid, coach) {
 }
 function teamOverall(L, tid) { const r = ratings(L, tid); return Math.round((r.off + r.def) / 2); }
 
+const TUNE = { k: 0.75, sd: 9.3, star: 0.08, soft: 5, softK: 0.4 };
 function expected(L, oR, dR, oC, dC, isHome, neutral, poss) {
   const E = era(L.year);
-  let ortg = E.ortg + (oR.off - dR.def - (L.offBias || 0)) * 0.55;
+  let edge = (oR.off - dR.def - (L.offBias || 0)) * TUNE.k + ((oR.star || 0) - (dR.star || 0)) * TUNE.star;
+  // diminishing returns past a big edge, so stacked teams win 60-something games, not 75
+  if (TUNE.soft && Math.abs(edge) > TUNE.soft) edge = Math.sign(edge) * (TUNE.soft + (Math.abs(edge) - TUNE.soft) * TUNE.softK);
+  let ortg = E.ortg + edge;
   // shooters matter more the more threes the league takes
   ortg += (oR.t3 / (L.t3Norm || 1) - 1) * E.t3share * 6;
   let m = (DEF_VS[dC.def] || DEF_VS.man)[oC.off] || 0;
@@ -1621,7 +1933,7 @@ function playGame(L, g, opts) {
   const op = k => (OFFENSES[k] || OFFENSES.bal).poss;
   const poss = E.pace * (1 + ((Hc.tempo + Ac.tempo) / 2 - 50) / 50 * 0.07) + (op(Hc.off) + op(Ac.off)) / 2 - (L.possAdj || 0) + (Hc.def === 'press' ? 1.5 : 0) + (Ac.def === 'press' ? 1.5 : 0) + R.norm() * 2.5;
   const edge = side => (side === L.user ? D.edge : 0) + staffBonus(L, side).gd;
-  const sd = 10.5 * Math.sqrt(poss / 100);
+  const sd = TUNE.sd * Math.sqrt(poss / 100);
   const hx = expected(L, hr, ar, Hc, Ac, true, opts.neutral, poss) + edge(g.h), ax = expected(L, ar, hr, Ac, Hc, false, opts.neutral, poss) + edge(g.a);
   const shared = R.norm() * sd * 0.35;
   let hp = Math.max(50, Math.round(hx + shared + R.norm() * sd)), ap = Math.max(50, Math.round(ax + shared + R.norm() * sd));
@@ -1674,8 +1986,9 @@ function archiveBoxes(L) {
   (L.schedule || []).forEach((day, i) => day.forEach(g => { if (g.done && (g.h === L.user || g.a === L.user)) out.push(Object.assign({ wk: 'Game ' + (out.length + 1) }, g, { box: slimBox(g.box) })); }));
   if (L.playoffs) L.playoffs.rounds.forEach(r => r.series.forEach(s => s.games.forEach((g, gi) => { if (g.h === L.user || g.a === L.user) out.push(Object.assign({ wk: r.name + (s.playIn ? '' : ' G' + (gi + 1)) }, g, { box: slimBox(g.box) })); })));
   if (out.length) L.myGames[L.year] = out;
-  // keep the archive from growing forever: last 15 seasons
+  // keep the archive from growing forever: 5 seasons of results, full box scores for the last 2 (playoffs kept longer)
   const ys = Object.keys(L.myGames).map(Number).sort((a, b) => b - a); ys.slice(5).forEach(y => delete L.myGames[y]);
+  ys.slice(2, 5).forEach(y => L.myGames[y].forEach(g => { if (g.box && !/Finals|Semifinals|First Round/.test(g.wk)) delete g.box; }));
 }
 function healDay(L) { for (const id in L.players) { const p = L.players[id]; if (p.inj > 0) { p.inj--; if (!p.inj && p.playHurt) delete p.playHurt; } } }
 
@@ -1683,6 +1996,7 @@ function healDay(L) { for (const id in L.players) { const p = L.players[id]; if 
 function canStartSeason(L) {
   if (L.phase === 'dispersal') return 'Finish the dispersal draft first.';
   if (L.erving) return 'Answer Philadelphia\'s offer for Julius Erving first (Office tab).';
+  if ((L.decisions || []).length) return 'Make your decision on the Office tab first.';
   const n = roster(L, L.user).length, max = rules(L.year).rosterMax;
   if (n > max) return `Your roster has ${n} players. Cut down to ${max} before opening night.`;
   if (n < 8) return `You need at least 8 players. You have ${n}. Sign free agents first.`;
@@ -1725,12 +2039,45 @@ function simDay(L) {
   }
   L.day++;
   if (L.day % 7 === 0 || L.day >= L.schedule.length) endWeek(L);
+  if (L.day === allStarDay(L)) allStarGame(L);
   if (L.day === deadlineDay(L)) addNews(L, 'The trade deadline has passed. Rosters are set until the season ends, apart from free-agent signings.');
   if (!pastDeadline(L) && Math.random() < 0.05) makeOffers(L, 1, 6);
   if (L.day >= L.schedule.length) startPlayoffs(L);
 }
+// Midseason All-Star Game (none in the 1998-99 lockout season): fans pick the starters, coaches the reserves.
+function allStarDay(L) { return Math.floor((L.schedule.length || 160) * 0.55); }
+function allStarGame(L) {
+  const y = L.year; if (y === 1998) return;
+  L.allstar = L.allstar || {}; if (L.allstar[y]) return;
+  const pool = { East: [], West: [] };
+  for (const p of Object.values(L.players)) {
+    const h = p.hist[y]; if (!h || !h.g || p.team < 0) continue;
+    const t = L.teams[p.team]; if (h.g < (t.w + t.l) * 0.5) continue;
+    pool[t.conf].push({ p, s: prodScore(h) + pct(L, t) * 6, pts: (h.pts || 0) / h.g });
+  }
+  const sel = {};
+  for (const c of ['East', 'West']) {
+    const list = pool[c], taken = new Set(), pick = [];
+    const take = (test, n, f) => list.filter(x => test(x.p) && !taken.has(x.p.id)).sort((a, b) => f(b) - f(a)).slice(0, n).forEach(x => { taken.add(x.p.id); pick.push(x.p); });
+    take(isGuard, 2, x => x.s + x.pts * 0.6); take(p => !isGuard(p), 3, x => x.s + x.pts * 0.6);   // fan vote leans on scoring
+    take(() => true, 7, x => x.s);
+    sel[c] = pick;
+  }
+  if (sel.East.length < 5 || sel.West.length < 5) return;
+  const E = era(y), str = c => sel[c].reduce((s, p) => s + p.ovr, 0) / sel[c].length;
+  let es = Math.round(E.pts * 1.18 + (str('East') - str('West')) * 0.5 + R.norm() * 9), ws = Math.round(E.pts * 1.18 + (str('West') - str('East')) * 0.5 + R.norm() * 9);
+  if (es === ws) es += R.pick([-3, 3]);
+  const win = es > ws ? 'East' : 'West';
+  const mvp = sel[win].slice().sort((a, b) => (b.ovr + R.norm() * 5) - (a.ovr + R.norm() * 5))[0];
+  const ln = `${R.int(18, 34)} pts, ${R.int(3, 11)} reb, ${R.int(2, 9)} ast`;
+  for (const c of ['East', 'West']) for (const p of sel[c]) giveAward(L, 'allstar', p, c, p.team);
+  giveAward(L, 'asgmvp', mvp, ln, mvp.team);
+  L.allstar[y] = { East: sel.East.map(p => p.id), West: sel.West.map(p => p.id), es, ws, mvp: mvp.id, line: ln };
+  const mine = sel.East.concat(sel.West).filter(p => p.team === L.user);
+  addNews(L, `All-Star Game: ${win} ${Math.max(es, ws)}, ${win === 'East' ? 'West' : 'East'} ${Math.min(es, ws)}. MVP: ${mvp.name} (${ln}).${mine.length ? ' Your All-Stars: ' + mine.map(p => p.name).join(', ') + '.' : ' None of your players made the team.'}`);
+}
 function endWeek(L) {
-  weeklyMorale(L, L.wkres || {}); holdoutWeek(L);
+  weeklyMorale(L, L.wkres || {}); holdoutWeek(L); tradeRequestWeek(L);
   aiFillRosters(L);
   const t = L.teams[L.user];
   if ((L.wkUser || []).length) { const save = L.day; L.day = save - 1; addNews(L, `Week ${Math.ceil(save / 7)}: ${L.wkUser.join(', ')}. Record ${t.w}-${t.l}.`); L.day = save; }
@@ -1897,14 +2244,18 @@ function finishSeason(L) {
 }
 
 /* ---------- awards ---------- */
-const AWARD_NAMES = { mvp: 'MVP', dpoy: 'Defensive Player of the Year', roy: 'Rookie of the Year', smoy: 'Sixth Man of the Year', mip: 'Most Improved Player', alnba: 'All-NBA First Team', fmvp: 'Finals MVP' };
+const AWARD_NAMES = { mvp: 'MVP', dpoy: 'Defensive Player of the Year', roy: 'Rookie of the Year', smoy: 'Sixth Man of the Year', mip: 'Most Improved Player',
+  alnba: 'All-NBA First Team', alnba2: 'All-NBA Second Team', alnba3: 'All-NBA Third Team', alldef: 'All-Defensive First Team', alldef2: 'All-Defensive Second Team',
+  allstar: 'All-Star', asgmvp: 'All-Star Game MVP', fmvp: 'Finals MVP',
+  ptsT: 'Scoring champion', rebT: 'Rebounding champion', astT: 'Assists leader', stlT: 'Steals leader', blkT: 'Blocks leader' };
+const MULTI_AWARDS = ['alnba', 'alnba2', 'alnba3', 'alldef', 'alldef2', 'allstar'];
 const fmt1 = v => (Math.round(v * 10) / 10).toFixed(1);
 function perGame(h) { const g = Math.max(1, h.g || 0); return { g, pts: (h.pts || 0) / g, reb: (h.reb || 0) / g, ast: (h.ast || 0) / g, stl: (h.stl || 0) / g, blk: (h.blk || 0) / g, tov: (h.tov || 0) / g, min: (h.min || 0) / g }; }
 function prodScore(h) { const x = perGame(h); return x.pts + x.reb * 0.7 + x.ast * 0.9 + (x.stl + x.blk) * 1.2 - x.tov * 0.5; }
 function giveAward(L, key, p, line, tid) {
   const y = L.year; L.awards = L.awards || {}; const A = L.awards[y] || (L.awards[y] = {});
   const rec = { pid: p.id, tid, name: p.name, pos: p.pos, line };
-  if (key === 'alnba') (A.alnba = A.alnba || []).push(rec); else A[key] = rec;
+  if (MULTI_AWARDS.includes(key)) (A[key] = A[key] || []).push(rec); else A[key] = rec;
   (p.awards = p.awards || []).push({ y, a: key });
 }
 function seasonAwards(L) {
@@ -1927,13 +2278,22 @@ function seasonAwards(L) {
   const rk = cand.filter(c => c.rookie); if (rk.length) give('roy', best(c => c.prod, rk));
   const sx = cand.filter(c => c.sixth); if (ru.awards.smoy && sx.length) give('smoy', best(c => c.prod, sx));
   const im = cand.filter(c => c.imp != null && !c.rookie); if (ru.awards.mip && im.length) give('mip', best(c => c.imp + c.prod * 0.1, im));
-  // All-NBA First Team: two guards, two forwards, one center
-  const team = [], taken = new Set();
-  const pickPos = (test, n) => cand.filter(c => test(c.p) && !taken.has(c.p.id)).sort((a, b) => (b.prod + b.wp * 6) - (a.prod + a.wp * 6)).slice(0, n).forEach(c => { taken.add(c.p.id); team.push(c); });
-  pickPos(isGuard, 2); pickPos(p => p.pos === 'SF' || p.pos === 'PF', 2); pickPos(p => p.pos === 'C', 1);
-  team.forEach(c => giveAward(L, 'alnba', c.p, line(c), c.h.tm));
+  // All-NBA teams (third team from 1988-89) and All-Defensive teams: two guards, two forwards, one center each
+  const fives = (keys, score) => { const taken = new Set();
+    for (const k of keys) { const team = [];
+      const pickPos = (test, n) => cand.filter(c => test(c.p) && !taken.has(c.p.id)).sort((a, b) => score(b) - score(a)).slice(0, n).forEach(c => { taken.add(c.p.id); team.push(c); });
+      pickPos(isGuard, 2); pickPos(p => p.pos === 'SF' || p.pos === 'PF', 2); pickPos(p => p.pos === 'C', 1);
+      team.forEach(c => giveAward(L, k, c.p, k.startsWith('alldef') ? `${fmt1(c.x.reb)} reb, ${fmt1(c.x.stl)} stl, ${fmt1(c.x.blk)} blk` : line(c), c.h.tm)); } };
+  fives(y >= 1988 ? ['alnba', 'alnba2', 'alnba3'] : ['alnba', 'alnba2'], c => c.prod + c.wp * 6);
+  fives(['alldef', 'alldef2'], c => c.def + c.x.min * 0.08);
+  // statistical titles: per game, among qualified players
+  for (const [k, stat, unit] of [['ptsT', 'pts', 'ppg'], ['rebT', 'reb', 'rpg'], ['astT', 'ast', 'apg'], ['stlT', 'stl', 'spg'], ['blkT', 'blk', 'bpg']]) {
+    const c = best(c => c.x[stat]); if (c) giveAward(L, k, c.p, `${fmt1(c.x[stat])} ${unit}`, c.h.tm);
+  }
   const sc = best(c => c.x.pts);
   if (out.length) addNews(L, `${seasonLabel(y)} awards. ` + out.join(' · ') + `. Scoring title: ${sc.p.name} (${fmt1(sc.x.pts)} ppg).`);
+  const mine = cand.filter(c => c.h.tm === L.user && (c.p.awards || []).some(a => a.y === y && /^al/.test(a.a))).map(c => `${c.p.name} (${c.p.awards.filter(a => a.y === y && /^al/.test(a.a)).map(a => AWARD_NAMES[a.a]).join(', ')})`);
+  if (mine.length) addNews(L, `Your honorees: ${mine.join('; ')}.`);
 }
 function finalsMVP(L, s, w) {
   const tot = {};
@@ -2012,10 +2372,11 @@ function startDraft(L, imports) {
   const n = orders[0].length;
   const rows = imports && imports.drafts && imports.drafts[dy];
   const pool = [];
-  if (rows && rows.length) rows.forEach(r => pool.push(prospectFromDraft(L, r, dy, n).id));
+  const fut = futureRatings(imports && imports.future);
+  if (rows && rows.length) rows.forEach(r => pool.push(prospectFromDraft(L, r, dy, n, fut).id));
   const target = rounds * n + 25;
   let genCount = 0;
-  while (pool.length < target) { pool.push(genProspect(L, dy).id); genCount++; }
+  while (pool.length < target) { pool.push(genProspect(L, dy, pool.length + 1).id); genCount++; }
   ensurePicks(L);
   const slotPick = [];
   orders.forEach((ord, ri) => ord.forEach(tid => {
@@ -2023,7 +2384,7 @@ function startDraft(L, imports) {
     if (!k) { k = { id: L.nextPickId++, y: dy, rnd: ri + 1, orig: tid, own: tid }; L.picks.push(k); }
     slotPick.push(k.id);
   }));
-  L.draft = { year: dy, order: orders[0], n, rounds, pick: 0, pool, log: [], started: false, visits: SCOUT_VISITS, ai: {}, slotPick, lottery: lot.jumps, kind: rules(dy).lottery };
+  L.draft = { year: dy, order: orders[0], n, rounds, pick: 0, pool, log: [], started: false, visits: scoutVisits(L), maxVisits: scoutVisits(L), ai: {}, slotPick, lottery: lot.jumps, kind: rules(dy).lottery };
   aiScouting(L);
   L.phase = 'draft';
   const lj = lot.jumps.filter(j => j.to <= 3).map(j => `#${j.to} ${L.teams[j.id].abbr}${j.from !== j.to ? ` (from #${j.from})` : ''}`);
@@ -2046,8 +2407,22 @@ function scoutPlayer(L, pid) {
   const D = L.draft, p = L.players[pid];
   if (!D || !p || p.team !== -3) return 'That prospect is no longer available.';
   if (p.seen) return null;
-  if (!(D.visits > 0)) return 'You have used all ' + SCOUT_VISITS + ' workouts this year.';
+  if (!(D.visits > 0)) return 'You have used all ' + (D.maxVisits || SCOUT_VISITS) + ' workouts this year.';
   p.seen = true; D.visits--; return null;
+}
+function rescoreDraft(L, imports) {
+  const D = L.draft; if (!D || D.rs2) return false;
+  D.rs2 = true;
+  const rows = imports && imports.drafts && imports.drafts[D.year]; if (!rows || !rows.length) return true;
+  const fut = futureRatings(imports.future), by = {};
+  rows.forEach(r => by[cleanName(r.Player).toLowerCase()] = r);
+  for (const id of D.pool) {
+    const p = L.players[id]; if (!p || p.team !== -3 || !p.real) continue;
+    const r = by[cleanName(p.name).toLowerCase()]; if (!r) continue;
+    const gap = Math.max(4, p.pot - p.ovr), pot = truePot(slotGrade(num(r.Pk) || num(r.Rk) || 300), r, fut);
+    p.pot = pot; p.ovr = clamp(pot - gap, 34, 82);
+  }
+  return true;
 }
 function beginDraft(L) { if (L.draft) { L.draft.started = true; draftUntilUser(L); } }
 function onClock(L) {
@@ -2077,7 +2452,22 @@ function aiPick(L) {
   }
   if (best) makePick(L, best.id);
 }
-function draftUntilUser(L) { let c; while ((c = onClock(L)) !== null && c !== L.user) aiPick(L); }
+function draftUntilUser(L) {
+  let c; while ((c = onClock(L)) !== null && c !== L.user) aiPick(L);
+  // on the clock: sometimes teams call wanting to move up
+  const D = L.draft;
+  if (c === L.user && D && D.started && D.callsFor !== D.pick) {
+    D.callsFor = D.pick;
+    if (Math.random() < 0.55) {
+      const r = shopBlock(L, { players: [], picks: [D.slotPick[D.pick]] }, { kind: 'picks', pos: 'ALL' });
+      const keep = R.shuffle(r.offers.slice()).slice(0, R.int(1, 2)).map(o => o.id);
+      L.offers = L.offers.filter(o => !o.block || keep.includes(o.id));
+      L.offers.forEach(o => { if (keep.includes(o.id)) o.draftCall = true; });
+      if (keep.length) addNews(L, `Draft night: ${keep.map(id => L.teams[L.offers.find(o => o.id === id).from].city).join(' and ')} called about pick #${D.pick + 1}.`);
+    }
+  }
+}
+function shopPick(L) { const D = L.draft; if (!D || onClock(L) !== L.user) return { offers: [], msg: 'You are not on the clock.' }; return shopBlock(L, { players: [], picks: [D.slotPick[D.pick]] }, { kind: 'any', pos: 'ALL' }); }
 function draftAll(L) { while (onClock(L) !== null) aiPick(L); }
 function endDraft(L) {
   const D = L.draft;
@@ -2094,7 +2484,8 @@ function endDraft(L) {
 
 /* ---------- offseason ---------- */
 function progress(L) {
-  const retired = [];
+  const retired = [], before = {};
+  for (const id in L.players) { const p = L.players[id]; before[id] = { ovr: p.ovr, tm: p.team }; }
   for (const id in L.players) {
     const p = L.players[id];
     if (p.team === -2 || p.team === -3) continue;
@@ -2122,8 +2513,18 @@ function progress(L) {
     if (p.team === -1) rp += p.age >= 29 ? 0.5 : (p.age >= 24 ? 0.35 : 0.15);
     if (Math.random() < rp) { retired.push(p); p.team = -2; p.retiredYear = L.year + 1; }
   }
+  retired.forEach(p => retireJerseys(L, p, false));
   const notable = retired.filter(p => p.ovr >= 74 || (p.real && p.ovr >= 68)).slice(0, 6);
   if (notable.length) addNews(L, 'Retired: ' + notable.map(p => `${p.pos} ${p.name}`).join(', ') + '.');
+  // offseason report: your players, the league's biggest jumps and drops, notable retirements
+  const row = p => ({ id: p.id, name: p.name, pos: p.pos, age: p.age, tm: before[p.id].tm, from: before[p.id].ovr, to: p.ovr });
+  const live = Object.values(L.players).filter(p => before[p.id] && p.team !== -2 && p.team !== -3 && before[p.id].tm >= -1);
+  const leagueRows = live.filter(p => p.team >= 0).map(row);
+  L.report = { y: L.year + 1,
+    mine: live.filter(p => p.team === L.user).map(row).sort((a, b) => (b.to - b.from) - (a.to - a.from)),
+    up: leagueRows.slice().sort((a, b) => (b.to - b.from) - (a.to - a.from)).slice(0, 10),
+    down: leagueRows.slice().sort((a, b) => (a.to - a.from) - (b.to - b.from)).slice(0, 10),
+    retired: retired.filter(p => p.ovr >= 60 || p.team === L.user || before[p.id].tm === L.user).sort((a, b) => b.ovr - a.ovr).slice(0, 15).map(p => ({ id: p.id, name: p.name, pos: p.pos, age: p.age, tm: before[p.id].tm, from: before[p.id].ovr, to: p.ovr })) };
   archivePlayers(L);
 }
 function archivePlayers(L) {
@@ -2196,6 +2597,7 @@ function startNextSeason(L) {
   if (rules(L.year + 1).lottery !== rules(L.year).lottery) addNews(L, `Next summer's draft: ${LOTTERY_TXT[rules(L.year + 1).lottery]}`);
   if (r.luxTax && !p.luxTax) addNews(L, `The luxury tax begins: payroll above ${money(taxLine(L.year))} is taxed dollar for dollar.`);
   addNews(L, `Training camp opens for the ${seasonLabel(L.year)} season.`);
+  checkDecisions(L);
   return null;
 }
 const LOTTERY_TXT = {
@@ -2560,7 +2962,7 @@ function leaders(L, key, n, year) {
 }
 function myDraftSlots(L) { const D = L.draft; if (!D) return []; const out = []; for (let i = D.pick; i < D.slotPick.length; i++) { const k = pickById(L, D.slotPick[i]); if (k && k.own === L.user) out.push(i + 1); } return out; }
 
-const API = { DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
+const API = { TUNE, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
   parseCSV, parseBRef, mergeSeason, newLeague, ensureLeague, addNews, roster, freeAgents, value, release, sign, cutTo, depthChart, setDepth, moveDepth, resetDepth, setPlayHurt,
   minutesFor, rotationOrder, ratings, teamOverall, isBig, isGuard, dispPool, dispOnClock, dispPick, dispPass, beginDispersal, dispAI, endDispersal, answerErving,
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
@@ -2581,7 +2983,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-10-27c';
+const APP_VERSION = '2026-10-29b';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // imported Basketball-Reference data
 const ui = { tab: 'home', grp: 'ALL', lg: 'stand', leadKey: 'pts', resWeek: null, open: null, confirm: null,
@@ -2684,6 +3086,26 @@ function ownerCard() {
     <div class="bar-t cap"><span class="bar-f ${cls}" style="width:${Math.max(3, sec)}%"></span></div>
     <p class="small">${g ? `<b>${SL(L.year)} goal:</b> ${esc(g.txt)}.` : 'The owner sets a goal on opening night.'}${last ? ` Last review (${SL(last.y)}): goal "${esc(last.goal)}" ${last.met ? 'met' : 'missed'}.` : ''} ${sec < 25 ? '<b class="bad">Another bad year could cost you your job.</b>' : ''}</p></section>`;
 }
+function requestCard() {
+  const rq = G.roster(L, L.user).filter(p => p.tradeReq), pr = G.roster(L, L.user).filter(p => p.promise);
+  if (!rq.length && !pr.length) return '';
+  const why = { minutes: 'unhappy with his minutes', losing: 'tired of losing', promise: 'says you broke your promise' };
+  return `<section class="card offers"><h3>Trade requests (${rq.length})</h3><p class="small">A player who wants out drags the locker room down a little every week until it's settled, and other teams know you need to move him, so they pay a bit less.</p>
+    <div class="list">${rq.map(p => `<div class="pl wide"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}<div class="pl-sub">${esc(why[p.tradeReq.why] || 'wants out')} · <span class="bad">${G.moraleWord(p)}</span></div></div><div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div></div>
+      <div class="pl-btns"><button class="btn sm primary" data-act="shop" data-id="${p.id}">Shop him</button>${p.tradeReq.why === 'minutes' && !p.noPromise ? `<button class="btn sm" data-act="promise" data-id="${p.id}">Promise 26+ minutes</button>` : ''}${p.tradeReq.talked !== L.year ? `<button class="btn sm" data-act="talk" data-id="${p.id}">Talk him down</button>` : ''}</div></div>`).join('')}</div>
+    ${pr.length ? `<p class="small">Promises in progress: ${pr.map(p => `${esc(p.name)} (week ${p.promise.weeks + 1} of 6, needs ${p.promise.min}+ min${p.promise.strikes ? `, ${p.promise.strikes} miss` : ''})`).join('; ')}. Set his minutes on the Coach tab.</p>` : ''}</section>`;
+}
+function reportCard() {
+  const R = L.report; if (!R || R.y !== L.year) return '';
+  const d = r => { const x = r.to - r.from; return `<b class="${x > 0 ? 'good' : x < 0 ? 'bad' : ''}">${x > 0 ? '+' : ''}${x}</b>`; };
+  const rows = (list, showTm) => list.map(r => `<tr><td class="l"><button class="lnk" data-act="statPlayer" data-id="${r.id}">${esc(r.name)}</button> <span class="small">${esc(r.pos)}${showTm && L.teams[r.tm] ? ' · ' + esc(L.teams[r.tm].abbr) : ''}</span></td><td>${r.age}</td><td>${r.from}</td><td>${r.to}</td><td>${d(r)}</td></tr>`).join('');
+  const tbl = (list, showTm) => `<div class="tscroll"><table class="tbl stat"><thead><tr><th class="l">Player</th><th>Age</th><th>Was</th><th>Now</th><th>+/-</th></tr></thead><tbody>${rows(list, showTm)}</tbody></table></div>`;
+  return `<section class="card"><div class="eyebrow">Summer ${R.y}</div><h3>Offseason report</h3><p class="small">Who got better and who slipped over the summer. Ratings are overall.</p>
+    <h3 class="sub">Your team</h3>${R.mine.length ? tbl(R.mine, false) : '<p class="small">No returning players.</p>'}
+    <h3 class="sub">Biggest jumps in the league</h3>${tbl(R.up, true)}
+    <h3 class="sub">Biggest drops</h3>${tbl(R.down, true)}
+    ${R.retired.length ? `<h3 class="sub">Retired</h3><p class="small">${R.retired.map(r => `${esc(r.name)} (${esc(r.pos)}, ${r.age}${L.teams[r.tm] ? ', ' + esc(L.teams[r.tm].abbr) : ''}, ${r.to})`).join(' · ')}</p>` : ''}</section>`;
+}
 function holdoutCard() {
   const hs = G.roster(L, L.user).filter(p => p.holdout);
   if (!hs.length) return '';
@@ -2701,6 +3123,11 @@ function lastGameCard() {
       <p class="small">${home ? 'vs' : 'at'} ${esc(o.city)}${g.ot ? ` (${g.ot > 1 ? g.ot : ''}OT)` : ''}${sp ? ` · Top player ${esc(sp)}` : ''}</p></section>`;
   }
   return '';
+}
+function decisionCard(d) {
+  return `<section class="card hero decide"><div class="eyebrow">${esc(d.eyebrow)}</div><h2>${esc(d.title)}</h2><p>${esc(d.text)}</p>
+    <div class="opts">${d.opts.map(o => `<button class="btn ${o.k === 'a' ? 'primary' : ''} optb" data-act="decide" data-id="${esc(d.key)}|${o.k}"><b>${esc(o.label)}</b><span class="small">${esc(o.fx)}</span></button>`).join('')}</div>
+    <p class="small">${esc(d.note)}</p></section>`;
 }
 function seriesText(s) {
   const a = L.teams[s.h], b = L.teams[s.a];
@@ -2724,10 +3151,12 @@ function vHome() {
         <p class="small">In real history the Nets took the money. Keep him and the owner will be furious, and Erving holds out for the raise he was promised.</p>
         <div class="row"><button class="btn primary" data-act="erving" data-id="1">Sell him to Philadelphia</button><button class="btn danger" data-act="erving" data-id="0">Keep Dr. J</button></div></section>`;
     }
+    h += (L.decisions || []).map(decisionCard).join('');
     const over = n > max;
     h += `<section class="card hero"><div class="eyebrow">Training camp</div><h2>${SL(L.year)} roster cutdown</h2>
       <p>You carry <b class="${over || n < 8 ? 'bad' : 'good'}">${n}</b> players. The ${SL(L.year)} limit is <b>${max}</b>. ${over ? 'Release players on the Roster tab, or let your staff make the cuts.' : 'You are ready for opening night.'}</p>
-      <div class="row">${over ? `<button class="btn" data-act="autocut">Auto-cut to ${max}</button>` : ''}<button class="btn primary" data-act="startSeason"${over || L.erving ? ' disabled' : ''}>Tip off the ${SL(L.year)} season</button></div></section>`;
+      <div class="row">${over ? `<button class="btn" data-act="autocut">Auto-cut to ${max}</button>` : ''}<button class="btn primary" data-act="startSeason"${over || L.erving || (L.decisions || []).length ? ' disabled' : ''}>Tip off the ${SL(L.year)} season</button></div></section>`;
+    h += reportCard();
   }
   if (L.phase === 'regular') {
     const g = G.nextGame(L);
@@ -2758,7 +3187,7 @@ function vHome() {
       ${IM.drafts[L.year + 1] ? `<p class="small">Using the real ${L.year + 1} class you imported.</p>` : `<p class="small warn">No ${L.year + 1} draft class imported. Import it on the Data tab first, or the class will be generated.</p>`}</section>`;
     h += playoffResults();
   }
-  if (L.phase === 'draft') h += vDraft();
+  if (L.phase === 'draft') h += offersCard() + vDraft();
   if (L.phase === 'offseason') {
     h += `<section class="card hero"><div class="eyebrow">Offseason</div><h2>Ready for ${SL(L.year + 1)}?</h2>
       <p>${(() => { G.ensureFA(L); const ex = G.expiring(L, L.user).length, sh = L.fa.sheets.length; return `<b>${G.ERA_INFO[L.fa.era].name}.</b> You have ${ex} expiring contract${ex === 1 ? '' : 's'}${sh ? ` and ${sh} offer sheet${sh > 1 ? 's' : ''} to answer` : ''}. Handle them on the Moves tab.`; })()}</p>
@@ -2767,7 +3196,8 @@ function vHome() {
   }
   if (L.phase !== 'regular') h += holdoutCard();
   h += ownerCard();
-  h += offersCard();
+  if (L.phase !== 'draft') h += offersCard();
+  h += requestCard();
   h += `<section class="card"><h3>Wire</h3><ul class="news">${L.news.slice(0, 20).map(n => `<li><span class="nw">${SL(n.y)}${n.w ? ' W' + n.w : ''}</span>${esc(n.s)}</li>`).join('')}</ul></section>`;
   return h;
 }
@@ -2891,7 +3321,7 @@ function offersCard() {
   const items = pkg => (pkg.players || []).map(id => { const p = L.players[id]; return `<li><span class="pos">${esc(p.pos)}</span> ${esc(p.name)} <span class="small">age ${p.age}</span> ${rating(p.ovr)} ${rating(G.shownPot(L, p))}</li>`; })
     .concat((pkg.picks || []).map(id => { const k = G.pickById(L, id); return `<li><span class="pos pk">PICK</span> ${esc(G.pickLabel(L, k))} <span class="small">≈#${G.projectedOverall(L, k)}</span></li>`; })).join('');
   return `<section class="card offers"><h3>Trade offers (${list.length})</h3>${list.map(o => `
-    <div class="offer"><div class="split"><b>${esc(tname(L.teams[o.from]))}</b><span class="small">${o.exp >= 0 ? `Expires in ${Math.max(1, o.exp - L.day)} days` : 'Expires on opening night'}</span></div>
+    <div class="offer"><div class="split"><b>${esc(tname(L.teams[o.from]))}${o.block ? ' <span class="small">· trading block</span>' : ''}</b><span class="small">${o.exp >= 0 ? `Expires in ${Math.max(1, o.exp - L.day)} days` : 'Expires on opening night'}</span></div>
       <div class="trade"><div><div class="eyebrow">You get</div><ul class="olist">${items(o.give)}</ul></div><div><div class="eyebrow">You give</div><ul class="olist">${items(o.get)}</ul></div></div>
       <div class="row"><button class="btn primary sm" data-act="acceptOffer" data-id="${o.id}">Accept</button><button class="btn sm" data-act="rejectOffer" data-id="${o.id}">Reject</button></div></div>`).join('')}
     <p class="small">Ratings shown are OVR then POT.</p></section>`;
@@ -2916,7 +3346,8 @@ function vDraft() {
     h = `<section class="card hero"><div class="eyebrow">${D.year} draft · Round ${rnd} of ${D.rounds} · Pick ${pk} (#${D.pick + 1} overall)</div>
       <h2>${mine ? 'You are on the clock' : esc(tname(L.teams[c])) + ' are picking'}</h2>${lotTxt}
       <p class="small">Your picks: ${ord} · ${visitTxt}.</p>
-      <div class="row">${mine ? '<button class="btn" data-act="autoPick">Let scouts pick</button>' : '<button class="btn primary" data-act="toMyPick">Sim to my pick</button>'}<button class="btn" data-act="draftRest">Auto-draft the rest</button></div></section>`;
+      <div class="row">${mine ? '<button class="btn" data-act="autoPick">Let scouts pick</button><button class="btn" data-act="shopPick">Shop this pick</button>' : `<button class="btn primary" data-act="toMyPick">Sim to my pick</button><button class="btn" data-act="callPick">Call ${esc(L.teams[c].city)} about #${D.pick + 1}</button>`}<button class="btn" data-act="draftRest">Auto-draft the rest</button></div>
+      <p class="small">${mine ? 'Shop this pick to see what teams will give you to move down. Offers appear above.' : 'To move up, call the team on the clock: the Moves tab opens with their pick selected, so you can add what you would give.'}</p></section>`;
   }
   const show = ui.draftShow || 60;
   const all = D.pool.map(i => L.players[i]).filter(p => ui.draftGrp === 'ALL' || (ui.draftGrp === 'SEEN' ? p.seen : p.pos === ui.draftGrp)).sort((a, b) => b.scout - a.scout);
@@ -3048,7 +3479,7 @@ function vRoster() {
     <p class="small">Highlighted positions are starters; the number is minutes per game in your rotation (Coach tab). Tap a player for options.</p>${chips('grp', ui.grp)}${sortSeg('rSort', true, 'pos')}
     <div class="list">${list.map(p => { const m = mins[p.id]; return `<div class="pl ${ui.open === p.id ? 'open' : ''}">
       <button class="pl-main" data-act="open" data-id="${p.id}"><span class="pos ${m && m.start ? 'st' : ''}">${esc(p.pos)}</span>
-      <div class="pl-name">${esc(p.name)}${p.inj ? `<span class="inj">INJ ${injTxt(p)}</span>` : ''}<div class="pl-sub">${p.holdout ? '<b class="bad">HOLDOUT</b> · ' : ''}Age ${p.age} · ${p.yrs ? p.yrs + ' yr' + (p.yrs > 1 ? 's' : '') : 'Rookie'} · ${m ? Math.round(m.min) + ' min · ' : 'Out of rotation · '}<span class="${G.mor(p) < 50 ? 'bad' : (G.mor(p) >= 75 ? 'good' : '')}">${G.moraleWord(p)}</span> · ${conText(p)}${statLine(p) ? ' · ' + statLine(p) : ''}</div></div>
+      <div class="pl-name">${esc(p.name)}${p.inj ? `<span class="inj">INJ ${injTxt(p)}</span>` : ''}<div class="pl-sub">${p.holdout ? '<b class="bad">HOLDOUT</b> · ' : ''}${p.tradeReq ? '<b class="bad">WANTS OUT</b> · ' : ''}${p.promise ? '<b class="warn">PROMISED MINUTES</b> · ' : ''}Age ${p.age} · ${p.yrs ? p.yrs + ' yr' + (p.yrs > 1 ? 's' : '') : 'Rookie'} · ${m ? Math.round(m.min) + ' min · ' : 'Out of rotation · '}<span class="${G.mor(p) < 50 ? 'bad' : (G.mor(p) >= 75 ? 'good' : '')}">${G.moraleWord(p)}</span> · ${conText(p)}${statLine(p) ? ' · ' + statLine(p) : ''}</div></div>
       <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></button>
       ${ui.open === p.id ? `<div class="pl-act">${p.college || p.draft ? `<span class="small">${esc(p.college || '')}${p.draft ? ` · drafted ${p.draft.year} R${p.draft.rnd} #${p.draft.pick}` : ''}</span>` : ''}<button class="btn sm" data-act="statPlayer" data-id="${p.id}">Career stats</button>${(p.holdout || (G.mor(p) < 50 && G.underpaid(L, p))) && p.con ? `<button class="btn sm primary" data-act="reneg" data-id="${p.id}">New deal ${G.money(G.renegotiatePrice(L, p))}</button>` : ''}${G.extInfo(L, p) ? `<button class="btn sm primary" data-act="extend" data-id="${p.id}">Extend ${G.money(G.extInfo(L, p).sal)}</button>` : ''}${G.canPlayHurt(p) ? `<button class="btn sm" data-act="hurt" data-id="${p.id}">${p.playHurt ? 'Rest him' : 'Play through injury'}</button>` : ''}${confirmBtn('rel' + p.id, 'Release')}<button class="btn sm" data-act="shop" data-id="${p.id}">Offer in trade</button></div>` : ''}
     </div>`; }).join('')}</div></section>`;
@@ -3091,13 +3522,17 @@ function playerCard(p) {
   const cols = [{ h: 'Season', f: r => typeof r.y === 'number' ? SL(r.y) : r.y }, { h: 'Tm', f: tm }].concat(perGameCols(false));
   const tot = sumHist(p);
   const totRow = { y: 'Career', s: Object.assign({}, tot, { tm: null }) };
-  const aw = (p.hof > 0 ? `<span class="award">Hall of Fame ${p.hof + 1}</span>` : '') + (p.rings ? `<span class="award">${p.rings}× champion</span>` : '') + (p.awards || []).map(a => `<span class="award">${SL(a.y)} ${esc(G.AWARD_NAMES[a.a])}</span>`).join('');
+  const cnt = {}; (p.awards || []).forEach(a => { if (G.MULTI_AWARDS.includes(a.a) || /T$/.test(a.a)) cnt[a.a] = (cnt[a.a] || 0) + 1; });
+  const jr = Object.entries(L.jerseys || {}).filter(([t, a]) => a.some(j => j.pid === p.id)).map(([t]) => `<span class="award">Jersey retired by ${esc(L.teams[t].abbr)}</span>`).join('');
+  const aw = jr + (p.hof > 0 ? `<span class="award">Hall of Fame ${p.hof + 1}</span>` : '') + (p.rings ? `<span class="award">${p.rings}× champion</span>` : '')
+    + (p.awards || []).filter(a => !(G.MULTI_AWARDS.includes(a.a) || /T$/.test(a.a))).map(a => `<span class="award">${SL(a.y)} ${esc(G.AWARD_NAMES[a.a])}</span>`).join('')
+    + Object.entries(cnt).map(([k, n]) => `<span class="award">${n > 1 ? n + '× ' : ''}${esc(G.AWARD_NAMES[k])}</span>`).join('');
   return `<section class="card hero"><div class="split"><div><div class="eyebrow">${esc(p.pos)} · age ${p.age} · ${p.team >= 0 && L.teams[p.team] ? esc(tname(L.teams[p.team])) : (p.team === -2 || p.retiredYear ? 'Retired' : 'Free agent')}</div><h2>${esc(p.name)}</h2></div><button class="btn sm" data-act="statPlayer" data-id="">Close</button></div>
     ${aw ? `<div class="awards">${aw}</div>` : ''}
     ${ys.length ? table(cols, rows.concat([totRow])) : '<p class="small">No NBA stats in this league yet. Stats before 1976-77 are not imported.</p>'}</section>`;
 }
 function vStats() {
-  const seg = [['team', 'Teams'], ['season', 'My players'], ['career', 'Careers'], ['awards', 'Awards'], ['hist', 'History']], mode = ui.st || 'team';
+  const seg = [['team', 'Teams'], ['season', 'My players'], ['career', 'Careers'], ['awards', 'Awards'], ['hist', 'Records']], mode = ui.st || 'team';
   let h = `<div class="seg five">${seg.map(([k, n]) => `<button class="${mode === k ? 'on' : ''}" data-act="st" data-id="${k}">${n}</button>`).join('')}</div>`;
   if (ui.statPid && G.getP(L, ui.statPid)) h += playerCard(G.getP(L, ui.statPid));
   const years = statYears();
@@ -3139,40 +3574,59 @@ function vStats() {
   if (mode === 'awards') {
     const A = L.awards || {}, ys = Object.keys(A).map(Number).sort((a, b) => b - a);
     const one = (yy, k) => { const list = [].concat(A[yy][k] || []); return list.map(a => `<div class="aw ${a.tid === L.user ? 'mine' : ''}"><span class="aw-k">${esc(G.AWARD_NAMES[k])}</span><span class="aw-p"><button class="lnk" data-act="statPlayer" data-id="${a.pid}">${esc(a.pos)} ${esc(a.name)}</button>, ${esc(L.teams[a.tid].abbr)}</span><span class="small">${esc(a.line)}</span></div>`).join(''); };
-    h += `<section class="card"><h3>Awards</h3><p class="small">Regular-season awards are given when the regular season ends; Finals MVP after the Finals. Defensive Player and Sixth Man start in 1982-83, Most Improved in 1985-86, as they did in real life.</p>${ys.length ? ys.map(yy => `<div class="aw-year"><div class="eyebrow">${SL(yy)}</div>${['mvp', 'fmvp', 'dpoy', 'roy', 'smoy', 'mip', 'alnba'].filter(k => A[yy][k]).map(k => one(yy, k)).join('')}</div>`).join('') : '<p>No awards yet. The first ones are given when the regular season ends.</p>'}</section>`;
+    h += `<section class="card"><h3>Awards</h3><p class="small">All-Stars are named at midseason. Other awards come when the regular season ends; Finals MVP after the Finals. Defensive Player and Sixth Man start in 1982-83, Most Improved in 1985-86, and the All-NBA Third Team in 1988-89, as they did in real life.</p>${ys.length ? ys.map(yy => `<div class="aw-year"><div class="eyebrow">${SL(yy)}</div>${['mvp', 'fmvp', 'dpoy', 'roy', 'smoy', 'mip', 'asgmvp'].filter(k => A[yy][k]).map(k => one(yy, k)).join('')}
+      ${['alnba', 'alnba2', 'alnba3', 'alldef', 'alldef2'].filter(k => A[yy][k]).map(k => `<div class="aw"><span class="aw-k">${esc(G.AWARD_NAMES[k])}</span><span class="small">${A[yy][k].map(a => `<button class="lnk" data-act="statPlayer" data-id="${a.pid}">${esc(a.name)}</button> <span class="${a.tid === L.user ? 'good' : ''}">${esc(L.teams[a.tid].abbr)}</span>`).join(' · ')}</span></div>`).join('')}
+      ${['ptsT', 'rebT', 'astT', 'stlT', 'blkT'].some(k => A[yy][k]) ? `<div class="aw"><span class="aw-k">Statistical leaders</span><span class="small">${['ptsT', 'rebT', 'astT', 'stlT', 'blkT'].filter(k => A[yy][k]).map(k => `${esc(A[yy][k].line)} <button class="lnk" data-act="statPlayer" data-id="${A[yy][k].pid}">${esc(A[yy][k].name)}</button>`).join(' · ')}</span></div>` : ''}
+      ${A[yy].allstar ? `<div class="aw"><span class="aw-k">All-Stars (${A[yy].allstar.length})</span><span class="small">${A[yy].allstar.map(a => `<span class="${a.tid === L.user ? 'good' : ''}">${esc(a.name)}</span>`).join(', ')}</span></div>` : ''}</div>`).join('') : '<p>No awards yet. All-Stars are named midseason; the rest come when the regular season ends.</p>'}</section>`;
   }
   return h;
 }
 function historyView() {
-  let h = '';
-  const t = me(), all = G.allPlayers(L);
-  const recs = [['pts', 'Points'], ['reb', 'Rebounds'], ['ast', 'Assists'], ['stl', 'Steals'], ['blk', 'Blocks'], ['tpm', '3-pointers']];
-  const season = {}, career = {};
-  for (const p of all) for (const y in p.hist) {
-    const s = p.hist[y]; if (s.tm !== L.user || !s.g) continue;
-    for (const [k] of recs) {
-      const v = s[k] || 0; if (!v) continue;
-      const pgv = v / s.g;
-      if (s.g >= 40 && (!season[k] || pgv > season[k].v)) season[k] = { v: pgv, p, y };
-      const c = (career[k] = career[k] || {}); c[p.id] = (c[p.id] || 0) + v;
-    }
-  }
-  const careerBest = k => { const c = career[k] || {}; let best = null; for (const id in c) if (!best || c[id] > best.v) best = { v: c[id], p: G.getP(L, +id) }; return best; };
-  const recRows = recs.map(([k, n]) => { const s = season[k], c = careerBest(k);
-    return `<tr><td class="l">${n}</td><td class="l">${s ? `<button class="lnk" data-act="statPlayer" data-id="${s.p.id}">${esc(s.p.name)}</button> ${f1(s.v)} (${SL(+s.y)})` : '–'}</td><td class="l">${c && c.p ? `<button class="lnk" data-act="statPlayer" data-id="${c.p.id}">${esc(c.p.name)}</button> ${num(c.v)}` : '–'}</td></tr>`; }).join('');
-  const hs = t.hist.filter(s => !s.pre);
-  const best = hs.slice().sort((a, b) => b.w / (b.w + b.l) - a.w / (a.w + a.l))[0];
-  const titles = hs.filter(s => s.res === 'Won NBA title').map(s => SL(s.y));
-  h += `<section class="card"><h3>${esc(t.name)} records</h3><p class="small">Only seasons played for your franchise in this league count. Single-season marks are per game (40+ games).${titles.length ? ` Titles: <b>${titles.join(', ')}</b>.` : ''}${best ? ` Best season: ${SL(best.y)} (${best.w}-${best.l}).` : ''}</p>
-    <div class="tscroll"><table class="tbl stat"><thead><tr><th class="l">Record</th><th class="l">Single season</th><th class="l">Career total</th></tr></thead><tbody>${recRows}</tbody></table></div></section>`;
+  let h = recordBookView();
   const ys = Object.keys(L.myGames || {}).map(Number).sort((a, b) => b - a);
   if (ys.length) {
     const y = ys.includes(ui.histYear) ? ui.histYear : ys[0];
-    h += `<section class="card"><h3>Your past games</h3><p class="small">The last five seasons are kept.</p><div class="chips">${ys.map(v => `<button class="chip ${v === y ? 'on' : ''}" data-act="histYear" data-id="${v}">${SL(v)}</button>`).join('')}</div>${L.myGames[y].map((g, i) => gameLine(g, 'a:' + y + ':' + i, g.wk)).join('')}</section>`;
+    h += `<section class="card"><h3>Your past games</h3><p class="small">Results for the last five seasons. Box scores for the last two, and playoff box scores for all five.</p><div class="chips">${ys.map(v => `<button class="chip ${v === y ? 'on' : ''}" data-act="histYear" data-id="${v}">${SL(v)}</button>`).join('')}</div>${L.myGames[y].map((g, i) => gameLine(g, 'a:' + y + ':' + i, g.wk)).join('')}</section>`;
   }
   const hof = (L.hof || []).slice().reverse();
   h += `<section class="card"><h3>Hall of Fame</h3><p class="small">Players become eligible after four full seasons away from the game. The bar is roughly the top 4% of long careers at guard, forward, and center, counting only this league.</p>
     ${hof.length ? `<div class="tscroll"><table class="tbl stat"><thead><tr><th class="l">Class</th><th class="l">Player</th><th class="l">Teams</th></tr></thead><tbody>${hof.map(x => `<tr class="${x.teams.includes(L.user) ? 'me' : ''}"><td class="l">${x.y + 1}</td><td class="l">${esc(x.pos)} <button class="lnk" data-act="statPlayer" data-id="${x.id}">${esc(x.name)}</button></td><td class="l">${x.teams.map(tid => L.teams[tid] ? esc(L.teams[tid].abbr) : '').join(', ')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="small">No one has been inducted yet. The first classes usually arrive in the late 1980s.</p>'}</section>`;
+  return h;
+}
+
+const REC_SEA = [['pts', 'Points / G'], ['reb', 'Rebounds / G'], ['ast', 'Assists / G'], ['stl', 'Steals / G'], ['blk', 'Blocks / G'], ['ptsT', 'Total points'], ['tpm', '3-pointers'], ['fgp', 'FG%'], ['ftp', 'FT%']];
+const REC_CAR = [['pts', 'Points'], ['reb', 'Rebounds'], ['ast', 'Assists'], ['stl', 'Steals'], ['blk', 'Blocks'], ['tpm', '3-pointers'], ['g', 'Games'], ['ppg', 'Points / G']];
+function recordBookView() {
+  const sc = ui.recScope == null ? String(L.user) : ui.recScope, fr = sc !== 'league', tid = fr ? +sc : null;
+  if (fr && !L.teams[tid]) { ui.recScope = String(L.user); return recordBookView(); }
+  const RB = G.recordBook(L, tid), T = fr ? L.teams[tid] : null;
+  const opts = `<option value="league"${!fr ? ' selected' : ''}>Whole league</option>` + L.teams.slice().sort((a, b) => tname(a).localeCompare(tname(b))).map(t => `<option value="${t.id}"${tid === t.id ? ' selected' : ''}>${esc(tname(t))}${t.id === L.user ? ' (you)' : ''}</option>`).join('');
+  const pl = id => { const p = G.getP(L, id); return p ? `<button class="lnk" data-act="statPlayer" data-id="${p.id}">${esc(p.name)}</button>` : ''; };
+  const ab = x => x != null && L.teams[x] ? esc(L.teams[x].abbr) : '';
+  const fmtS = (k, v) => k === 'fgp' || k === 'ftp' ? v.toFixed(3).replace(/^0/, '') : (k === 'ptsT' || k === 'tpm') ? num(v) : f1(v);
+  const sk = REC_SEA.some(x => x[0] === ui.recKey) ? ui.recKey : 'pts', ck = REC_CAR.some(x => x[0] === ui.recCar) ? ui.recCar : 'pts';
+  const seaRows = RB.season[sk], carRows = RB.career[ck];
+  const teamRow = x => `<tr class="${!fr && x.tid === L.user ? 'me' : ''}"><td>${SL(x.y)}</td>${fr ? '' : `<td class="l">${ab(x.tid)}</td>`}<td>${x.w}-${x.l}</td><td>${(x.diff > 0 ? '+' : '') + f1(x.diff)}</td><td class="l small">${esc(x.res || '')}</td></tr>`;
+  let h = `<section class="card"><h3>Record book</h3><label class="fld">Show records for<select id="recScope">${opts}</select></label>
+    <p class="small">Counts only seasons played in this league. Per-game records need 70% of the season's games. Records update when a season ends.</p></section>`;
+  if (fr) {
+    const S = RB.summary, ty = (RB.titles[tid] || []).map(SL);
+    h += `<section class="card"><h3>${esc(tname(T))}</h3><div class="kv"><div><span class="lbl">Seasons</span><b>${S.seasons}</b></div><div class="w2"><span class="lbl">All-time</span><b>${S.w}-${S.l}</b></div><div><span class="lbl">Playoffs</span><b>${S.playoffs}</b></div><div><span class="lbl">Finals</span><b>${S.finals}</b></div><div><span class="lbl">Titles</span><b>${ty.length}</b></div></div>
+      ${ty.length ? `<p class="small">Champions: <b>${ty.join(', ')}</b></p>` : ''}</section>`;
+    h += `<section class="card"><h3>Retired jerseys</h3>${RB.jerseys.length ? `<table class="tbl"><tbody>${RB.jerseys.map(j => `<tr><td class="l">${esc(j.pos)} ${pl(j.pid)}</td><td class="small">${j.from}-${String(j.to + 1).slice(2)}</td><td class="small">retired ${j.y}</td></tr>`).join('')}</tbody></table>` : '<p class="small">None yet.</p>'}
+      <p class="small">A franchise retires a player's jersey when he leaves the game after at least 4 strong seasons there, or when he makes the Hall of Fame.</p>
+      ${RB.hof.length ? `<p class="small">Hall of Famers who played here: ${RB.hof.map(x => pl(x.id)).join(', ')}</p>` : ''}</section>`;
+  } else {
+    const tl = Object.entries(RB.titles).map(([t, ys]) => ({ t: +t, ys })).sort((a, b) => b.ys.length - a.ys.length);
+    h += `<section class="card"><h3>Most titles</h3>${tl.length ? `<table class="tbl"><tbody>${tl.map(x => `<tr class="${x.t === L.user ? 'me' : ''}"><td class="l">${esc(tname(L.teams[x.t]))}</td><td><b>${x.ys.length}</b></td><td class="l small">${x.ys.map(SL).join(', ')}</td></tr>`).join('')}</tbody></table>` : '<p class="small">No champions yet.</p>'}</section>`;
+  }
+  h += `<section class="card"><h3>Single-season records</h3><div class="chips">${REC_SEA.map(([k, n]) => `<button class="chip ${k === sk ? 'on' : ''}" data-act="recKey" data-id="${k}">${n}</button>`).join('')}</div>
+    ${seaRows.length ? `<table class="tbl rb"><tbody>${seaRows.map((x, i) => `<tr class="${!fr && x.tm === L.user ? 'me' : ''}"><td>${i + 1}</td><td class="l">${pl(x.p.id)}</td>${fr ? '' : `<td>${ab(x.tm)}</td>`}<td>${SL(x.y)}</td><td><b>${fmtS(sk, x.v)}</b></td></tr>`).join('')}</tbody></table>` : '<p class="small">No completed seasons yet.</p>'}</section>`;
+  h += `<section class="card"><h3>${fr ? 'Franchise leaders' : 'Career leaders'}</h3><div class="chips">${REC_CAR.map(([k, n]) => `<button class="chip ${k === ck ? 'on' : ''}" data-act="recCar" data-id="${k}">${n}</button>`).join('')}</div>
+    ${carRows.length ? `<table class="tbl rb"><tbody>${carRows.map((x, i) => `<tr class="${!fr && x.p.team === L.user ? 'me' : ''}"><td>${i + 1}</td><td class="l">${pl(x.p.id)}${x.p.team >= 0 ? '' : ' <span class="small">ret.</span>'}</td><td class="small">${x.seasons} yrs</td><td><b>${ck === 'ppg' ? f1(x.v) : num(x.v)}</b></td></tr>`).join('')}</tbody></table>` : '<p class="small">No completed seasons yet.</p>'}
+    ${ck === 'ppg' ? `<p class="small">Needs ${fr ? 250 : 400} games.</p>` : ''}</section>`;
+  h += `<section class="card"><h3>Best seasons</h3><table class="tbl rb"><tbody>${RB.best.map(teamRow).join('') || '<tr><td>None yet.</td></tr>'}</tbody></table></section>`;
+  h += `<section class="card"><h3>Worst seasons</h3><table class="tbl rb"><tbody>${RB.worst.map(teamRow).join('') || '<tr><td>None yet.</td></tr>'}</tbody></table></section>`;
   return h;
 }
 
@@ -3223,6 +3677,8 @@ function vLeagueInner() {
   }
   if (ui.lg === 'po') h += L.playoffs ? playoffResults() : '<section class="card"><p>The playoffs start when the regular season ends.</p></section>';
   if (ui.lg === 'hist') {
+    const AS = L.allstar || {}, asy = Object.keys(AS).map(Number).sort((a, b) => b - a);
+    if (asy.length) h += `<section class="card"><h3>All-Star Games</h3><table class="tbl"><tbody>${asy.map(y => { const g = AS[y], mv = G.getP(L, g.mvp); return `<tr><td>${SL(y)}</td><td class="l">${g.es > g.ws ? 'East' : 'West'} ${Math.max(g.es, g.ws)}-${Math.min(g.es, g.ws)}</td><td class="l small">MVP ${mv ? esc(mv.name) : ''}</td></tr>`; }).join('')}</tbody></table></section>`;
     h += `<section class="card"><h3>Champions</h3>${L.champs.length ? `<table class="tbl"><tbody>${L.champs.map(c => `<tr class="${c.champ === L.user ? 'me' : ''}"><td>${SL(c.y)}</td><td class="l">${esc(tname(L.teams[c.champ]))}</td><td class="l small">over ${esc(L.teams[c.loser].abbr)}</td><td>${c.score}</td></tr>`).join('')}</tbody></table>` : '<p>No champions crowned yet.</p>'}</section>`;
     const hs = me().hist.slice().reverse();
     h += `<section class="card"><h3>${esc(me().name)} by season</h3>${hs.length ? `<table class="tbl"><tbody>${hs.map(s => `<tr><td>${SL(s.y)}</td><td>${s.w}-${s.l}</td><td class="l">${esc(s.res)}</td></tr>`).join('')}</tbody></table>` : '<p>Your first season is under way.</p>'}</section>`;
@@ -3276,7 +3732,13 @@ function vMoves() {
     ${ui.tview === 'k' ? '' : sortSeg('tSort', true, 'pos')}<div class="trade">${col('give', mine, L.user, 'You send')}${col('get', theirs, tt, 'You receive')}</div>
     <div class="trade summary"><div><div class="eyebrow">Sending</div>${chosen(ui.give)}</div><div><div class="eyebrow">Receiving</div>${chosen(ui.get)}</div></div>
     ${gauge}
-    <div class="row"><button class="btn primary" data-act="propose"${ready ? '' : ' disabled'}>Propose trade</button><button class="btn" data-act="clearTrade">Clear</button></div></section>`;
+    <div class="row"><button class="btn primary" data-act="propose"${ready ? '' : ' disabled'}>Propose trade</button><button class="btn" data-act="clearTrade">Clear</button></div></section>
+  <section class="card"><h3>Trading block</h3>
+    <p class="small">Shop what's in <b>You send</b> to the whole league. Every team that wants it makes its best offer, and the top five show up under Trade offers at the top of this tab. Offers last a week.</p>
+    <div class="fld">What you want back<div class="seg">${[['any', 'Best offer'], ['players', 'Players'], ['picks', 'Picks'], ['young', 'Young (25 and under)']].map(([k, n]) => `<button class="${(ui.blockKind || 'any') === k ? 'on' : ''}" data-act="blockKind" data-id="${k}">${n}</button>`).join('')}</div></div>
+    <label class="fld">Position you need<select id="blockPos">${['ALL'].concat(G.POS).map(g => `<option value="${g}"${(ui.blockPos || 'ALL') === g ? ' selected' : ''}>${g === 'ALL' ? 'Any position' : g}</option>`).join('')}</select></label>
+    <div class="row"><button class="btn primary" data-act="shopBlock"${ui.give.length ? '' : ' disabled'}>Find offers for ${ui.give.length ? ui.give.length + ' item' + (ui.give.length > 1 ? 's' : '') : 'what you send'}</button></div>
+    ${ui.give.length ? '' : '<p class="small">Pick players or picks under You send first.</p>'}</section>`;
   return h;
 }
 
@@ -3423,6 +3885,9 @@ function act(a, el) {
     case 'dispPass': G.dispPass(L); G.dispAI(L); break;
     case 'dispEnd': G.endDispersal(L); flash('Training camp is open.'); break;
     case 'erving': { const e = G.answerErving(L, id === '1'); if (e) flash(e); break; }
+    case 'decide': { const [key, k] = id.split('|'); const e = G.answerDecision(L, key, k); flash(e || 'Decision made. Details are on the wire.'); break; }
+    case 'recKey': ui.recKey = id; break;
+    case 'recCar': ui.recCar = id; break;
     case 'autocut': G.cutTo(L, L.user, G.rules(L.year).rosterMax); break;
     case 'startSeason': { const e = G.startRegular(L); if (e) flash(e); break; }
     case 'simNext': G.simNextGame(L); break;
@@ -3465,10 +3930,16 @@ function act(a, el) {
     }
     case 'shop': ui.give = ['p:' + id]; ui.get = []; ui.tview = 'p'; ui.tab = 'moves'; break;
     case 'tview': ui.tview = id; break;
-    case 'acceptOffer': { const e = G.acceptOffer(L, +id); flash(e || 'Trade accepted.'); break; }
+    case 'acceptOffer': { const e = G.acceptOffer(L, +id); flash(e || 'Trade accepted.'); if (!e && L.phase === 'draft') G.draftUntilUser(L); break; }
+    case 'promise': { const e = G.promiseMinutes(L, +id); flash(e || 'Promise made. Play him 26+ minutes a game for six weeks.'); break; }
+    case 'talk': { const e = G.talkDown(L, +id); flash(e || 'He withdrew his request.'); break; }
+    case 'shopPick': { const r = G.shopPick(L); flash(r.msg); window.scrollTo(0, 0); break; }
+    case 'callPick': { const D = L.draft, c = G.onClock(L); if (c == null) break; ui.tradeTeam = c; ui.get = ['k:' + D.slotPick[D.pick]]; ui.give = []; ui.tview = 'k'; ui.tab = 'moves'; window.scrollTo(0, 0); flash(`Calling ${L.teams[c].city}. Their pick #${D.pick + 1} is selected. Add your picks or players under You send, then propose. Come back to the Office tab to keep drafting.`); break; }
     case 'rejectOffer': G.rejectOffer(L, +id); flash('Offer rejected.'); break;
     case 'tp': { const side = el.dataset.side, arr = ui[side]; const i = arr.indexOf(id); if (i >= 0) arr.splice(i, 1); else if (arr.length < 6) arr.push(id); else flash('A deal can include up to 6 items per side.'); break; }
     case 'clearTrade': ui.give = []; ui.get = []; break;
+    case 'blockKind': ui.blockKind = id; break;
+    case 'shopBlock': { const pk = sel => ({ players: sel.filter(x => x[0] === 'p').map(x => +x.slice(2)), picks: sel.filter(x => x[0] === 'k').map(x => +x.slice(2)) }); const r = G.shopBlock(L, pk(ui.give), { kind: ui.blockKind || 'any', pos: ui.blockPos || 'ALL' }); flash(r.msg); if (r.offers.length) window.scrollTo(0, 0); break; }
     case 'propose': { const pk = sel => ({ players: sel.filter(x => x[0] === 'p').map(x => +x.slice(2)), picks: sel.filter(x => x[0] === 'k').map(x => +x.slice(2)) }); const tt = ui.tradeTeam == null || ui.tradeTeam === L.user ? L.teams.find(t => t.id !== L.user).id : ui.tradeTeam; const r = G.proposeTrade(L, tt, pk(ui.give), pk(ui.get)); flash(r.msg); if (r.ok) { ui.give = []; ui.get = []; } break; }
     case 'coach': me().coach[el.dataset.key] = el.dataset.key === 'rot' ? +id : id; break;
     case 'plan': G.setGamePlan(L, el.dataset.key, id || null); break;
@@ -3519,17 +3990,19 @@ document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'tGrp-give' || t.id === 'tGrp-get') { ui[t.id === 'tGrp-give' ? 'tGrpGive' : 'tGrpGet'] = t.value; render(); }
   else if (t.id === 'planDef') { G.setGamePlan(L, 'def', t.value || null); save(); render(); }
+  else if (t.id === 'blockPos') { ui.blockPos = t.value; render(); }
   else if (t.id === 'planOff') { G.setGamePlan(L, 'off', t.value || null); save(); render(); }
   else if (t.id === 'tradeTeam') { ui.tradeTeam = +t.value; ui.get = []; render(); }
   else if (t.id === 'tempo') { me().coach.tempo = +t.value; save(); render(); }
   else if (t.id === 'youth') { me().coach.youth = t.checked; save(); }
   else if (t.id === 'pickTeam') ui.newTeam = t.value;
+  else if (t.id === 'recScope') { ui.recScope = t.value; render(); }
   else if (t.id === 'impYear') ui.impYear = +t.value;
   else if (t.id === 'futYear') ui.futYear = +t.value;
   else if (t.id === 'impFiles' && t.files.length) onFiles([...t.files]);
   else if (t.id === 'loadSave' && t.files[0]) {
     t.files[0].text().then(s => {
-      try { const o = JSON.parse(s); if (!o.league || !o.league.teams || o.league.sport !== 'nba') throw 0; L = o.league; G.ensureLeague(L); IM = o.imports || IM; ui.tab = 'home'; flash(`Restored your ${SL(L.year)} league.`); save(); }
+      try { const o = JSON.parse(s); if (!o.league || !o.league.teams || o.league.sport !== 'nba') throw 0; L = o.league; G.ensureLeague(L); IM = o.imports || IM; G.rescoreDraft(L, IM); ui.tab = 'home'; flash(`Restored your ${SL(L.year)} league.`); save(); }
       catch (err) { flash('That file is not a Hardwood GM backup.'); }
       render();
     });
@@ -3541,7 +4014,7 @@ document.addEventListener('input', e => { if (e.target.id === 'tempo') { const h
   await DB.open();
   const [l, im] = await Promise.all([DB.get('league'), DB.get('imports')]);
   if (im && im.pg) IM = Object.assign({ pg: {}, adv: {}, drafts: {}, future: {} }, im);
-  if (l && l.teams) { L = l; G.ensureLeague(L); }
+  if (l && l.teams) { L = l; G.ensureLeague(L); if (G.rescoreDraft(L, IM)) save(); }
   render();
   if ('serviceWorker' in navigator && location.protocol === 'https:' && !/claude\.ai|claudeusercontent/.test(location.host)) {
     try { navigator.serviceWorker.register('sw.js'); } catch (e) { /* offline install unavailable */ }
