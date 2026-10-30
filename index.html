@@ -619,8 +619,8 @@ function finishProfile(pos, raw, year) {
 const RANK_CURVE = [[1, 95], [5, 89], [15, 83], [30, 78], [60, 72], [110, 65], [180, 58], [260, 51], [330, 45], [400, 40]];
 function rankRating(rank, n) { const r = rank * 400 / Math.max(n, 50); return Math.round(interp(RANK_CURVE, r)); }
 // Later seasons (optional import): how good each player really became. Rated on the same rank scale.
-function futureRatings(future) {
-  const years = Object.keys(future || {}); if (!years.length) return null;
+function futureRatings(future, after) {
+  const years = Object.keys(future || {}).filter(y => after == null || +y > after); if (!years.length) return null;
   const best = {};
   for (const y of years) {
     const rows = mergeSeason(future[y] || []); if (!rows.length) continue;
@@ -683,8 +683,8 @@ function shootingFor(pos, r, hint) {
 }
 // One-time fix for leagues started before this version: shooting from your imported later seasons and draft tables.
 function fixShooting(L, imports) {
-  if (L.shoot2 || !imports) return false;
-  L.shoot2 = true;
+  if (L.shoot3 || !imports) return false;
+  L.shoot3 = true;
   const hints = careerHints(imports), rows = {};
   for (const y in imports.drafts || {}) (imports.drafts[y] || []).forEach(r => rows[cleanName(r.Player).toLowerCase()] = r);
   for (const id in L.players) {
@@ -707,7 +707,7 @@ function careerHints(imports) {
     if (y >= 1979 && fga >= 3 && has(r['3PA']) && (e.vol == null || vol > e.vol)) { e.vol = vol; e.t3 = clamp(num(r['3PA']) / fga / Math.max(0.005, era(y).t3share), 0, 3.5); }
     if (num(r.FTA) >= 1 && has(r.FT) && (e.ftVol == null || vol > e.ftVol)) { e.ftVol = vol; e.ft = clamp(num(r.FT) / num(r.FTA), 0.4, 0.93); }
   });
-  if (imports) { for (const y in imports.future || {}) add(imports.future[y], +y); for (const lg in imports.pg || {}) add(imports.pg[lg], 1975); }
+  if (imports) { for (const y in imports.future || {}) add(imports.future[y], +y - 1); for (const lg in imports.pg || {}) add(imports.pg[lg], 1975); }
   return m;
 }
 // Who could enter the draft: seniors and a few hardship cases early on, high-schoolers 1995-2005, the age-19 rule from 2006.
@@ -916,7 +916,78 @@ function applyAlign(L, y) {
 
 /* ---------- league creation ---------- */
 // imports: { pg: { NBA: rows, ABA: rows }, adv: { NBA: rows, ABA: rows }, drafts: { year: rows } }
+// Basketball-Reference team codes over the years, to franchise keys.
+const CODE_KEY = { ATL: 'atl', BOS: 'bos', BUF: 'lac', SDC: 'lac', LAC: 'lac', NYK: 'nyk', NYN: 'bkn', NJN: 'bkn', BRK: 'bkn', BKN: 'bkn', PHI: 'phi', CLE: 'cle', HOU: 'hou',
+  NOJ: 'uta', UTA: 'uta', SAS: 'sas', WSB: 'was', WAS: 'was', CHI: 'chi', DEN: 'den', DET: 'det', IND: 'ind', KCK: 'sac', SAC: 'sac', MIL: 'mil', GSW: 'gsw', LAL: 'lal',
+  PHO: 'pho', PHX: 'pho', POR: 'por', SEA: 'okc', OKC: 'okc', DAL: 'dal', CHH: 'nop', NOH: 'nop', NOK: 'nop', NOP: 'nop', MIA: 'mia', MIN: 'min', ORL: 'orl', TOR: 'tor',
+  VAN: 'mem', MEM: 'mem', CHA: 'cha', CHO: 'cha' };
+// The league's teams as of a season: 1976 teams plus every move, rename, and expansion up to that year.
+function teamsAt(L, y) {
+  TEAMS_1976.forEach((a, i) => L.teams.push(mkTeam(i, a[0], a[1], a[2], a[3])));
+  const joined = [];
+  for (let yy = 1977; yy <= y; yy++) for (const e of EVENTS[yy] || []) {
+    if (e.t === 'rename') { const t = L.teams.find(x => x.key === e.key); if (t) { if (e.city) t.city = e.city; if (e.name) t.name = e.name; if (e.abbr) t.abbr = e.abbr; } }
+    else if (e.t === 'expand' && !L.teams.some(t => t.key === e.team[0])) { const [key, abbr, city, name] = e.team; L.teams.push(mkTeam(L.teams.length, key, abbr, city, name)); if (yy === y) joined.push(L.teams[L.teams.length - 1].id); }
+  }
+  applyAlign(L, y);
+  return joined;
+}
+function teamsFor(y) { const L = { teams: [] }; teamsAt(L, y); return L.teams.map(t => ({ key: t.key, abbr: t.abbr, city: t.city, name: t.name })); }
+// Start years you can pick: 1976, or any season whose previous year's per-game table you imported (ending-year key = start year).
+function startYears(imports) { return [1976].concat(Object.keys((imports && imports.future) || {}).map(Number).filter(y => y >= 1977 && y <= 2025 && ((imports.future[y] || []).length > 100)).sort((a, b) => a - b)); }
+function newLeagueAt(imports, userKey, opts) {
+  const Y = opts.start, im = imports || {};
+  const L = { v: 1, sport: 'nba', year: Y, phase: 'preseason', day: 0, teams: [], players: {}, nextId: 1, schedule: [], playoffs: null, draft: null, news: [], champs: [], user: 0, startYear: Y };
+  setEra(L);
+  const joined = teamsAt(L, Y);
+  const u = L.teams.find(t => t.key === userKey); L.user = u ? u.id : 0;
+  const idOf = code => { const k = CODE_KEY[code]; const t = k && L.teams.find(x => x.key === k); return t ? t.id : null; };
+  // rosters and ratings: last season's per-game table (Basketball-Reference ending year = Y)
+  const pg = mergeSeason(im.future[Y] || []);
+  const raw = pg.map(r => rateRow(r, null, false).ovr + Math.random() * 0.01);
+  const order = raw.map((v, i) => i).sort((a, b) => raw[b] - raw[a]), rankOf = {};
+  order.forEach((i, k) => rankOf[i] = k + 1);
+  pg.forEach((r, i) => r._ovr = rankRating(rankOf[i], pg.length));
+  const fut = futureRatings(im.future, Y), counts = {};
+  const drafted = {}; for (const dy in im.drafts || {}) if (+dy < Y) (im.drafts[dy] || []).forEach(r => { drafted[cleanName(r.Player).toLowerCase()] = { year: +dy, pick: num(r.Pk) || num(r.Rk) || 0 }; });
+  for (const r of pg) {
+    const tid = idOf(r._tm), team = tid != null && !joined.includes(tid) ? tid : -1;
+    const p = playerFromSeason(L, r, team, null, Y - 1, r._ovr);
+    applyFuture(p, r, fut);
+    const d = drafted[cleanName(p.name).toLowerCase()]; if (d) { p.draft = { year: d.year, pick: d.pick, rnd: Math.ceil((d.pick || 30) / 30) }; p.yrs = Y - d.year; }
+    if (team >= 0) counts[team] = (counts[team] || 0) + 1;
+    if (team === -1 && (num(r.MP) < 10 || p.age >= 36)) delete L.players[p.id];
+  }
+  // this June's draft: rookies are already signed
+  const hints = careerHints(im), names = new Set(Object.values(L.players).map(p => p.name));
+  for (const r of (im.drafts || {})[Y] || []) {
+    const tid = idOf((r.Tm || r.Team || '').toUpperCase());
+    if (tid == null || names.has(cleanName(r.Player))) continue;
+    const p = prospectFromDraft(L, r, Y, L.teams.length, fut, hints);
+    p.team = tid; p.draft = { year: Y, rnd: p.realPick.rnd, pick: p.realPick.pick }; delete p.reveal;
+    if ((p.realPick.rnd >= 3 && Math.random() < 0.75) || (p.realPick.rnd === 2 && Math.random() < 0.4)) { delete L.players[p.id]; continue; }
+    rookieDeal(L, p, Y, p.realPick.pick, p.realPick.rnd); counts[tid] = (counts[tid] || 0) + 1;
+  }
+  const gen = [];
+  for (const t of L.teams) if (!counts[t.id] && !joined.includes(t.id)) { genRoster(L, t.id, 12); gen.push(t.abbr); }
+  L.job = { sec: 60, hist: [] };
+  L.diff = DIFF[opts && opts.diff] ? opts.diff : 'pro';
+  L.decisions = []; L.decided = {}; L.perks = {}; L.jerseys = {}; L.retired = {};
+  L.teams.forEach(t => { t.spend = Math.random() < 0.25; });
+  ensurePicks(L); ensureContracts(L); ensureStaff(L);
+  if (joined.length) { joined.forEach(id => L.teams[id].staff = L.teams[id].staff || {}); ensureStaff(L); expansionDraft(L, joined); }
+  aiStyles(L, false);
+  L.teams[L.user].coach = Object.assign({ off: 'bal', def: 'man', tempo: 50, rot: 9, youth: false }, { lineup: L.teams[L.user].coach.lineup || 'best' });
+  addNews(L, `Your league begins with the ${seasonLabel(Y)} season: ${L.teams.length} teams. Rosters and ratings come from the ${seasonLabel(Y - 1)} season you imported, plus the ${Y} draft class${(im.drafts || {})[Y] ? '' : ' (not imported, so no rookies were added)'}.`);
+  if (SEASON_NOTES[Y]) addNews(L, SEASON_NOTES[Y]);
+  if (gen.length) addNews(L, 'Generated placeholder rosters for: ' + gen.join(', ') + '.');
+  addNews(L, `Training camp opens for the ${seasonLabel(Y)} season.`);
+  checkDecisions(L);
+  ensureLeague(L);
+  return L;
+}
 function newLeague(imports, userKey, opts) {
+  if (opts && opts.start && opts.start > 1976) return newLeagueAt(imports, userKey, opts);
   const L = { v: 1, sport: 'nba', year: 1976, phase: 'dispersal', day: 0, teams: [], players: {}, nextId: 1,
     schedule: [], playoffs: null, draft: null, news: [], champs: [], user: 0 };
   TEAMS_1976.forEach((a, i) => L.teams.push(mkTeam(i, a[0], a[1], a[2], a[3])));
@@ -1058,10 +1129,39 @@ function eraPosAdj(p, y, rating) {
   const k = p.pos === 'C' ? (be - 0.6) * 6 : p.pos === 'PF' ? (be - 0.6) * 3 : p.pos === 'SF' ? (0.6 - be) * 1 : (0.6 - be) * 4;
   return k * q;
 }
-function value(p) { return p.ovr + Math.max(0, p.pot - p.ovr) * (p.age < 25 ? 0.6 : 0.2) - Math.max(0, p.age - 30) * 2.5 + eraPosAdj(p, ERA_Y, Math.max(p.ovr, p.pot)); }
+function value(p) { return p.ovr + Math.max(0, p.pot - p.ovr) * (p.age < 25 ? 0.6 : 0.2) - Math.min(11, Math.max(0, p.age - 30) * 2.2) + eraPosAdj(p, ERA_Y, Math.max(p.ovr, p.pot)); }
 
 // A player playing through an injury loses 8 points.
 const HURT_PENALTY = 8;
+// Personal fouls per 36 minutes by position, before the matchup.
+// Share of six-foul games that end in a disqualification (the rest the coach saves by sitting him): fell as the game sped up.
+const FOUL = { out: null };
+function foulOutP(y) { return FOUL.out != null ? FOUL.out : interp([[1976, 0.15], [1995, 0.12], [2016, 0.07], [2030, 0.07]], y); }
+const PF36 = { PG: 2.7, SG: 2.9, SF: 3.2, PF: 4.0, C: 4.4 };
+// Who each player guards: his counterpart by position on the other team's floor. Guarding someone better,
+// or a big scorer in the post, draws more fouls. Six fouls and he's out; his remaining minutes go to the bench.
+function foulGame(L, own, opp, ownC, oppC, ot) {
+  const M = own.mins, O = opp.mins; if (!M.length || !O.length) return { cost: 0, outs: [] };
+  const E = era(L.year), fam = p => p.pos === 'C' ? 'C' : isBig(p) ? 'F' : isGuard(p) ? 'G' : 'W';
+  const mark = x => { const same = O.filter(o => o.p.pos === x.p.pos), near = O.filter(o => fam(o.p) === fam(x.p));
+    return (same.length ? same : near.length ? near : O).slice().sort((a, b) => b.min - a.min)[0].p; };
+  const lam = M.map(x => { const m = mark(x), post = isBig(x.p) ? clamp((m.prof.pts - 14) / 10, 0, 1) * bigEra(L.year) : 0;
+    return x.min / 36 * (PF36[x.p.pos] || 3.2) * Math.exp((eff(m) - eff(x.p)) / 22) * (1 + post * 0.35); });
+  const target = E.fta * 0.92 * (ownC.def === 'phys' ? 1.1 : ownC.def === 'zone' ? 0.93 : 1) * (1 + ot * 0.1), tot = lam.reduce((a, b) => a + b, 0) || 1;
+  const outs = []; let cost = 0, freed = 0;
+  M.forEach((x, i) => {
+    let f = R.poisson(lam[i] * target / tot);
+    // coaches sit players in foul trouble, so most who'd reach six finish with five and fewer minutes
+    if (f >= 6 && Math.random() > foulOutP(L.year)) { f = 5; }
+    if (f === 5) { const lost = x.min * (0.08 + Math.random() * 0.12); x.min -= lost; freed += lost; cost += lost * Math.max(0, eff(x.p) - 60) * 0.0065; }
+    if (f >= 6) { const keep = clamp(6 / (f + 0.5) + Math.random() * 0.15, 0.45, 0.95), lost = x.min * (1 - keep);
+      x.min -= lost; freed += lost; f = 6; x.dq = true; outs.push(x.p);
+      cost += lost * Math.max(0, eff(x.p) - 60) * 0.0065; }
+    x.pf = f;
+  });
+  if (freed > 0) { const bench = M.filter(x => !x.dq), w = bench.reduce((a, x) => a + Math.max(4, 44 - x.min), 0) || 1; bench.forEach(x => x.min = Math.min(46, x.min + freed * Math.max(4, 44 - x.min) / w)); }
+  return { cost, outs };
+}
 function canPlayHurt(p) { return p.inj > 0 && p.inj < 15; }
 function eff(p) { return (p.inj && p.playHurt ? p.ovr - HURT_PENALTY : p.ovr) - (mor(p) < 30 ? 2 : 0); }
 function available(p) { return !p.holdout && (!p.inj || (p.playHurt && canPlayHurt(p))); }
@@ -2095,7 +2195,7 @@ function creditStats(L, tid, pts, rat, opp, coach, oppCoach, ot, poss) {
   const m3 = allot(tpaT - tpm, sc3.map((w, i) => w * (1 - p3[i]) / p3[i]));
   const mf = allot(ftaT - ftm, scF.map((w, i) => w * (1 - pf[i]) / pf[i] + 0.01));
   const lines = M.map((x, i) => ({ p: x.p, min: Math.round(mins[i]), start: x.start, fgm: p2m[i] + p3m[i], fga: p2m[i] + m2[i] + p3m[i] + m3[i], tpm: p3m[i], tpa: p3m[i] + m3[i],
-    ftm: pfm[i], fta: pfm[i] + mf[i], pts: p2m[i] * 2 + p3m[i] * 3 + pfm[i] }));
+    ftm: pfm[i], fta: pfm[i] + mf[i], pts: p2m[i] * 2 + p3m[i] * 3 + pfm[i], pf: x.pf || 0, dq: x.dq ? 1 : 0 }));
   // the rest of the box score
   const tReb = Math.max(20, Math.round(E.reb * (poss / E.pace) * (1 + (rat.reb - opp.reb) / 40) + R.norm() * 4.5));
   const fgm = lines.reduce((s, l) => s + l.fgm, 0);
@@ -2109,20 +2209,48 @@ function creditStats(L, tid, pts, rat, opp, coach, oppCoach, ot, poss) {
   for (const l of lines) {
     const p = l.p;
     stat(p, y, 'g', 1); if (l.start) stat(p, y, 'gs', 1);
-    for (const k of ['min', 'pts', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'reb', 'ast', 'stl', 'blk', 'tov']) stat(p, y, k, l[k]);
+    for (const k of ['min', 'pts', 'fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'reb', 'ast', 'stl', 'blk', 'tov', 'pf', 'dq']) stat(p, y, k, l[k]);
   }
-  const T = { pts, fgm, fga: twoA + tpaT, tpm, tpa: tpaT, ftm, fta: ftaT, reb: tReb, ast: tAst, stl: tStl, blk: tBlk, tov: tTov };
-  if (!NOHIST) { const S = tstat(L, tid); S.g++; S.poss += poss; for (const k in T) S[k] += T[k]; }
+  const T = { pts, fgm, fga: twoA + tpaT, tpm, tpa: tpaT, ftm, fta: ftaT, reb: tReb, ast: tAst, stl: tStl, blk: tBlk, tov: tTov, pf: lines.reduce((s, l) => s + l.pf, 0) };
+  if (!NOHIST) { const S = tstat(L, tid); S.g++; S.poss += poss; for (const k in T) S[k] = (S[k] || 0) + T[k]; }
   return { T, lines };
 }
 
+// This season's injuries: days missed and whether one ended his season. Feeds aging and retirement.
+// Retirement: age sets the base; how far he has fallen from his peak, how good he still is,
+// and how beaten up he is decide it. A star still near his best can play to 40.
+function retireChance(p, inj) {
+  const a = p.age, drop = Math.max(0, (p.peak || p.ovr) - p.ovr);
+  let rp = a >= 40 ? 0.6 : a >= 30 ? [0.02, 0.04, 0.07, 0.12, 0.2, 0.28, 0.35, 0.4, 0.45, 0.5][a - 30] : 0;
+  rp *= 0.45 + drop / 16;
+  rp *= p.ovr >= 80 ? 0.3 : p.ovr >= 74 ? 0.5 : p.ovr >= 68 ? 0.8 : p.ovr < 58 ? 1.5 : 1;
+  if (inj) { rp *= 1 + Math.min(1, inj.days / 60); if (inj.big && a >= 31) rp += 0.15; }
+  if ((p.majInj || 0) >= 3 && a >= 30) rp *= 1.25;
+  if (a >= 29 && p.ovr < 48) rp = Math.max(rp, 0.4);
+  if (p.team === -1) rp += a >= 29 ? 0.5 : (a >= 24 ? 0.35 : 0.15);
+  return clamp(rp, 0, 0.97);
+}
+function retireWhy(p, inj) {
+  if (inj && inj.big) return 'injury';
+  if (p.team === -1) return 'unsigned';
+  if ((p.peak || p.ovr) - p.ovr >= 12) return 'decline';
+  return 'age';
+}
+function logInjury(L, p, days) {
+  if (!p.injS || p.injS.y !== L.year) p.injS = { y: L.year, days: 0, big: 0 };
+  p.injS.days += Math.min(days, 120); if (days >= 200) p.injS.big = 1;
+  if (days >= 30) p.majInj = (p.majInj || 0) + 1;
+}
+// How well a player ages: most are average, some decline fast, a few (Kareem, Parish, Malone) barely slow down.
+function grace(p) { if (p.grace == null) p.grace = Math.round(clamp(R.norm() * 0.22 + (Math.random() < 0.12 ? 0.4 : 0), -0.35, 0.65) * 100) / 100; return p.grace; }
 function injuries(L, res) {
   for (const l of res.lines) {
     const p = l.p;
-    if (p.inj && p.playHurt && Math.random() < 0.08) { p.inj += R.int(2, 6); if (p.team === L.user) addNews(L, `${p.pos} ${p.name} aggravated his injury playing hurt. Now out ${p.inj} days.`); }
+    if (p.inj && p.playHurt && Math.random() < 0.08) { const x = R.int(2, 6); p.inj += x; logInjury(L, p, x); if (p.team === L.user) addNews(L, `${p.pos} ${p.name} aggravated his injury playing hurt. Now out ${p.inj} days.`); }
     if (p.inj || Math.random() > 0.0045 * l.min / 30) continue;
     const r = Math.random();
     p.inj = r < 0.015 ? 200 : r < 0.1 ? R.int(14, 45) : 1 + R.poisson(5);
+    logInjury(L, p, p.inj);
     if (p.team === L.user || p.ovr >= 78) addNews(L, `${L.teams[p.team].abbr} ${p.pos} ${p.name} injured, out ${p.inj >= 200 ? 'for the season' : p.inj >= 14 ? 'about ' + Math.round(p.inj / 7) + ' weeks' : p.inj + ' days'}.`);
   }
 }
@@ -2144,7 +2272,8 @@ function playGame(L, g, opts) {
   const poss = E.pace * (1 + ((Hc.tempo + Ac.tempo) / 2 - 50) / 50 * 0.07) + (op(Hc.off) + op(Ac.off)) / 2 - (L.possAdj || 0) + (Hc.def === 'press' ? 1.5 : 0) + (Ac.def === 'press' ? 1.5 : 0) + R.norm() * 2.5;
   const edge = side => (side === L.user ? D.edge : 0) + staffBonus(L, side).gd;
   const sd = TUNE.sd * Math.sqrt(poss / 100);
-  const hx = expected(L, hr, ar, Hc, Ac, true, opts.neutral, poss) + edge(g.h), ax = expected(L, ar, hr, Ac, Hc, false, opts.neutral, poss) + edge(g.a);
+  const fh = foulGame(L, hr, ar, Hc, Ac, 0), fa = foulGame(L, ar, hr, Ac, Hc, 0);
+  const hx = expected(L, hr, ar, Hc, Ac, true, opts.neutral, poss) + edge(g.h) - fh.cost / 2 + fa.cost / 2, ax = expected(L, ar, hr, Ac, Hc, false, opts.neutral, poss) + edge(g.a) - fa.cost / 2 + fh.cost / 2;
   const shared = R.norm() * sd * 0.35;
   let hp = Math.max(50, Math.round(hx + shared + R.norm() * sd)), ap = Math.max(50, Math.round(ax + shared + R.norm() * sd));
   let ot = 0; const otp = [[], []];
@@ -2170,7 +2299,7 @@ function quarters(total, ot) {
 }
 function makeBox(L, g, hp, ap, otp, hS, aS, full) {
   const qh = quarters(hp, otp[0]), qa = quarters(ap, otp[1]);
-  const line = (l, tid) => ({ id: l.p.id, n: l.p.name, pos: l.p.pos, tm: tid, st: l.start ? 1 : 0, min: l.min, pts: l.pts, fgm: l.fgm, fga: l.fga, tpm: l.tpm, tpa: l.tpa, ftm: l.ftm, fta: l.fta, reb: l.reb, ast: l.ast, stl: l.stl, blk: l.blk, tov: l.tov });
+  const line = (l, tid) => ({ id: l.p.id, n: l.p.name, pos: l.p.pos, tm: tid, st: l.start ? 1 : 0, min: l.min, pts: l.pts, fgm: l.fgm, fga: l.fga, tpm: l.tpm, tpa: l.tpa, ftm: l.ftm, fta: l.fta, reb: l.reb, ast: l.ast, stl: l.stl, blk: l.blk, tov: l.tov, pf: l.pf, dq: l.dq });
   let lines = [];
   if (hS) lines = lines.concat(hS.lines.map(l => line(l, g.h)));
   if (aS) lines = lines.concat(aS.lines.map(l => line(l, g.a)));
@@ -2772,7 +2901,11 @@ function progress(L) {
     else if (p.age <= 28) d = R.int(-1, 3);
     else if (p.age <= 31) d = R.int(-4, 1);
     else if (p.age <= 33) d = R.int(-6, 0);
-    else d = R.int(-9, -1);
+    else d = R.int(-7, 0);
+    // aging: past 28, decline speed depends on the player; a big injury at 28+ costs extra
+    const inj = p.injS && p.injS.y === L.year ? p.injS : null;
+    if (d < 0 && p.age >= 29) d = Math.round(d * (1 - grace(p)));
+    if (inj && p.age >= 28 && (inj.big || inj.days >= 45)) d -= inj.big ? R.int(1, 4) : R.int(0, 2);
     if (played && youth && p.age <= 23) d += 1;
     const hc = t && t.staff && t.staff.hc;
     if (hc && p.age <= 25 && Math.random() < (hc.r - 55) / 60) d += 1;
@@ -2780,11 +2913,10 @@ function progress(L) {
     p.peak = Math.max(p.peak || 0, p.ovr);
     if (p.ovr >= p.pot) p.pot = p.ovr;
     p.inj = 0; delete p.playHurt;
-    let rp = 0;
-    if (p.age >= 34) rp = (0.3 + (p.age - 34) * 0.15) * (p.ovr >= 72 ? 0.6 : 1);
-    else if (p.age >= 29 && p.ovr < 48) rp = 0.4;
-    if (p.team === -1) rp += p.age >= 29 ? 0.5 : (p.age >= 24 ? 0.35 : 0.15);
-    if (Math.random() < rp) { retired.push(p); p.team = -2; p.retiredYear = L.year + 1; }
+    const rp = retireChance(p, inj);
+    if (rp > 0 && Math.random() < rp) { p.retWhy = retireWhy(p, inj); }
+    else continue;
+    retired.push(p); p.team = -2; p.retiredYear = L.year + 1;
   }
   retired.forEach(p => retireJerseys(L, p, false));
   // some good players go into coaching a few years later
@@ -2795,8 +2927,9 @@ function progress(L) {
     if (Math.random() < (peak >= 80 ? 0.35 : peak >= 74 ? 0.25 : 0.12) + (iq >= 5.5 ? 0.1 : 0))
       L.exCoach.push({ avail: L.year + 1 + R.int(1, 5), pid: p.id, name: p.name, pos: p.pos, peak, iq, age: p.age, ret: L.year + 1 });
   });
-  const notable = retired.filter(p => p.ovr >= 74 || (p.real && p.ovr >= 68)).slice(0, 6);
-  if (notable.length) addNews(L, 'Retired: ' + notable.map(p => `${p.pos} ${p.name}`).join(', ') + '.');
+  const notable = retired.filter(p => p.ovr >= 74 || (p.real && p.ovr >= 68) || (p.peak || 0) >= 82).slice(0, 6);
+  const why = { injury: 'after a season-ending injury', decline: 'after a steep decline', age: '', unsigned: 'after going unsigned' };
+  if (notable.length) addNews(L, 'Retired: ' + notable.map(p => `${p.pos} ${p.name} (age ${p.age}${why[p.retWhy] ? ', ' + why[p.retWhy] : ''})`).join(', ') + '.');
   // offseason report: your players, the league's biggest jumps and drops, notable retirements
   const row = p => ({ id: p.id, name: p.name, pos: p.pos, age: p.age, tm: before[p.id].tm, from: before[p.id].ovr, to: p.ovr });
   const live = Object.values(L.players).filter(p => before[p.id] && p.team !== -2 && p.team !== -3 && before[p.id].tm >= -1);
@@ -3117,7 +3250,7 @@ function openFreeAgency(L) {
     const ranked = roster(L, t.id).slice().sort((a, b) => value(b) - value(a));
     for (const p of exp) {
       const rank = ranked.indexOf(p), ask = marketValue(L, p, y);
-      let keep = rank < keepN && p.age < 35;
+      let keep = rank < keepN && (p.age < 35 || p.ovr >= 68);
       if (era === 'ufa' && keep && (p.yrs || 0) >= 4) keep = spends(L, t.id) ? (tax == null || payroll(L, t.id, y) + ask <= tax * 1.3) : Math.random() < 0.6 && (tax == null || payroll(L, t.id, y) + ask <= tax * 0.98);
       if (keep && spends(L, t.id)) { setContract(p, ask * 1.15, y, contractYears(p)); continue; }
       if (era === 'comp' && keep && value(p) >= 72 && Math.random() < 0.5) continue; // a few stars stay unsigned: offer-sheet targets
@@ -3252,7 +3385,7 @@ function leaders(L, key, n, year) {
 }
 function myDraftSlots(L) { const D = L.draft; if (!D) return []; const out = []; for (let i = D.pick; i < D.slotPick.length; i++) { const k = pickById(L, D.slotPick[i]); if (k && k.own === L.user) out.push(i + 1); } return out; }
 
-const API = { fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
+const API = { retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
   parseCSV, parseBRef, mergeSeason, newLeague, ensureLeague, addNews, roster, freeAgents, value, release, sign, cutTo, depthChart, setDepth, moveDepth, resetDepth, setPlayHurt,
   minutesFor, rotationOrder, ratings, teamOverall, isBig, isGuard, dispPool, dispOnClock, dispPick, dispPass, beginDispersal, dispAI, endDispersal, answerErving,
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
@@ -3273,7 +3406,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-10-30a';
+const APP_VERSION = '2026-10-30c';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // imported Basketball-Reference data
 const ui = { tab: 'home', grp: 'ALL', lg: 'stand', leadKey: 'pts', resWeek: null, open: null, confirm: null,
@@ -3502,14 +3635,23 @@ function lastPlayoffGame() {
 }
 
 function vSetup() {
-  const nba = (IM.pg.NBA || []).length, aba = (IM.pg.ABA || []).length;
-  return `<section class="card hero"><div class="eyebrow">New league · Summer 1976</div><h2>Take over a franchise</h2>
-    <p>The ABA-NBA merger: 22 teams, 82 games, and an ABA dispersal draft before training camp. Real rosters load from what you import on the Data tab; any team you have not imported gets a placeholder roster.</p>
-    <p><b>${nba ? nba + ' NBA' : 'No NBA'}</b> and <b>${aba ? aba + ' ABA' : 'no ABA'}</b> player rows imported · draft classes: <b>${Object.keys(IM.drafts).sort().join(', ') || 'none'}</b></p>
+  const nba = (IM.pg.NBA || []).length, aba = (IM.pg.ABA || []).length, years = G.startYears(IM);
+  const y = years.includes(ui.startYear) ? ui.startYear : 1976, later = y > 1976, teams = G.teamsFor(y).sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name));
+  if (!teams.some(t => t.key === ui.newTeam)) ui.newTeam = later ? teams[0].key : 'bkn';
+  const yOpts = years.map(v => `<option value="${v}"${v === y ? ' selected' : ''}>${SL(v)}${v === 1976 ? ' (the merger)' : ''}</option>`).join('');
+  const intro = later
+    ? `<p>${teams.length} teams, with the rules, salary cap and labor deal of ${SL(y)}. Rosters and ratings come from the ${SL(y - 1)} per-game table you imported, using each player's last team that season. ${IM.drafts[y] ? `The real ${y} draft class joins the teams that picked them.` : `No ${y} draft class imported, so there are no rookies.`}</p>
+       <p class="small">Off-season trades and free-agent moves from the summer of ${y} are not in the data, so a few players start on their old team. Career stats, awards and records begin with this season.</p>`
+    : `<p>The ABA-NBA merger: 22 teams, 82 games, and an ABA dispersal draft before training camp. Real rosters load from what you import on the Data tab; any team you have not imported gets a placeholder roster.</p>
+       <p><b>${nba ? nba + ' NBA' : 'No NBA'}</b> and <b>${aba ? aba + ' ABA' : 'no ABA'}</b> player rows imported · draft classes: <b>${Object.keys(IM.drafts).sort().join(', ') || 'none'}</b></p>`;
+  return `<section class="card hero"><div class="eyebrow">New league · ${later ? SL(y) + ' season' : 'Summer 1976'}</div><h2>Take over a franchise</h2>
+    <label class="fld">Starting season<select id="startYear">${yOpts}</select></label>
+    <p class="small">${years.length > 1 ? 'Seasons after 1976-77 appear here when you import the season before them on the Data tab (Season stats).' : 'To start later than 1976-77, import the per-game table for the season before it on the Data tab (Season stats). For 1990-91, import 1989-90.'}</p>
+    ${intro}
     <div class="fld">Difficulty<div class="seg">${Object.keys(G.DIFF).map(k => `<button class="${(ui.newDiff || 'pro') === k ? 'on' : ''}" data-act="newDiff" data-id="${k}">${G.DIFF[k].name}</button>`).join('')}</div></div>
     <p class="small">${diffBlurb(ui.newDiff || 'pro')}</p>
-    <label class="fld">Your team<select id="pickTeam">${G.TEAMS_1976.slice().sort((a, b) => a[2].localeCompare(b[2]) || a[3].localeCompare(b[3])).map(t => `<option value="${t[0]}"${t[0] === (ui.newTeam || 'bkn') ? ' selected' : ''}>${esc(t[2] + ' ' + t[3])}</option>`).join('')}</select></label>
-    <div class="row"><button class="btn primary" data-act="newLeague">Start the 1976 league</button><button class="btn" data-act="tab" data-id="data">Import data</button></div></section>`;
+    <label class="fld">Your team<select id="pickTeam">${teams.map(t => `<option value="${t.key}"${t.key === ui.newTeam ? ' selected' : ''}>${esc(t.city + ' ' + t.name)}</option>`).join('')}</select></label>
+    <div class="row"><button class="btn primary" data-act="newLeague">Start the ${SL(y)} league</button><button class="btn" data-act="tab" data-id="data">Import data</button></div></section>`;
 }
 function diffBlurb(k) {
   return ({
@@ -3573,8 +3715,8 @@ function boxCard(key) {
     const ls = B.lines.filter(l => l.tm === tid).sort((a, b) => b.st - a.st || b.min - a.min);
     if (!ls.length) return '';
     const full = ls.length > 4;
-    return `<h3 class="sub">${esc(t.city)}</h3><div class="tscroll"><table class="tbl stat box"><thead><tr><th class="l">Player</th><th>MIN</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>FG</th>${three ? '<th>3P</th>' : ''}<th>FT</th><th>TO</th></tr></thead><tbody>
-      ${ls.map(l => `<tr class="${l.st ? '' : 'bench'}"><td class="l"><button class="lnk" data-act="statPlayer" data-id="${l.id}">${esc(l.n)}</button> <span class="small">${esc(l.pos)}</span></td><td>${l.min}</td><td><b>${l.pts}</b></td><td>${l.reb}</td><td>${l.ast}</td><td>${l.stl}</td><td>${l.blk}</td><td>${l.fgm}-${l.fga}</td>${three ? `<td>${l.tpm}-${l.tpa}</td>` : ''}<td>${l.ftm}-${l.fta}</td><td>${l.tov}</td></tr>`).join('')}
+    return `<h3 class="sub">${esc(t.city)}</h3><div class="tscroll"><table class="tbl stat box"><thead><tr><th class="l">Player</th><th>MIN</th><th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>FG</th>${three ? '<th>3P</th>' : ''}<th>FT</th><th>TO</th><th>PF</th></tr></thead><tbody>
+      ${ls.map(l => `<tr class="${l.st ? '' : 'bench'}"><td class="l"><button class="lnk" data-act="statPlayer" data-id="${l.id}">${esc(l.n)}</button> <span class="small">${esc(l.pos)}</span></td><td>${l.min}</td><td><b>${l.pts}</b></td><td>${l.reb}</td><td>${l.ast}</td><td>${l.stl}</td><td>${l.blk}</td><td>${l.fgm}-${l.fga}</td>${three ? `<td>${l.tpm}-${l.tpa}</td>` : ''}<td>${l.ftm}-${l.fta}</td><td>${l.tov}</td><td>${l.dq ? '<b class="bad">6 · out</b>' : (l.pf != null ? l.pf : '–')}</td></tr>`).join('')}
       </tbody></table></div>${full ? '' : '<p class="small">Only the top scorers are kept for games you did not play in.</p>'}`;
   };
   return `<section class="card hero box"><div class="split"><div class="eyebrow">${esc(g.wk || '')} Box score</div><button class="btn sm" data-act="box" data-id="">Close</button></div>
@@ -3823,7 +3965,7 @@ function perGameCols(career) {
   const three = true;
   return [{ h: 'G', f: r => n0(r.s.g) }].concat(career ? [] : [{ h: 'GS', f: r => n0(r.s.gs) }]).concat([
     { h: 'MIN', f: pg('min') }, { h: 'PTS', f: pg('pts') }, { h: 'REB', f: pg('reb') }, { h: 'AST', f: pg('ast') }, { h: 'STL', f: pg('stl') }, { h: 'BLK', f: pg('blk') },
-    { h: 'FG%', f: r => pctf(r.s.fgm, r.s.fga) }]).concat(three ? [{ h: '3PM', f: r => num(r.s.tpm) }, { h: '3P%', f: r => pctf(r.s.tpm, r.s.tpa) }] : []).concat([{ h: 'FT%', f: r => pctf(r.s.ftm, r.s.fta) }, { h: 'TO', f: pg('tov') }]);
+    { h: 'FG%', f: r => pctf(r.s.fgm, r.s.fga) }]).concat(three ? [{ h: '3PM', f: r => num(r.s.tpm) }, { h: '3P%', f: r => pctf(r.s.tpm, r.s.tpa) }] : []).concat([{ h: 'FT%', f: r => pctf(r.s.ftm, r.s.fta) }, { h: 'TO', f: pg('tov') }, { h: 'PF', f: pg('pf') }, { h: 'DQ', f: r => r.s.dq ? num(r.s.dq) : '–' }]);
 }
 function playerTable(rows, career) {
   const nm = { h: 'Player', f: r => `<button class="lnk" data-act="statPlayer" data-id="${r.p.id}">${esc(r.p.name)}</button> <span class="small">${esc(r.p.pos)}</span>` };
@@ -4158,11 +4300,11 @@ function vData() {
     <div class="row"><button class="btn primary" data-act="import">Import</button></div>
     <label class="fld">Or choose files (draft files need the year in the name, like draft1977.csv)<input id="impFiles" type="file" accept=".csv,.txt,text/csv,text/plain" multiple></label></section>`;
   const fy = Object.keys(IM.future || {}).sort();
-  h += `<section class="card"><h3>Later seasons (for potential)</h3>
+  h += `<section class="card"><h3>Season stats (potential and later start years)</h3>
     <p class="small">Optional, but import these before you start a league. For players 27 and under in 1976, potential comes from how good they really became. Without them, it's a random guess from age and production. Use the per-game page for each season (the same kind of table as step 1):</p>
     <ol class="steps"><li><code>basketball-reference.com/leagues/NBA_1979_per_game.html</code></li><li><code>basketball-reference.com/leagues/NBA_1982_per_game.html</code></li></ol>
-    <p class="small">Each player's best of those seasons counts. Set the season's ending year (1979 for 1978-79), paste, and import.</p>
-    <label class="fld">Season ending year<input id="futYear" type="number" inputmode="numeric" min="1977" max="1990" value="${ui.futYear || 1979}"></label>
+    <p class="small">Each player's best of those seasons counts. Set the season's ending year (1979 for 1978-79), paste, and import.</p><p class="small"><b>To start a league in a later season,</b> import the season before it here: for a 1990-91 start, import 1989-90 (ending year 1990). Its draft class (the 1990 draft) adds that summer's rookies.</p>
+    <label class="fld">Season ending year<input id="futYear" type="number" inputmode="numeric" min="1977" max="2026" value="${ui.futYear || 1979}"></label>
     <label class="fld">CSV text<textarea id="futText" rows="4" placeholder="Paste the later season's per-game CSV here"></textarea></label>
     <div class="row"><button class="btn primary" data-act="importFut">Import later season</button></div>
     <p class="small">Imported: ${fy.length ? fy.map(y => `<b>${y}</b> (${IM.future[y].length})`).join(', ') : 'none yet'}</p></section>`;
@@ -4217,7 +4359,7 @@ function act(a, el) {
       break;
     case 'newDiff': ui.newDiff = id; break;
     case 'setDiff': G.setDifficulty(L, id); flash(`Difficulty is now ${G.DIFF[id].name}.`); break;
-    case 'newLeague': L = G.newLeague(IM, $('#pickTeam').value, { diff: ui.newDiff || 'pro' }); ui.tab = 'home'; flash(`Welcome to the ${tname(me())}.`); break;
+    case 'newLeague': L = G.newLeague(IM, $('#pickTeam').value, { diff: ui.newDiff || 'pro', start: G.startYears(IM).includes(ui.startYear) ? ui.startYear : 1976 }); ui.tab = 'home'; flash(`Welcome to the ${tname(me())}.`); break;
     case 'dispBegin': G.beginDispersal(L); break;
     case 'dispPick': { const e = G.dispPick(L, +id); if (e) flash(e); G.dispAI(L); break; }
     case 'dispPass': G.dispPass(L); G.dispAI(L); break;
@@ -4303,7 +4445,7 @@ function act(a, el) {
       try {
         const y = +(ui.futYear || 1979), res = G.parseBRef($('#futText').value);
         if (res.kind !== 'pergame') throw new Error('That is not a per-game table. Use the leagues/NBA_' + y + '_per_game.html page.');
-        if (y < 1977 || y > 1990) throw new Error('Set a season ending year between 1977 and 1990.');
+        if (y < 1977 || y > 2026) throw new Error('Set a season ending year between 1977 and 2026.');
         IM.future = IM.future || {}; IM.future[y] = res.rows;
         flash(`Imported the ${y - 1}-${String(y).slice(2)} season: ${res.rows.length} rows. Start a new league to use it.`);
       } catch (e) { flash(e.message); }
@@ -4339,6 +4481,7 @@ document.addEventListener('change', e => {
   else if (t.id === 'tempo') { me().coach.tempo = +t.value; save(); render(); }
   else if (t.id === 'youth') { me().coach.youth = t.checked; save(); }
   else if (t.id === 'pickTeam') ui.newTeam = t.value;
+  else if (t.id === 'startYear') { ui.startYear = +t.value; render(); }
   else if (t.id === 'recScope') { ui.recScope = t.value; render(); }
   else if (t.id === 'impYear') ui.impYear = +t.value;
   else if (t.id === 'futYear') ui.futYear = +t.value;
