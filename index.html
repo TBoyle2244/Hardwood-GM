@@ -672,6 +672,29 @@ function truePot(slot, r, fut) {
   return clamp(pot, 38, 99);
 }
 // Positions and ages from the seasons you imported, when the prospect shows up in them.
+// A prospect's shooting: from a later season you imported if he's in one; otherwise his college-to-pro career 3P% from the draft table.
+function shootingFor(pos, r, hint) {
+  const o = {};
+  if (hint && hint.t3 != null) o.t3 = hint.t3;
+  else if (r && has(r['3P%'])) o.t3 = PROF[pos].t3 * clamp(0.5 + (num(r['3P%']) - 0.28) * 7, 0.3, 1.7);
+  else if (r && (num(r.MP_2) || 0) >= 4) o.t3 = PROF[pos].t3 * 0.4;   // played, never took threes
+  if (hint && hint.ft != null) o.ft = hint.ft;
+  return o;
+}
+// One-time fix for leagues started before this version: shooting from your imported later seasons and draft tables.
+function fixShooting(L, imports) {
+  if (L.shoot2 || !imports) return false;
+  L.shoot2 = true;
+  const hints = careerHints(imports), rows = {};
+  for (const y in imports.drafts || {}) (imports.drafts[y] || []).forEach(r => rows[cleanName(r.Player).toLowerCase()] = r);
+  for (const id in L.players) {
+    const p = L.players[id]; if (!p.real || !p.prof) continue;
+    const k = cleanName(p.name).toLowerCase(), h = hints[k], r = rows[k];
+    if (!h && !r) continue;
+    Object.assign(p.prof, shootingFor(p.pos, r, h));
+  }
+  return true;
+}
 function careerHints(imports) {
   const m = {};
   const add = (rows, y) => (rows || []).forEach(r => {
@@ -679,6 +702,10 @@ function careerHints(imports) {
     const e = m[n] || (m[n] = {});
     if (r.Pos && (e.posY == null || y > e.posY)) { e.pos = r.Pos; e.posY = y; }
     const a = num(r.Age); if (a && (e.ageY == null || y < e.ageY)) { e.age = a; e.ageY = y; }
+    // shooting: keep his biggest-volume season with three-point data
+    const fga = num(r.FGA), g = num(r.G) || 1, vol = fga * g;
+    if (y >= 1979 && fga >= 3 && has(r['3PA']) && (e.vol == null || vol > e.vol)) { e.vol = vol; e.t3 = clamp(num(r['3PA']) / fga / Math.max(0.005, era(y).t3share), 0, 3.5); }
+    if (num(r.FTA) >= 1 && has(r.FT) && (e.ftVol == null || vol > e.ftVol)) { e.ftVol = vol; e.ft = clamp(num(r.FT) / num(r.FTA), 0.4, 0.93); }
   });
   if (imports) { for (const y in imports.future || {}) add(imports.future[y], +y); for (const lg in imports.pg || {}) add(imports.pg[lg], 1975); }
   return m;
@@ -705,8 +732,9 @@ function prospectFromDraft(L, r, year, teamsN, fut, hints) {
     fg: has(r['FG%']) ? num(r['FG%']) : null, ft: has(r['FT%']) ? num(r['FT%']) : null, t3r: null } : null;
   const pos = posFrom(r.Pos || (hint && hint.pos), raw ? { ast: raw.ast, reb: raw.reb } : null);
   const rnd = r._rnd || Math.ceil(overall / teamsN);
+  const shoot = shootingFor(pos, r, hint);
   return mkPlayer(L, { name: cleanName(r.Player), pos, age, ovr, pot, team: -3, yrs: 0, college, real: true, scout, reveal: year,
-    prof: finishProfile(pos, raw, year), realPick: { rnd, pick: overall, tm: (r.Tm || r.Team || '').toUpperCase() } });
+    prof: Object.assign(finishProfile(pos, raw, year), shoot), realPick: { rnd, pick: overall, tm: (r.Tm || r.Team || '').toUpperCase() } });
 }
 // Generated prospects follow the same curve as real classes: the pick slot sets expectations,
 // and a long-tailed "career" decides who actually becomes a star (a few per class, many busts).
@@ -3224,7 +3252,7 @@ function leaders(L, key, n, year) {
 }
 function myDraftSlots(L) { const D = L.draft; if (!D) return []; const out = []; for (let i = D.pick; i < D.slotPick.length; i++) { const k = pickById(L, D.slotPick[i]); if (k && k.own === L.user) out.push(i + 1); } return out; }
 
-const API = { eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
+const API = { fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
   parseCSV, parseBRef, mergeSeason, newLeague, ensureLeague, addNews, roster, freeAgents, value, release, sign, cutTo, depthChart, setDepth, moveDepth, resetDepth, setPlayHurt,
   minutesFor, rotationOrder, ratings, teamOverall, isBig, isGuard, dispPool, dispOnClock, dispPick, dispPass, beginDispersal, dispAI, endDispersal, answerErving,
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
@@ -3245,7 +3273,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-10-29e';
+const APP_VERSION = '2026-10-30a';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // imported Basketball-Reference data
 const ui = { tab: 'home', grp: 'ALL', lg: 'stand', leadKey: 'pts', resWeek: null, open: null, confirm: null,
@@ -3294,7 +3322,7 @@ function grade(v) { return v >= 82 ? 'g-elite' : v >= 70 ? 'g-good' : v >= 57 ? 
 function rating(v) { return `<span class="rt ${grade(v)}">${Math.round(v)}</span>`; }
 function flash(s) { ui.msg = s; }
 const f1 = v => (Math.round(v * 10) / 10).toFixed(1);
-const pctf = (m, a) => a ? (m / a).toFixed(3).replace(/^0/, '') : '–';
+const pctf = (m, a) => a ? ((m || 0) / a).toFixed(3).replace(/^0/, '') : '–';
 function statLine(p) {
   const h = p.hist[L.year]; if (!h || !h.g) return '';
   const x = G.perGame(h);
@@ -4317,7 +4345,7 @@ document.addEventListener('change', e => {
   else if (t.id === 'impFiles' && t.files.length) onFiles([...t.files]);
   else if (t.id === 'loadSave' && t.files[0]) {
     t.files[0].text().then(s => {
-      try { const o = JSON.parse(s); if (!o.league || !o.league.teams || o.league.sport !== 'nba') throw 0; L = o.league; G.ensureLeague(L); IM = o.imports || IM; G.rescoreDraft(L, IM); ui.tab = 'home'; flash(`Restored your ${SL(L.year)} league.`); save(); }
+      try { const o = JSON.parse(s); if (!o.league || !o.league.teams || o.league.sport !== 'nba') throw 0; L = o.league; G.ensureLeague(L); IM = o.imports || IM; G.rescoreDraft(L, IM); G.fixShooting(L, IM); ui.tab = 'home'; flash(`Restored your ${SL(L.year)} league.`); save(); }
       catch (err) { flash('That file is not a Hardwood GM backup.'); }
       render();
     });
@@ -4329,7 +4357,7 @@ document.addEventListener('input', e => { if (e.target.id === 'tempo') { const h
   await DB.open();
   const [l, im] = await Promise.all([DB.get('league'), DB.get('imports')]);
   if (im && im.pg) IM = Object.assign({ pg: {}, adv: {}, drafts: {}, future: {} }, im);
-  if (l && l.teams) { L = l; G.ensureLeague(L); if (G.rescoreDraft(L, IM) | G.prepClass(L, IM)) save(); }
+  if (l && l.teams) { L = l; G.ensureLeague(L); if (G.rescoreDraft(L, IM) | G.prepClass(L, IM) | G.fixShooting(L, IM)) save(); }
   render();
   if ('serviceWorker' in navigator && location.protocol === 'https:' && !/claude\.ai|claudeusercontent/.test(location.host)) {
     try { navigator.serviceWorker.register('sw.js'); } catch (e) { /* offline install unavailable */ }
