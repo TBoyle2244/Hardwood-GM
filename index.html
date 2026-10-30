@@ -662,11 +662,19 @@ function playerFromSeason(L, r, team, adv, year, ovrOverride) {
 const BIG_SCHOOLS = /^(UCLA|Kentucky|North Carolina|UNC|Indiana|Kansas|Louisville|Duke|Michigan|Syracuse|Georgetown|Villanova|Notre Dame|Marquette|Arizona|UNLV|Connecticut|UConn|Michigan State|Maryland|NC State)/i;
 function slotGrade(overall) { return 47 + 33 * Math.exp(-(Math.max(1, overall) - 1) / 14); }
 // What a career's win shares say about a player's peak: ~0 WS a fringe player, ~80 a good starter, ~150 an MVP-level star.
-function careerFromWS(ws) { return 46 + Math.sqrt(Math.max(0, ws)) * 3.8; }
+function careerFromWS(ws) { return 46 + Math.sqrt(Math.max(0, ws)) * 4.0; }
 function truePot(slot, r, fut) {
   const ws = has(r.WS) ? Math.max(0, num(r.WS)) : null;
   // real careers decide most of it; the slot and luck only nudge
-  let pot = ws == null ? Math.round(0.3 * slot + 0.7 * (42 + R.int(0, 6)) + R.norm() * 4) : Math.round(0.2 * slot + 0.8 * careerFromWS(ws) + R.norm() * 2.5);
+  let pot;
+  if (ws == null) pot = Math.round(0.3 * slot + 0.7 * (42 + R.int(0, 6)) + R.norm() * 4);
+  else {
+    // win shares measure a career's size; box plus/minus measures how good he was per minute. Long careers
+    // pile up win shares, so blending in the rate keeps a 20-year compiler from outranking a shorter-career star.
+    let c = careerFromWS(ws);
+    if (has(r.BPM) && ws >= 10) c = 0.55 * c + 0.45 * clamp(70 + num(r.BPM) * 4, 40, 104);
+    pot = Math.round(0.1 * slot + 0.9 * c + R.norm() * 1.5);
+  }
   const f = fut && ((r['Player-additional'] && fut['id:' + r['Player-additional']]) || fut['n:' + cleanName(r.Player)]);
   if (f != null) pot = Math.max(pot, f + R.int(-1, 1));   // later seasons you imported show what he became
   return clamp(pot, 38, 99);
@@ -748,7 +756,7 @@ function genProspect(L, year, pk) {
     const ws = clamp(Math.exp(mu + R.norm() * 0.95) - 1, 0, 250);
     career = careerFromWS(ws);
   } else career = 42 + R.int(0, 6);
-  const pot = clamp(Math.round(0.2 * slot + 0.8 * career + R.norm() * 2.5), 38, 99);
+  const pot = clamp(Math.round(0.1 * slot + 0.9 * career + R.norm() * 2), 38, 99);
   const age = entryAge(year);
   const ovr = clamp(pot - rawGap(age), 32, 82);
   const college = year >= 1995 && year <= 2005 && age <= 19 && Math.random() < 0.5 ? 'High school' : (year >= 1990 && Math.random() < 0.12 ? R.pick(['Spain', 'France', 'Serbia', 'Brazil', 'Lithuania', 'Australia', 'Argentina', 'Germany', 'Greece', 'Nigeria']) : R.pick(COLLEGES));
@@ -2811,10 +2819,10 @@ function rescoreDraft(L, imports) {
     const rows = imports && imports.drafts && imports.drafts[D.year];
     if (rows && rows.length) { const hints = careerHints(imports), by = {}; rows.forEach(r => by[cleanName(r.Player).toLowerCase()] = r);
       for (const id of D.pool) { const p = L.players[id]; if (!p || p.team !== -3 || !p.real) continue; const k = cleanName(p.name).toLowerCase(), r = by[k]; if (r) p.pos = rowPos(r, hints[k]); } }
-    if (D.rs2) return true;
+    if (D.rs4) return true;
   }
-  if (D.rs2) return false;
-  D.rs2 = true;
+  if (D.rs4) return false;
+  D.rs2 = D.rs4 = true;
   const rows = imports && imports.drafts && imports.drafts[D.year]; if (!rows || !rows.length) return true;
   const fut = futureRatings(imports.future), by = {};
   rows.forEach(r => by[cleanName(r.Player).toLowerCase()] = r);
@@ -3406,7 +3414,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-10-30c';
+const APP_VERSION = '2026-10-30d';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // imported Basketball-Reference data
 const ui = { tab: 'home', grp: 'ALL', lg: 'stand', leadKey: 'pts', resWeek: null, open: null, confirm: null,
