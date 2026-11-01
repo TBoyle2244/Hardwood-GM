@@ -257,6 +257,12 @@ input[type=range] { width: 100%; accent-color: var(--field); }
 .sk { display: inline-flex; align-items: center; gap: 4px; }
 .sk .lbl { font-size: 11px; }
 .sk .rt { min-width: 28px; font-size: 13px; padding: 1px 3px; }
+/* messages stay in view wherever you've scrolled */
+#main > .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(64px + env(safe-area-inset-bottom, 0px)); z-index: 20; width: min(560px, calc(100% - 32px)); box-shadow: 0 6px 24px rgba(0,0,0,.25); animation: toastIn .2s ease-out, toastOut .4s ease-in 5.5s forwards; }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes toastOut { to { opacity: 0; visibility: hidden; } }
+.toast.inline { margin: 8px 0; }
+.toast.bad { border-color: var(--bad, #b33); }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -1137,7 +1143,7 @@ function eraPosAdj(p, y, rating) {
   const k = p.pos === 'C' ? (be - 0.6) * 6 : p.pos === 'PF' ? (be - 0.6) * 3 : p.pos === 'SF' ? (0.6 - be) * 1 : (0.6 - be) * 4;
   return k * q;
 }
-function value(p) { return p.ovr + Math.max(0, p.pot - p.ovr) * (p.age < 25 ? 0.6 : 0.2) - Math.min(11, Math.max(0, p.age - 30) * 2.2) + eraPosAdj(p, ERA_Y, Math.max(p.ovr, p.pot)); }
+function value(p) { const pot = p.udfa && p.reveal != null && ERA_Y <= p.reveal ? Math.max(p.ovr, p.scout || p.ovr) : p.pot; return p.ovr + Math.max(0, pot - p.ovr) * (p.age < 25 ? 0.6 : 0.2) - Math.min(11, Math.max(0, p.age - 30) * 2.2) + eraPosAdj(p, ERA_Y, Math.max(p.ovr, pot)); }
 
 // A player playing through an injury loses 8 points.
 const HURT_PENALTY = 8;
@@ -1425,12 +1431,19 @@ function tradeCapMsg(L, a, b, aGive, bGive) {
   const chk = (tid, out, inn) => {
     if (payroll(L, tid, y) - out + inn <= cap) return null;
     if (inn <= out * 1.25 + 100) return null;
-    return `${tid === L.user ? 'You are' : L.teams[tid].city + ' is'} over the cap after this deal, so incoming salary (${money(inn)}) can't exceed 125% of outgoing (${money(out)}) plus $100K.`;
+    const lim = out * 1.25 + 100, who = tid === L.user ? 'You' : L.teams[tid].city, fix = tid === L.user ? 'Send more salary, or take less back.' : `Take a player with salary back from ${L.teams[tid].city}, or add less salary.`;
+    return `${who} would be over the ${money(cap)} cap after this deal, so ${tid === L.user ? 'you' : 'they'} can take in at most 125% of the salary ${tid === L.user ? 'you send' : 'they send'} plus $100K: ${money(lim)}. This deal has ${tid === L.user ? 'you' : 'them'} taking in ${money(inn)} while sending ${money(out)}. ${fix}`;
   };
   return chk(a, aOut, bOut) || chk(b, bOut, aOut);
 }
 function deadlineDay(L) { return Math.floor((L.schedule.length || 160) * 0.6); }
 function pastDeadline(L) { return (L.phase === 'regular' && L.day >= deadlineDay(L)) || L.phase === 'playoffs'; }
+// Same checks as a proposal, without making the trade: for showing the reason before you tap Propose.
+function tradeCheck(L, partner, give, get) {
+  const snap = JSON.stringify([give, get]);
+  const v = tradeVerdict(L, partner, give, get), cm = tradeCapMsg(L, L.user, partner, give, get);
+  return { value: v.ok, cap: cm, snap };
+}
 function proposeTrade(L, partner, give, get) {
   ensurePicks(L);
   if (pastDeadline(L)) return { ok: false, msg: 'The trade deadline has passed. Trading reopens after the playoffs.' };
@@ -1440,8 +1453,11 @@ function proposeTrade(L, partner, give, get) {
   const max = rules(L.year).rosterMax, after = roster(L, L.user).length - (give.players || []).length + (get.players || []).length;
   if ((L.phase === 'regular' || L.phase === 'playoffs') && after > max) return { ok: false, msg: `That would put you at ${after} players, over the ${max} limit. Release someone first.` };
   const t = L.teams[partner], v = tradeVerdict(L, partner, give, get);
-  if (!v.ok) return { ok: false, msg: `${t.city} turned it down. They want more value back.` };
-  const cm = tradeCapMsg(L, L.user, partner, give, get); if (cm) return { ok: false, msg: cm };
+  const cm = tradeCapMsg(L, L.user, partner, give, get);
+  if (!v.ok) return { ok: false, msg: `${t.city} turned it down: they want more value back.${cm ? ' The salaries also don\'t work: ' + cm : ''}` };
+  if (cm) return { ok: false, msg: `${t.city} would take the deal, but it breaks the salary-cap rules. ${cm}` };
+  const otherMax = rules(capYear(L)).rosterMax + (L.phase === 'regular' || L.phase === 'playoffs' ? 0 : 3), theirs = roster(L, partner).length - (get.players || []).length + (give.players || []).length;
+  if (theirs > otherMax) return { ok: false, msg: `${t.city} would have ${theirs} players, too many to fit. Take a player back from them.` };
   execTrade(L, L.user, partner, give, get);
   return { ok: true, msg: `${t.city} accepted the trade.` };
 }
@@ -2235,7 +2251,7 @@ function retireChance(p, inj) {
   if (inj) { rp *= 1 + Math.min(1, inj.days / 60); if (inj.big && a >= 31) rp += 0.15; }
   if ((p.majInj || 0) >= 3 && a >= 30) rp *= 1.25;
   if (a >= 29 && p.ovr < 48) rp = Math.max(rp, 0.4);
-  if (p.team === -1) rp += a >= 29 ? 0.5 : (a >= 24 ? 0.35 : 0.15);
+  if (p.team === -1 && !(p.udfa && (p.yrs || 0) <= 2)) rp += a >= 29 ? 0.5 : (a >= 24 ? 0.35 : 0.15);
   return clamp(rp, 0, 0.97);
 }
 function retireWhy(p, inj) {
@@ -2879,9 +2895,71 @@ function draftUntilUser(L) {
 }
 function shopPick(L) { const D = L.draft; if (!D || onClock(L) !== L.user) return { offers: [], msg: 'You are not on the clock.' }; return shopBlock(L, { players: [], picks: [D.slotPick[D.pick]] }, { kind: 'any', pos: 'ALL' }); }
 function draftAll(L) { while (onClock(L) !== null) aiPick(L); }
-function endDraft(L) {
+// Real players who went undrafted: found in your imported seasons but in no imported draft class.
+// Each arrives as a free agent the summer he really entered the league (from 1989, when the draft shrank to 2 rounds),
+// rated as a raw rookie, with his true potential hidden until he has played a season.
+// Names compared loosely: accents, periods, and Jr./III don't stop a match (Dražen Petrović = Drazen Petrovic).
+function normName(n) { return cleanName(n).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\b(jr|sr|ii|iii|iv)\b\.?/g, '').replace(/[^a-z]/g, ''); }
+function undraftedClass(L, imports, dy) {
+  if (!imports || dy < 1989) return [];
+  const fut = imports.future || {}, ends = Object.keys(fut).map(Number).sort((a, b) => a - b); if (!ends.length) return [];
+  const drafted = new Set(); for (const y in imports.drafts || {}) (imports.drafts[y] || []).forEach(r => drafted.add(normName(r.Player)));
+  const have = new Set(allPlayers(L).map(p => normName(p.name)));
+  const seen = {};
+  ends.forEach((E, i) => {
+    const S = E - 1, prevS = i ? ends[i - 1] - 1 : null;
+    for (const r of mergeSeason(fut[E] || [])) {
+      const k = normName(r.Player); if (!k) continue;
+      const e = seen[k] || (seen[k] = { name: cleanName(r.Player), first: S, prevS, age: num(r.Age) || 23, rows: [], n: 0 });
+      e.rows.push(r); e.n++;
+    }
+  });
+  const ratings = futureRatings(fut), hints = careerHints(imports), out = [];
+  for (const k in seen) {
+    const e = seen[k]; if (drafted.has(k) || have.has(k)) continue;
+    // debut: his first imported season, pulled back toward the previous import if he was already past rookie age
+    const gap = e.prevS == null ? 0 : Math.max(0, e.first - e.prevS - 1), debut = e.first - Math.min(gap, Math.max(0, e.age - 23));
+    if (debut !== dy || e.age - (e.first - debut) > 27) continue;   // undrafted rookies are young
+    const best = ratings && ratings['n:' + e.name]; if (best == null) continue;
+    const mp = Math.max(...e.rows.map(r => num(r.MP) || 0));
+    if (best < 56 && !(e.n >= 2 && mp >= 12)) continue;          // skip cups of coffee
+    out.push({ e, best, hint: hints[cleanName(e.name).toLowerCase()] });
+  }
+  return out;
+}
+// Most real undrafted players got a training-camp contract somewhere: unsigned ones get a minimum deal
+// with a team that has room (or cuts a fringe player for him).
+function campInvites(L) {
+  const y = capYear(L), max = rules(y).rosterMax;
+  for (const p of freeAgents(L).filter(q => q.udfa && q.udfa >= L.year && q.retiredYear == null)) {
+    if (Math.random() > 0.85) continue;
+    const ai = R.shuffle(L.teams.filter(t => t.id !== L.user));
+    let t = ai.find(x => roster(L, x.id).length < max);
+    if (!t) { t = ai.find(x => { const w = roster(L, x.id).sort((a, b) => value(a) - value(b))[0]; return w && value(w) < value(p) + 2 && !onBooks(w, y + 1); }); if (t) release(L, roster(L, t.id).sort((a, b) => value(a) - value(b))[0].id); }
+    if (!t) continue;
+    p.team = t.id; setContract(p, minSalary(y), y, R.int(1, 2));
+    addNews(L, `${t.abbr} signed undrafted ${p.pos} ${p.name} to a camp contract.`);
+  }
+}
+function addUndrafted(L, imports, dy) {
+  const list = undraftedClass(L, imports, dy); if (!list.length) return [];
+  const made = [];
+  for (const { e, best, hint } of list) {
+    const row = e.rows.slice().sort((a, b) => (num(b.MP) || 0) * (num(b.G) || 0) - (num(a.MP) || 0) * (num(a.G) || 0))[0];
+    const rt = rateRow(row, null, false), pos = posFrom(row.Pos, rt.prof);
+    const age = clamp(e.age - (e.first - dy) - 1, 19, 30);
+    const pot = clamp(best + R.int(-1, 1), 45, 99), ovr = clamp(Math.min(pot - 4, pot - rawGap(age) - R.int(2, 6)), 32, 58);
+    const p = mkPlayer(L, { name: e.name, pos, age, ovr, pot, team: -1, yrs: 0, college: 'Undrafted', real: true, reveal: dy,
+      scout: clamp(45 + R.int(0, 10), 40, 60), prof: Object.assign(finishProfile(pos, rt.prof, Math.max(dy, 1979)), shootingFor(pos, null, hint)) });
+    p.udfa = dy; made.push(p);
+  }
+  if (made.length) addNews(L, `Undrafted free agents available: ${made.slice(0, 8).map(p => `${p.pos} ${p.name}`).join(', ')}${made.length > 8 ? ` and ${made.length - 8} more` : ''}. Find them on the Moves tab.`);
+  return made;
+}
+function endDraft(L, imports) {
   const D = L.draft;
   D.pool.forEach(id => { const p = L.players[id]; if (p) { p.team = -1; delete p.con; } });
+  addUndrafted(L, imports, D.year);
   const mine = D.log.filter(x => x.tid === L.user).slice(0, 3).map(x => L.players[x.pid].name);
   addNews(L, `Draft complete. ${L.teams[L.user].abbr} top picks: ${mine.join(', ') || 'none'}.`);
   L.picks = (L.picks || []).filter(k => k.y !== D.year);
@@ -3065,7 +3143,7 @@ function leagueNorm(L) {
   for (const t of L.teams) for (const p of roster(L, t.id)) { s += multFor(p); n++; }
   const v = n ? s / n : 1; L._norm = { y, v, n: Object.keys(L.players).length }; return v;
 }
-function marketValue(L, p, y) { y = y || capYear(L); return clamp(avgSalary(y) * multFor(p) / leagueNorm(L), minSalary(y), maxSalary(p, y)); }
+function marketValue(L, p, y) { y = y || capYear(L); if (p.udfa && !(p.yrs > 0) && p.team === -1) return minSalary(y); return clamp(avgSalary(y) * multFor(p) / leagueNorm(L), minSalary(y), maxSalary(p, y)); }
 function contractYears(p) { return p.age <= 25 ? 4 : (p.age <= 28 ? 4 : (p.age <= 30 ? 3 : (p.age <= 32 ? 2 : 1))); }
 function setContract(p, sal, firstYear, yrs) { p.con = { sal: Math.round(sal), exp: firstYear + yrs - 1, signed: firstYear }; p.mor = Math.max(mor(p), 70); delete p.holdout; }
 function salFor(p, y) { if (!p || !p.con) return null; if (y <= p.con.exp) return p.con.sal; if (p.con.ext && y <= p.con.ext.exp) return p.con.ext.sal; return null; }
@@ -3364,6 +3442,7 @@ function closeFreeAgency(L) {
   }
   for (const t of L.teams) if (t.id !== L.user) for (const p of expiring(L, t.id)) setContract(p, marketValue(L, p, y), y, contractYears(p));
   aiSignings(L, true);
+  campInvites(L);
   L.fa = null;
 }
 
@@ -3393,7 +3472,7 @@ function leaders(L, key, n, year) {
 }
 function myDraftSlots(L) { const D = L.draft; if (!D) return []; const out = []; for (let i = D.pick; i < D.slotPick.length; i++) { const k = pickById(L, D.slotPick[i]); if (k && k.own === L.user) out.push(i + 1); } return out; }
 
-const API = { retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
+const API = { undraftedClass, addUndrafted, tradeCheck, retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
   parseCSV, parseBRef, mergeSeason, newLeague, ensureLeague, addNews, roster, freeAgents, value, release, sign, cutTo, depthChart, setDepth, moveDepth, resetDepth, setPlayHurt,
   minutesFor, rotationOrder, ratings, teamOverall, isBig, isGuard, dispPool, dispOnClock, dispPick, dispPass, beginDispersal, dispAI, endDispersal, answerErving,
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
@@ -3414,7 +3493,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-10-30d';
+const APP_VERSION = '2026-11-01a';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // imported Basketball-Reference data
 const ui = { tab: 'home', grp: 'ALL', lg: 'stand', leadKey: 'pts', resWeek: null, open: null, confirm: null,
@@ -3857,7 +3936,7 @@ function faCard() {
   if (L.phase !== 'offseason') return '';
   G.ensureFA(L);
   const F = L.fa, y = F.y, info = G.ERA_INFO[F.era];
-  const prow = (p, extra, btns) => `<div class="pl wide"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}<div class="pl-sub">Age ${p.age + 1} in ${SL(y)} · ${(p.yrs || 0) + 1} yrs exp${extra ? ' · ' + extra : ''}</div></div>
+  const prow = (p, extra, btns) => `<div class="pl wide"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}${p.udfa ? ' <span class="tag">UNDRAFTED</span>' : ''}<div class="pl-sub">Age ${p.age + 1} in ${SL(y)} · ${(p.yrs || 0) + 1} yrs exp${extra ? ' · ' + extra : ''}</div></div>
     <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></div><div class="pl-btns">${btns}</div></div>`;
   let h = `<section class="card offers"><div class="eyebrow">${SL(y)} offseason · ${esc(info.name)}</div><h3>Contracts &amp; free agency</h3><p class="small">${esc(info.text)}</p>
     <div class="ctbar"><span class="lbl">POSITION</span>${chips('ctGrp', ui.ctGrp || 'ALL')}${sortSeg('ctSort', true, 'pos')}</div>`;
@@ -3901,6 +3980,16 @@ function marketHeader(F) {
     <div class="row">${btn}</div></div>`;
 }
 function ctFilter(list) { const g = ui.ctGrp || 'ALL'; return list.filter(p => g === 'ALL' || p.pos === g).sort(cmp(ui.ctSort || 'pos')); }
+// This summer's real undrafted players, pulled out so they don't get lost at the bottom of the free-agent list.
+function udfaCard() {
+  if (L.phase !== 'offseason' && L.phase !== 'preseason') return '';
+  const list = G.freeAgents(L).filter(p => p.udfa && p.udfa >= L.year && p.retiredYear == null); if (!list.length) return '';
+  const bidding = L.phase === 'offseason' && L.fa && L.fa.era === 'ufa' && L.fa.round <= G.FA_ROUNDS;
+  return `<section class="card"><h3>Undrafted rookies (${list.length})</h3><p class="small">Real players nobody drafted. They're raw, and their true potential stays hidden until they've played a season, so other teams judge them only by the scout grade. Some of them turn into real players.</p>
+    <div class="list">${list.map(p => `<div class="pl"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)} <span class="tag">UNDRAFTED</span><div class="pl-sub">Age ${p.age + 1} as a rookie</div></div>
+      <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">SCOUT</span>${rating(p.scout)}</div></div>
+      ${bidding ? (L.fa.bids && L.fa.bids[p.id] ? '<span class="small good">Bid placed</span>' : `<button class="btn sm primary" data-act="bid" data-id="${p.id}" data-key="new">Bid ${G.money(G.baseAsk(L, p))}</button>`) : `<button class="btn sm primary" data-act="sign" data-id="${p.id}">Sign ${G.money(G.askPrice(L, p))}</button>`}</div>`).join('')}</div></section>`;
+}
 function marketList(F) {
   if (F.round > G.FA_ROUNDS) return '';
   const list = ctFilter(G.freeAgents(L).filter(p => p.retiredYear == null)).slice(0, ui.mktShow || 30);
@@ -3910,7 +3999,7 @@ function marketList(F) {
         <span class="bidctl"><button class="btn sm ar" data-act="bid" data-id="${p.id}" data-key="sal-">−$</button><button class="btn sm ar" data-act="bid" data-id="${p.id}" data-key="sal+">+$</button><button class="btn sm ar" data-act="bid" data-id="${p.id}" data-key="yrs-">−yr</button><button class="btn sm ar" data-act="bid" data-id="${p.id}" data-key="yrs+">+yr</button><button class="btn sm" data-act="bid" data-id="${p.id}" data-key="x">Withdraw</button></span>
         <span class="small ${o && o.label.startsWith('Below') ? 'bad' : 'good'}">${o ? esc(o.label) + ` · ${o.teams ? `about ${o.teams} other team${o.teams === 1 ? '' : 's'} likely to bid` : 'no other teams likely to bid'}` : ''}</span></div>`
       : `<button class="btn sm primary" data-act="bid" data-id="${p.id}" data-key="new">Bid ${G.money(ask)}</button>`;
-    return `<div class="pl wide"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}<div class="pl-sub">Age ${p.age + 1} · ${p.prevTeam != null && L.teams[p.prevTeam] ? 'was ' + esc(L.teams[p.prevTeam].abbr) + ' · ' : ''}asking ${G.money(ask)}${reasonsText(fit.reasons)}</div></div>
+    return `<div class="pl wide"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}${p.udfa ? ' <span class="tag">UNDRAFTED</span>' : ''}<div class="pl-sub">Age ${p.age + 1} · ${p.prevTeam != null && L.teams[p.prevTeam] ? 'was ' + esc(L.teams[p.prevTeam].abbr) + ' · ' : ''}asking ${G.money(ask)}${reasonsText(fit.reasons)}</div></div>
       <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></div><div class="pl-btns">${bidUI}</div></div>`;
   }).join('');
   return `<h3 class="sub">Free agent market</h3><div class="list">${rows || '<p class="small">No free agents at this position.</p>'}</div><div class="row"><button class="btn" data-act="mktMore">Show more</button></div>`;
@@ -4164,9 +4253,9 @@ function vMoves() {
   const inSeason = L.phase === 'regular' || L.phase === 'playoffs';
   const faNote = inSeason ? 'Players released, cut, or left unsigned. In-season signings are 1-year deals at a discount; over the cap you can still offer the minimum.' : 'Players released, cut, undrafted, or left unsigned.';
   const bidding = L.phase === 'offseason' && L.fa && L.fa.era === 'ufa' && L.fa.round <= G.FA_ROUNDS;
-  let h = offersCard() + payrollCard() + faCard() + extCard() + (bidding ? '' : `<section class="card"><div class="split"><h3>Free agents</h3><span class="count">${n} / ${max}</span></div>
+  let h = offersCard() + payrollCard() + udfaCard() + faCard() + extCard() + (bidding ? '' : `<section class="card"><div class="split"><h3>Free agents</h3><span class="count">${n} / ${max}</span></div>
     <p class="small">${faNote}</p>${chips('faGrp', ui.faGrp)}${sortSeg('mSort')}
-    <div class="list">${fa.length ? fa.map(p => `<div class="pl"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}<div class="pl-sub">Age ${p.age}${p.prevTeam != null && L.teams[p.prevTeam] ? ' · was ' + esc(L.teams[p.prevTeam].abbr) : ''}</div></div>
+    <div class="list">${fa.length ? fa.map(p => `<div class="pl"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}${p.udfa ? ' <span class="tag">UNDRAFTED</span>' : ''}<div class="pl-sub">Age ${p.age}${p.prevTeam != null && L.teams[p.prevTeam] ? ' · was ' + esc(L.teams[p.prevTeam].abbr) : ''}</div></div>
       <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></div>
       <button class="btn sm" data-act="sign" data-id="${p.id}"${inSeason && n >= max ? ' disabled' : ''}>Sign ${G.money(G.askPrice(L, p) * (inSeason ? 0.6 : 1))}</button></div>`).join('') : '<p>No free agents at this position.</p>'}</div></section>`);
   const others = L.teams.filter(t => t.id !== L.user);
@@ -4193,7 +4282,8 @@ function vMoves() {
   let gauge = '';
   if (ready) {
     const v = G.tradeVerdict(L, tt, give, get), ratio = v.give / (v.get * v.ask);
-    gauge = `<p class="small ${v.ok ? 'good' : 'bad'}">${v.ok ? (ratio > 1.6 ? 'They would accept. You may be overpaying.' : 'They would likely accept.') : (ratio > 0.8 ? 'Close. Add a little more.' : 'Not close. They want much more back.')}</p>`;
+    const chk = G.tradeCheck(L, tt, give, get);
+    gauge = `<p class="small ${v.ok && !chk.cap ? 'good' : 'bad'}">${v.ok ? (chk.cap ? '<b>They like the value, but this trade can\'t go through as built.</b>' : ratio > 1.6 ? 'They would accept. You may be overpaying.' : 'They would likely accept.') : (ratio > 0.8 ? 'Close on value. Add a little more.' : 'Not close on value. They want much more back.')}</p>${chk.cap ? `<p class="small bad">${esc(chk.cap)}</p>` : ''}`;
     if (capOn) { const y = G.capYear(L), s = ids => ids.reduce((a, id) => a + (G.salFor(L.players[id], y) || 0), 0); gauge += `<p class="small">Salary out ${G.money(s(give.players))} · in ${G.money(s(get.players))}. Teams over the cap must take back no more than 125% of what they send, plus $100K.</p>`; }
   }
   const chosen = sel => sel.length ? `<ul class="chosen">${sel.map(x => x[0] === 'p' ? `<li>${esc(L.players[+x.slice(2)].pos)} ${esc(L.players[+x.slice(2)].name)}</li>` : `<li>${esc(G.pickLabel(L, G.pickById(L, +x.slice(2))))} pick</li>`).join('')}</ul>` : '<p class="small">Nothing yet.</p>';
@@ -4395,7 +4485,7 @@ function act(a, el) {
     case 'autoPick': G.aiPick(L); G.draftUntilUser(L); break;
     case 'draftPick': G.makePick(L, +id); G.draftUntilUser(L); break;
     case 'draftRest': G.draftAll(L); break;
-    case 'endDraft': G.endDraft(L); break;
+    case 'endDraft': G.endDraft(L, IM); break;
     case 'nextSeason': { const e = G.startNextSeason(L); if (e) flash(e); break; }
     case 'chip': ui[el.dataset.key] = id; if (el.dataset.key === 'draftGrp') ui.draftShow = 60; break;
     case 'open': ui.open = ui.open === +id ? null : +id; ui.confirm = null; break;
@@ -4432,7 +4522,7 @@ function act(a, el) {
     case 'clearTrade': ui.give = []; ui.get = []; break;
     case 'blockKind': ui.blockKind = id; break;
     case 'shopBlock': { const pk = sel => ({ players: sel.filter(x => x[0] === 'p').map(x => +x.slice(2)), picks: sel.filter(x => x[0] === 'k').map(x => +x.slice(2)) }); const r = G.shopBlock(L, pk(ui.give), { kind: ui.blockKind || 'any', pos: ui.blockPos || 'ALL' }); flash(r.msg); if (r.offers.length) window.scrollTo(0, 0); break; }
-    case 'propose': { const pk = sel => ({ players: sel.filter(x => x[0] === 'p').map(x => +x.slice(2)), picks: sel.filter(x => x[0] === 'k').map(x => +x.slice(2)) }); const tt = ui.tradeTeam == null || ui.tradeTeam === L.user ? L.teams.find(t => t.id !== L.user).id : ui.tradeTeam; const r = G.proposeTrade(L, tt, pk(ui.give), pk(ui.get)); flash(r.msg); if (r.ok) { ui.give = []; ui.get = []; } break; }
+    case 'propose': { const pk = sel => ({ players: sel.filter(x => x[0] === 'p').map(x => +x.slice(2)), picks: sel.filter(x => x[0] === 'k').map(x => +x.slice(2)) }); const tt = ui.tradeTeam == null || ui.tradeTeam === L.user ? L.teams.find(t => t.id !== L.user).id : ui.tradeTeam; const r = G.proposeTrade(L, tt, pk(ui.give), pk(ui.get)); flash(r.msg); ui.tradeMsg = r.msg; ui.tradeOk = r.ok; if (r.ok) { ui.give = []; ui.get = []; } break; }
     case 'coach': me().coach[el.dataset.key] = el.dataset.key === 'rot' ? +id : id; break;
     case 'plan': G.setGamePlan(L, el.dataset.key, id || null); break;
     case 'dcMove': G.moveDepth(L, L.user, +id, +el.dataset.key); break;
@@ -4474,6 +4564,7 @@ function act(a, el) {
     default: return;
   }
   if (a !== 'confirm') ui.confirm = null;
+  if (a !== 'propose' && a !== 'tab') { ui.tradeMsg = null; }
   if (L) G.prepClass(L, IM);
   save(); render();
 }
