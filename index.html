@@ -2761,7 +2761,7 @@ function expansionDraft(L, ids) {
   for (const nt of ids) { const c = posCounts(L, nt); let size = roster(L, nt).length; for (const g of POS) while (c[g] < 2 && size < max - 1) { genPlayer(L, g, nt, 50, [22, 30]); c[g]++; size++; } }
 }
 function classTarget(L, dy) { return rules(dy).draftRounds * (L.teams.length + (EVENTS[dy] || []).filter(e => e.t === 'expand').length) + 25; }
-// Next summer's class is on the board all season. Scouts file reports a few at a time, best-known names first.
+// Next summer's class is on the board all season. Scouts file reports a few at a time, in random order.
 function prepClass(L, imports) {
   if (!['dispersal', 'preseason', 'regular', 'playoffs', 'season-over'].includes(L.phase)) return false;
   const dy = L.year + 1;
@@ -2782,9 +2782,8 @@ function scoutBatch(L, k) {
   const C = L.cls; if (!C) return [];
   const left = C.pool.map(id => L.players[id]).filter(p => p && p.unsc), out = [];
   while (out.length < k && left.length) {
-    const w = left.map(p => Math.exp((p.scout - 60) / 7)), tot = w.reduce((a, b) => a + b, 0);
-    let x = Math.random() * tot, i = 0; while (i < left.length - 1 && (x -= w[i]) > 0) i++;
-    const p = left.splice(i, 1)[0]; delete p.unsc; p.scWk = C.wk; out.push(p);
+    const p = left.splice(Math.floor(Math.random() * left.length), 1)[0];   // completely random order
+    delete p.unsc; p.scWk = C.wk; out.push(p);
   }
   return out;
 }
@@ -3521,7 +3520,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-02a';
+const APP_VERSION = '2026-11-02b';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
