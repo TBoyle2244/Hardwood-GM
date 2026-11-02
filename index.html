@@ -3522,7 +3522,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-02c';
+const APP_VERSION = '2026-11-02d';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -4489,10 +4489,20 @@ async function onFiles(files) {
   }
   flash(out.join(' · ')); save(); render();
 }
+// Usage events for GoatCounter. Only the hosted game loads the counter, so elsewhere this does nothing.
+// Sends a name only: no league data, no personal data. Never throws.
+const SENT = {};
+function track(name, once) {
+  try {
+    if (once && SENT[name]) return; SENT[name] = 1;
+    const gc = window.goatcounter; if (!gc || typeof gc.count !== 'function') return;
+    gc.count({ path: name, title: name, event: true });
+  } catch (e) { /* counting must never get in the way of playing */ }
+}
 function act(a, el) {
-  const id = el.dataset.id;
+  const id = el.dataset.id, before = L ? L.phase : null, beforeY = L ? L.year : null;
   switch (a) {
-    case 'tab': ui.tab = id; ui.open = null; ui.box = null; window.scrollTo(0, 0); break;
+    case 'tab': ui.tab = id; ui.open = null; ui.box = null; window.scrollTo(0, 0); track('tab-' + id, true); break;
     case 'confirm':
       if (ui.confirm !== id) { ui.confirm = id; render(); return; }
       ui.confirm = null;
@@ -4610,6 +4620,13 @@ function act(a, el) {
     default: return;
   }
   if (a !== 'confirm') ui.confirm = null;
+  if (a === 'newLeague' && L) { track('new-league-' + L.year); track('team-' + L.teams[L.user].key); track('difficulty-' + (L.diff || 'pro')); }
+  if (L && before === 'regular' && L.phase !== 'regular') track('season-sim');
+  if (L && before === 'playoffs' && L.phase === 'season-over') track('playoffs-done');
+  if (L && before === 'draft' && L.phase === 'offseason') track('draft-done');
+  if (L && a === 'nextSeason' && L.year !== beforeY) track('new-season');
+  if (a === 'acceptOffer' || (a === 'propose' && ui.tradeOk)) track('trade-made');
+  if (a === 'sat') track('sign-and-trade-shopped', true);
   if (a !== 'propose' && a !== 'tab') { ui.tradeMsg = null; }
   if (L && (BUNDLE || BUNDLE_ERR)) G.prepClass(L, IX());
   save(); render();
