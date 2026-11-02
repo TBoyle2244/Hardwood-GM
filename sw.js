@@ -1,7 +1,7 @@
 /* Hardwood GM offline cache. Uses its own cache names and never touches other apps' caches. */
 const PREFIX = 'hardwood-gm-';
-const CACHE = PREFIX + 'v16';
-const CORE = ['./', 'index.html', 'manifest.json', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'];
+const CACHE = PREFIX + 'v17';
+const CORE = ['./', 'index.html', 'manifest.json', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'nba-data.json'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith(PREFIX) && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
