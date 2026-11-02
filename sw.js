@@ -1,6 +1,6 @@
 /* Hardwood GM offline cache. Uses its own cache names and never touches other apps' caches. */
 const PREFIX = 'hardwood-gm-';
-const CACHE = PREFIX + 'v18';
+const CACHE = PREFIX + 'v19';
 const CORE = ['./', 'index.html', 'manifest.json', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'nba-data.json'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
@@ -9,6 +9,8 @@ self.addEventListener('activate', e => {
 // Serve from cache right away, then refresh the cache in the background when online.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  // the visit counter always goes straight to the network, never the cache
+  if (/goatcounter\.com|gc\.zgo\.at/.test(new URL(e.request.url).hostname)) return;
   // The page itself: try the network first (bypassing the browser's 10-minute cache) so new versions load right away.
   if (e.request.mode === 'navigate') {
     e.respondWith(caches.open(CACHE).then(async c => {
