@@ -695,7 +695,46 @@ const BIG_SCHOOLS = /^(UCLA|Kentucky|North Carolina|UNC|Indiana|Kansas|Louisvill
 function slotGrade(overall) { return 47 + 33 * Math.exp(-(Math.max(1, overall) - 1) / 14); }
 // What a career's win shares say about a player's peak: ~0 WS a fringe player, ~80 a good starter, ~150 an MVP-level star.
 function careerFromWS(ws) { return 46 + Math.sqrt(Math.max(0, ws)) * 4.0; }
-function truePot(slot, r, fut) {
+// How real picks at each draft slot turned out, from finished careers (drafts 1985 to ten years ago).
+// Made-up classes and the newest real classes, whose careers have barely started, draw from it.
+let HIST = null;
+function histTable(imports) {
+  if (!imports || !imports.complete) return null;
+  return memo(imports, 'hist', () => {
+    const fut = futureRatings(imports.future), last = (imports.partial || 2027) - 10, by = [];
+    for (let y = 1985; y <= last; y++) for (const r of imports.drafts[y] || []) {
+      const pk = num(r.Pk); if (!pk || pk > 60) continue;
+      (by[pk] = by[pk] || []).push(truePot(slotGrade(pk), r, fut, true));
+    }
+    return by;
+  });
+}
+// One-time refresh for a class already on the board (season-long class or an open draft) built before
+// classes came from draft history: made-up prospects and the newest real ones get history-based potential.
+function refreshClass(L, imports) {
+  HIST = histTable(imports); if (!HIST) return false;
+  if (imports.partial) Object.defineProperty(L, '_partial', { value: imports.partial, writable: true, configurable: true, enumerable: false });
+  const box = L.draft || L.cls; if (!box || box.h2) return false;
+  box.h2 = true;
+  const y = L.draft ? L.draft.year : L.cls.y, rows = (imports.drafts || {})[y] || [], by = {}, fut = futureRatings(imports.future);
+  rows.forEach(r => by[normName(r.Player)] = r);
+  box.pool.forEach((id, i) => {
+    const p = L.players[id]; if (!p || p.team !== -3 || (p.seen && L.draft)) return;
+    const gap = Math.max(4, p.pot - p.ovr); let pot = null;
+    if (p.real) { const r = by[normName(p.name)]; if (r && y >= imports.partial - 6) pot = truePot(slotGrade(num(r.Pk) || 61), Object.assign({}, r, { _recent: true }), fut); }
+    else { const smp = histSample(i + 1); if (smp != null) pot = clamp(smp + R.int(-1, 1), 38, 99); }
+    if (pot != null) { p.pot = pot; p.ovr = clamp(pot - gap, 32, 82); }
+  });
+  return true;
+}
+function histSample(pk) {
+  if (!HIST) return null;
+  const w = pk <= 3 ? 0 : pk <= 6 ? 1 : pk <= 14 ? 2 : pk <= 30 ? 3 : 6, pool = [];
+  for (let k = Math.max(1, pk - w); k <= Math.min(60, pk + w); k++) if (HIST[k]) pool.push(...HIST[k]);
+  if (!pool.length) { const late = (HIST[58] || []).concat(HIST[59] || [], HIST[60] || []); return late.length ? R.pick(late) - R.int(0, 6) : null; }
+  return R.pick(pool) + (pk > 60 ? -R.int(2, 8) : 0);
+}
+function truePot(slot, r, fut, raw) {
   const ws = has(r.WS) ? Math.max(0, num(r.WS)) : null;
   // real careers decide most of it; the slot and luck only nudge
   let pot;
@@ -710,6 +749,9 @@ function truePot(slot, r, fut) {
   const f = fut && ((r['Player-additional'] && fut['id:' + r['Player-additional']]) || fut['n:' + cleanName(r.Player)]);
   // what he became (his prime) decides it; his career totals nudge it, so an all-time great can go past a normal MVP level
   if (f != null) pot = Math.round(f + clamp(pot - f, -4, 8) * 0.5 + R.norm() * 1.5);
+  // careers still under way (drafted in the last six years): a real outcome for his draft slot, never below what he's already shown
+  const yr = num(r.y || r._y), recent = !raw && HIST && r._recent;
+  if (recent) { const smp = histSample(num(r.Pk) || num(r.Rk) || 61); if (smp != null) pot = Math.max(smp + R.int(-1, 1), f != null ? f + 4 : 0); }
   return clamp(pot, 38, 99);
 }
 // Positions and ages from the seasons you imported, when the prospect shows up in them.
@@ -763,6 +805,7 @@ function entryAge(y) {
 // Younger prospects are further from their ceiling.
 function rawGap(age) { return R.int(6, 16) + Math.max(0, 22 - age) * 2; }
 function prospectFromDraft(L, r, year, teamsN, fut, hints) {
+  if (HIST && year >= (L._partial || 9999) - 6 && !r._recent) r = Object.assign({}, r, { _recent: true });
   const overall = num(r.Pk) || num(r.Rk) || 300, college = r.College || r['College/Univ'] || '';
   const slot = slotGrade(overall);
   const pot = truePot(slot, r, fut);
@@ -785,13 +828,17 @@ function genProspect(L, year, pk) {
   pk = pk || R.int(30, 120);
   const pos = R.pick(['PG', 'SG', 'SF', 'PF', 'C', 'SF', 'SG', 'PF']);
   const slot = slotGrade(pk);
-  let career;
-  if (Math.random() < Math.max(0.25, 0.97 - pk * 0.012)) {
-    const mu = Math.log(Math.max(1.2, 40 * Math.exp(-(pk - 1) / 16)));
-    const ws = clamp(Math.exp(mu + R.norm() * 0.95) - 1, 0, 250);
-    career = careerFromWS(ws);
-  } else career = 42 + R.int(0, 6);
-  const pot = clamp(Math.round(0.1 * slot + 0.9 * career + R.norm() * 2), 38, 99);
+  let career, pot;
+  const smp = histSample(pk);
+  if (smp != null) pot = clamp(smp + R.int(-1, 1), 38, 99);   // a real outcome for that draft slot
+  else {
+    if (Math.random() < Math.max(0.25, 0.97 - pk * 0.012)) {
+      const mu = Math.log(Math.max(1.2, 40 * Math.exp(-(pk - 1) / 16)));
+      const ws = clamp(Math.exp(mu + R.norm() * 0.95) - 1, 0, 250);
+      career = careerFromWS(ws);
+    } else career = 42 + R.int(0, 6);
+    pot = clamp(Math.round(0.1 * slot + 0.9 * career + R.norm() * 2), 38, 99);
+  }
   const age = entryAge(year);
   const ovr = clamp(pot - rawGap(age), 32, 82);
   const college = year >= 1995 && year <= 2005 && age <= 19 && Math.random() < 0.5 ? 'High school' : (year >= 1990 && Math.random() < 0.12 ? R.pick(['Spain', 'France', 'Serbia', 'Brazil', 'Lithuania', 'Australia', 'Argentina', 'Germany', 'Greece', 'Nigeria']) : R.pick(COLLEGES));
@@ -2765,6 +2812,7 @@ function expansionDraft(L, ids) {
 function classTarget(L, dy) { return rules(dy).draftRounds * (L.teams.length + (EVENTS[dy] || []).filter(e => e.t === 'expand').length) + 25; }
 // Next summer's class is on the board all season. Scouts file reports a few at a time, in random order.
 function prepClass(L, imports) {
+  HIST = histTable(imports); if (imports && imports.partial) Object.defineProperty(L, '_partial', { value: imports.partial, writable: true, configurable: true, enumerable: false });
   if (!['dispersal', 'preseason', 'regular', 'playoffs', 'season-over'].includes(L.phase)) return false;
   const dy = L.year + 1;
   if (L.cls && L.cls.y === dy) return false;
@@ -2799,6 +2847,7 @@ function scoutWeek(L) {
 }
 function classBoard(L) { const C = L.cls; if (!C) return null; return { y: C.y, wk: C.wk, list: C.pool.map(id => L.players[id]).filter(p => p && p.team === -3) }; }
 function startDraft(L, imports) {
+  HIST = histTable(imports); if (imports && imports.partial) Object.defineProperty(L, '_partial', { value: imports.partial, writable: true, configurable: true, enumerable: false });
   setEra(L);
   const dy = L.year + 1, rounds = rules(dy).draftRounds;
   const exp = (EVENTS[dy] || []).filter(e => e.t === 'expand'), newT = [];
@@ -3501,7 +3550,7 @@ function leaders(L, key, n, year) {
 }
 function myDraftSlots(L) { const D = L.draft; if (!D) return []; const out = []; for (let i = D.pick; i < D.slotPick.length; i++) { const k = pickById(L, D.slotPick[i]); if (k && k.own === L.user) out.push(i + 1); } return out; }
 
-const API = { fromBundle, undraftedClass, addUndrafted, tradeCheck, retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
+const API = { histTable, refreshClass, fromBundle, undraftedClass, addUndrafted, tradeCheck, retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
   parseCSV, parseBRef, mergeSeason, newLeague, ensureLeague, addNews, roster, freeAgents, value, release, sign, cutTo, depthChart, setDepth, moveDepth, resetDepth, setPlayHurt,
   minutesFor, rotationOrder, ratings, teamOverall, isBig, isGuard, dispPool, dispOnClock, dispPick, dispPass, beginDispersal, dispAI, endDispersal, answerErving,
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
@@ -3522,7 +3571,7 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-02d';
+const APP_VERSION = '2026-11-09a';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -4669,7 +4718,7 @@ document.addEventListener('input', e => { if (e.target.id === 'tempo') { const h
     if (!r.ok) throw new Error('HTTP ' + r.status);
     BUNDLE = G.fromBundle(await r.json()); IXC = null;
   } catch (e) { BUNDLE_ERR = 'Built-in data could not load (' + (e.message || e) + '). Your own imports still work.'; }
-  if (L && (G.rescoreDraft(L, IX()) | G.prepClass(L, IX()) | G.fixShooting(L, IX()))) save();
+  if (L && (G.rescoreDraft(L, IX()) | G.prepClass(L, IX()) | G.fixShooting(L, IX()) | G.refreshClass(L, IX()))) save();
   render();
   if ('serviceWorker' in navigator && location.protocol === 'https:' && !/claude\.ai|claudeusercontent/.test(location.host)) {
     try { navigator.serviceWorker.register('sw.js'); } catch (e) { /* offline install unavailable */ }
