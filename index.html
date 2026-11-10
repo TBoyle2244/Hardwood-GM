@@ -3856,7 +3856,7 @@ const HELP = [
 </ul>` },
 
 { id: 'roster', t: 'Roster tab', tabs: ['roster'], b: `
-<p>Your players, filtered by position and sorted by position, overall or potential. Highlighted positions are starters; the minutes are from your Coach tab rotation. The tag next to a name is his main playing type (see <a data-act="helpGo" data-id="chemistry">Chemistry</a>).</p>
+<p>Your players, filtered by position and sorted by position, overall, potential or this season's salary (highest first). Highlighted positions are starters; the minutes are from your Coach tab rotation. The tag next to a name is his main playing type (see <a data-act="helpGo" data-id="chemistry">Chemistry</a>).</p>
 <p><b>Tap a player</b> for his college and draft spot, plus:</p>
 <ul>
 <li><b>Career stats</b>: year by year, regular season and playoffs, with his types and skill line.</li>
@@ -3907,7 +3907,7 @@ const HELP = [
 
 { id: 'moves', t: 'Moves tab: trades', tabs: ['moves'], b: `
 <ul>
-<li><b>Trade builder.</b> Pick a team, then tap players and picks on both sides (picks for the next three drafts, shown with their projected slot). Before you propose, it shows salary in and out, roster sizes, the chemistry change, and anything that makes the deal impossible.</li>
+<li><b>Trade builder.</b> Pick a team, then tap players and picks on both sides (picks for the next three drafts, shown with their projected slot). Sort both lists by position, overall, potential or salary; the number beside each player is his salary this season. Before you propose, it shows salary in and out, roster sizes, the chemistry change, and anything that makes the deal impossible.</li>
 <li><b>Salary matching.</b> Once there's a salary cap, a team over the cap must take back no more than 125% of what it sends, plus $100K.</li>
 <li><b>Why a trade fails.</b> Either a rule blocks it (cap, roster size), and the builder says which, or the other team says no because it isn't getting enough value. Raise your offer or ask for less.</li>
 <li><b>Trading block.</b> Put players or picks in "You send" and tap <b>Find offers</b>. Every team that wants them makes its best offer, and the top five appear under Trade offers. Offers last a week.</li>
@@ -4027,7 +4027,7 @@ const HELP_TAB = { home: 'office', roster: 'roster', stats: 'league', league: 'l
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-10b';
+const APP_VERSION = '2026-11-10c';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -4522,7 +4522,7 @@ function faCard() {
   const prow = (p, extra, btns) => `<div class="pl wide"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}${p.udfa ? ' <span class="tag">UNDRAFTED</span>' : ''}<div class="pl-sub">Age ${p.age + 1} in ${SL(y)} · ${(p.yrs || 0) + 1} yrs exp${extra ? ' · ' + extra : ''}</div></div>
     <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></div><div class="pl-btns">${btns}</div></div>`;
   let h = `<section class="card offers"><div class="eyebrow">${SL(y)} offseason · ${esc(info.name)}</div><h3>Contracts &amp; free agency</h3><p class="small">${esc(info.text)}</p>
-    <div class="ctbar"><span class="lbl">POSITION</span>${chips('ctGrp', ui.ctGrp || 'ALL')}${sortSeg('ctSort', true, 'pos')}</div>`;
+    <div class="ctbar"><span class="lbl">POSITION</span>${chips('ctGrp', ui.ctGrp || 'ALL')}${sortSeg('ctSort', true, 'pos', true)}</div>`;
   F.sheets.forEach((sh, i) => {
     const p = L.players[sh.pid], picks = G.compPicks(L, sh.sal).map(r => 'a round ' + r + ' pick').join(' and ');
     h += `<div class="offer"><b>${esc(L.teams[sh.from].city)}</b> offer sheet for your ${esc(p.pos)} ${esc(p.name)}: ${sh.yrs} yrs, ${G.money(sh.sal)} a year.
@@ -4597,13 +4597,15 @@ function extCard() {
 }
 
 /* ---------- Sorting ---------- */
+const salNow = p => (p.con && G.salFor(p, G.capYear(L))) || 0;
 function cmp(key) {
+  if (key === 'sal') return (a, b) => salNow(b) - salNow(a) || b.ovr - a.ovr;
   if (key === 'pos') return (a, b) => G.POS.indexOf(a.pos) - G.POS.indexOf(b.pos) || b.ovr - a.ovr;
   return key === 'pot' ? (a, b) => G.shownPot(L, b) - G.shownPot(L, a) || b.ovr - a.ovr : (a, b) => b.ovr - a.ovr || G.shownPot(L, b) - G.shownPot(L, a);
 }
-function sortSeg(stateKey, withPos, def) {
+function sortSeg(stateKey, withPos, def, withSal) {
   const cur = ui[stateKey] || def || 'ovr';
-  const opts = (withPos ? [['pos', 'Position']] : []).concat([['ovr', 'Overall'], ['pot', 'Potential / Scout']]);
+  const opts = (withPos ? [['pos', 'Position']] : []).concat([['ovr', 'Overall'], ['pot', 'Potential / Scout']], withSal ? [['sal', 'Salary']] : []);
   return `<div class="sortrow"><span class="lbl">SORT</span><div class="seg mini">${opts.map(([k, n]) => `<button class="${cur === k ? 'on' : ''}" data-act="sort" data-key="${stateKey}" data-id="${k}">${n}</button>`).join('')}</div></div>`;
 }
 
@@ -4614,7 +4616,7 @@ function vRoster() {
   const mins = {}; G.minutesFor(L, L.user).forEach(x => mins[x.p.id] = x);
   const rc = cmp(ui.rSort || 'pos'), list = all.filter(p => ui.grp === 'ALL' || p.pos === ui.grp).sort(rc);
   return `<section class="card"><div class="split"><h3>${esc(me().name)} roster</h3><span class="count ${all.length > max ? 'bad' : ''}">${all.length} / ${max}</span></div>
-    <p class="small">Highlighted positions are starters; the number is minutes per game in your rotation (Coach tab). Tap a player for options.</p>${chips('grp', ui.grp)}${sortSeg('rSort', true, 'pos')}
+    <p class="small">Highlighted positions are starters; the number is minutes per game in your rotation (Coach tab). Tap a player for options.</p>${chips('grp', ui.grp)}${sortSeg('rSort', true, 'pos', true)}
     <div class="list">${list.map(p => { const m = mins[p.id]; return `<div class="pl ${ui.open === p.id ? 'open' : ''}">
       <button class="pl-main" data-act="open" data-id="${p.id}"><span class="pos ${m && m.start ? 'st' : ''}">${esc(p.pos)}</span>
       <div class="pl-name">${esc(p.name)} ${archTags(p, 1)}${p.inj ? `<span class="inj">INJ ${injTxt(p)}</span>` : ''}<div class="pl-sub">${p.holdout ? '<b class="bad">HOLDOUT</b> · ' : ''}${p.tradeReq ? '<b class="bad">WANTS OUT</b> · ' : ''}${p.promise ? '<b class="warn">PROMISED MINUTES</b> · ' : ''}Age ${p.age} · ${p.yrs ? p.yrs + ' yr' + (p.yrs > 1 ? 's' : '') : 'Rookie'} · ${m ? Math.round(m.min) + ' min · ' : 'Out of rotation · '}<span class="${G.mor(p) < 50 ? 'bad' : (G.mor(p) >= 75 ? 'good' : '')}">${G.moraleWord(p)}</span> · ${conText(p)}${statLine(p) ? ' · ' + statLine(p) : ''}</div></div>
@@ -4853,7 +4855,7 @@ function vMoves() {
   const theirs = G.roster(L, tt).filter(p => gGet === 'ALL' || p.pos === gGet).sort(tc);
   const capOn = G.capFor(G.capYear(L)) != null;
   const posSel = (side, cur) => `<label class="fld tpos">Position<select id="tGrp-${side}">${['ALL'].concat(G.POS).map(g => `<option value="${g}"${cur === g ? ' selected' : ''}>${g === 'ALL' ? 'All positions' : g}</option>`).join('')}</select></label>`;
-  const btnP = (p, side) => { const key = 'p:' + p.id, on = ui[side].includes(key); return `<button class="tp ${on ? 'on' : ''}" data-act="tp" data-side="${side}" data-id="${key}"><span class="pos">${esc(p.pos)}</span><span class="tp-n">${esc(p.name)}</span><span class="tp-a">${capOn ? G.money(G.salFor(p, G.capYear(L)) || 0) : p.age}</span>${rating(showPot ? G.shownPot(L, p) : p.ovr)}</button>`; };
+  const btnP = (p, side) => { const key = 'p:' + p.id, on = ui[side].includes(key); return `<button class="tp ${on ? 'on' : ''}" data-act="tp" data-side="${side}" data-id="${key}"><span class="pos">${esc(p.pos)}</span><span class="tp-n">${esc(p.name)}</span><span class="tp-a">${capOn || ui.tSort === 'sal' ? G.money(salNow(p)) : p.age}</span>${rating(showPot ? G.shownPot(L, p) : p.ovr)}</button>`; };
   const btnK = (k, side) => { const key = 'k:' + k.id, on = ui[side].includes(key); return `<button class="tp ${on ? 'on' : ''}" data-act="tp" data-side="${side}" data-id="${key}"><span class="pos pk">PICK</span><span class="tp-n">${k.y} R${k.rnd}${k.orig !== k.own ? ' ' + esc(L.teams[k.orig].abbr) : ''}</span><span class="tp-a">≈#${G.projectedOverall(L, k)}</span></button>`; };
   const col = (side, players, tid, label) => {
     const picks = G.teamPicks(L, tid);
@@ -4877,7 +4879,7 @@ function vMoves() {
   h += `<section class="card"><h3>Trade</h3>${G.pastDeadline(L) ? '<p class="small bad"><b>The trade deadline has passed.</b> Trading reopens after the playoffs.</p>' : (L.phase === 'regular' ? `<p class="small">Trade deadline in ${Math.max(0, G.deadlineDay(L) - L.day)} days.</p>` : '')}
     <p class="small">Trade players and picks for the next three drafts. Picks show their projected overall slot.${capOn ? ' The number next to each player is his salary.' : ''}</p>
     <label class="fld">Trade partner<select id="tradeTeam">${others.map(t => `<option value="${t.id}"${t.id === tt ? ' selected' : ''}>${esc(tname(t))} (${rec(t)})</option>`).join('')}</select></label>
-    ${ui.tview === 'k' ? '' : sortSeg('tSort', true, 'pos')}<div class="trade">${col('give', mine, L.user, 'You send')}${col('get', theirs, tt, 'You receive')}</div>
+    ${ui.tview === 'k' ? '' : sortSeg('tSort', true, 'pos', true)}<div class="trade">${col('give', mine, L.user, 'You send')}${col('get', theirs, tt, 'You receive')}</div>
     <div class="trade summary"><div><div class="eyebrow">Sending</div>${chosen(ui.give)}</div><div><div class="eyebrow">Receiving</div>${chosen(ui.get)}</div></div>
     ${gauge}
     <div class="row"><button class="btn primary" data-act="propose"${ready ? '' : ' disabled'}>Propose trade</button><button class="btn" data-act="clearTrade">Clear</button></div></section>

@@ -2,7 +2,7 @@
 
 **For a new Claude chat:** this file is the full history and current state of Hardwood GM, a historical NBA general-manager game. Read all of it before changing anything. Attach `hardwood-gm-source.zip` too: it has the real code. This file is only a guide to the code.
 
-*Written 2026-11-09. Current version: **2026-11-10b**.*
+*Written 2026-11-09. Current version: **2026-11-10c**.*
 
 ---
 
@@ -41,7 +41,7 @@ src/style.css    hardwood palette, light/dark themes
 src/engine.js    ALL game logic (≈3,300 lines). Works in the browser (window.HW) and Node (module.exports)
 src/ui.js        ALL screens (≈1,160 lines). APP_VERSION constant lives here
 src/help.js      in-game manual text (HELP sections, HELP_TAB); inlined before ui.js. Keep it current.
-src/sw.js        service worker; cache name PREFIX + 'vNN' (bump each release, currently v24)
+src/sw.js        service worker; cache name PREFIX + 'vNN' (bump each release, currently v25)
 src/nba-data.json  built-in data (≈4.8 MB), made by tools/build_data.py
 tools/build_data.py  turns the dataset CSVs into nba-data.json
 build.py         inlines css+engine+help+ui into shell → dist/hardwood-gm/index.html (+ copies the other 6 files)
@@ -187,6 +187,7 @@ test/            node + Playwright tests (see §8)
 - **11-09b:** team chemistry (six parts plus time together, ±3 team rating), archetypes, chemistry in the trade builder, AI uses fit. The lineup shape now counts through chemistry's positional balance instead of directly. Service worker v22.
 - **11-10a:** in-game Help and manual (`src/help.js`); setup screen's "Import data" button became "How to play". Service worker v23.
 - **11-10b:** draft tracker (live during the draft, plus League → Drafts history). Service worker v24.
+- **11-10c:** sort by salary (this season's, highest first) on Roster, Contracts and the trade builder (`cmp('sal')`, `salNow`, `sortSeg(..., withSal)`). Before the cap, the trade builder shows salary instead of age while sorted by salary. Service worker v25.
 
 ## 7. Known issues and ideas not built yet
 
@@ -212,7 +213,7 @@ test/            node + Playwright tests (see §8)
 - `node test/health.js 45 real|gen out.json` + `node test/hreport.js out.json`: long-run metrics using made-up test data. `test/tune.sh` compares tuning settings.
 - `test/udfa.js`, `sat.js`, `start.js`, `shoot.js`, `feat.js`, `hist.js`: feature checks.
 - Browser tests: start `python3 -m http.server 8765 --directory dist/hardwood-gm` in the background, then run `node test/ui5.js` … `ui12.js` and `gc.js` (Playwright). They print `errors []` when clean, and most save screenshots.
-- `node test/chem.js 10 1990`: chemistry check (archetype mix, score spread, wins per chemistry point, link to talent). Browser: `test/ui13.js` (Chemistry card, roster tags, trade preview), `test/ui14.js` (Help: context sections, links, search, back, phone width), `test/ui15.js` (draft tracker: rebuilt start-year draft, live tracker, saved history, filters).
+- `node test/chem.js 10 1990`: chemistry check (archetype mix, score spread, wins per chemistry point, link to talent). Browser: `test/ui13.js` (Chemistry card, roster tags, trade preview), `test/ui14.js` (Help: context sections, links, search, back, phone width), `test/ui15.js` (draft tracker: rebuilt start-year draft, live tracker, saved history, filters), `test/ui16.js` (salary sort, 1976 and 2016, phone width).
 - `test/fixtures.js`: made-up 1976 rosters for tests that don't need real data.
 
 ## 9. Conversation timeline, condensed
@@ -234,3 +235,4 @@ test/            node + Playwright tests (see §8)
 8. Talked about letting him play games live, then pivoted to team chemistry. He asked for play style, skill coverage, offensive and defensive synergy, positional balance and archetype diversity, said time together should matter and ±3 points is right. Built in 11-09b.
 9. Asked for a help menu and full manual. Built in 11-10a.
 10. Asked for a draft tracker showing who AI teams drafted. Built in 11-10b.
+11. Asked to sort by yearly salary on the Roster and trade screens. Built in 11-10c.
