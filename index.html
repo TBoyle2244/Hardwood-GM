@@ -288,6 +288,11 @@ input[type=range] { width: 100%; accent-color: var(--field); }
 .help-body ul, .help-body ol { padding-left: 20px; margin: 6px 0; }
 .help-body li { margin: 5px 0; }
 .help-body a { color: var(--gold); text-decoration: underline; cursor: pointer; }
+/* draft tracker */
+.pl.mine { background: var(--gold-soft); border-radius: 8px; padding-left: 6px; padding-right: 6px; }
+.pos.pk { font-variant-numeric: tabular-nums; }
+.dt-f .fld { flex: 1; max-width: 340px; }
+.seg.six button { font-size: 12px; }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -1082,7 +1087,7 @@ function newLeagueAt(imports, userKey, opts) {
     const tid = idOf((r.Tm || r.Team || '').toUpperCase());
     if (tid == null || names.has(cleanName(r.Player))) continue;
     const p = prospectFromDraft(L, r, Y, L.teams.length, fut, hints);
-    p.team = tid; p.draft = { year: Y, rnd: p.realPick.rnd, pick: p.realPick.pick }; delete p.reveal;
+    p.team = tid; p.draft = { year: Y, rnd: p.realPick.rnd, pick: p.realPick.pick }; delete p.reveal; p.dtid = tid;
     if ((p.realPick.rnd >= 3 && Math.random() < 0.75) || (p.realPick.rnd === 2 && Math.random() < 0.4)) { delete L.players[p.id]; continue; }
     rookieDeal(L, p, Y, p.realPick.pick, p.realPick.rnd); counts[tid] = (counts[tid] || 0) + 1;
   }
@@ -1140,7 +1145,7 @@ function newLeague(imports, userKey, opts) {
     const tid = codeTo[(r.Tm || r.Team || '').toUpperCase()];
     if (tid == null || names.has(r.Player)) continue;
     const p = prospectFromDraft(L, r, 1976, 18, fut);
-    p.team = tid; p.draft = { year: 1976, rnd: p.realPick.rnd, pick: p.realPick.pick };
+    p.team = tid; p.draft = { year: 1976, rnd: p.realPick.rnd, pick: p.realPick.pick }; p.dtid = tid;
     if ((p.realPick.rnd >= 4 && Math.random() < 0.8) || (p.realPick.rnd === 3 && Math.random() < 0.5)) { delete L.players[p.id]; continue; } // most late picks never made a camp
     rookieDeal(L, p, 1976, p.realPick.pick, p.realPick.rnd);
   }
@@ -3158,7 +3163,8 @@ function makePick(L, pid) {
   p.team = tid; p.draft = { year: D.year, rnd: Math.floor(D.pick / D.n) + 1, pick: D.pick + 1 };
   rookieDeal(L, p, D.year, D.pick + 1, p.draft.rnd);
   D.pool = D.pool.filter(i => i !== pid);
-  D.log.push({ n: D.pick + 1, tid, pid });
+  D.log.push({ n: D.pick + 1, r: p.draft.rnd, tid, pid, ab: L.teams[tid].abbr, sc: p.scout, pot: p.pot });
+  p.dtid = tid;
   L.picks = L.picks.filter(k => k.id !== D.slotPick[D.pick]);
   D.pick++;
 }
@@ -3259,6 +3265,7 @@ function endDraft(L, imports) {
   const mine = D.log.filter(x => x.tid === L.user).slice(0, 3).map(x => L.players[x.pid].name);
   addNews(L, `Draft complete. ${L.teams[L.user].abbr} top picks: ${mine.join(', ') || 'none'}.`);
   L.picks = (L.picks || []).filter(k => k.y !== D.year);
+  L.draftLog = L.draftLog || {}; L.draftLog[D.year] = D.log.map(x => logEntry(L, x));
   L.draft = null; L.phase = 'offseason';
   ensurePicks(L);
   L.offers = [];
@@ -3334,6 +3341,27 @@ function archivePlayers(L) {
     }
     if (p.team === -1 && !played) { p.faYears = (p.faYears || 0) + 1; if (p.faYears >= 2) delete L.players[id]; }
   }
+}
+/* ---------- draft tracker ---------- */
+function logEntry(L, x) {
+  const p = getP(L, x.pid), t = L.teams[x.tid];
+  return { n: x.n, r: x.r || (p && p.draft && p.draft.rnd) || 1, tid: x.tid, pid: x.pid, ab: x.ab || (t ? t.abbr : '?'), sc: x.sc != null ? x.sc : p && p.scout, pot: x.pot != null ? x.pot : p && p.pot };
+}
+// Every draft held in this league, by year: { n, r, tid, pid, ab (team at the time), sc (scout grade), pot (true potential) }.
+// The draft in progress shows live. Drafts from saves made before the tracker existed are rebuilt from the players
+// themselves (approx: true when the drafting team is a guess from the team he first played for).
+function draftHistory(L) {
+  const out = {};
+  for (const y in L.draftLog || {}) out[y] = L.draftLog[y];
+  const D = L.draft; if (D && D.log && D.log.length) out[D.year] = D.log.map(x => logEntry(L, x));
+  const first = L.startYear || 1976, miss = {};
+  for (const p of allPlayers(L)) {
+    const d = p.draft; if (!d || !d.year || d.year < first || out[d.year] || d.pick == null) continue;
+    const tid = p.dtid != null ? p.dtid : p.hist && p.hist[d.year] && p.hist[d.year].tm; if (tid == null) continue;
+    (miss[d.year] = miss[d.year] || []).push({ n: d.pick, r: d.rnd || 1, tid, pid: p.id, ab: L.teams[tid] ? L.teams[tid].abbr : '?', sc: p.scout, pot: p.pot, approx: p.dtid == null });
+  }
+  for (const y in miss) out[y] = miss[y].sort((a, b) => a.n - b.n);
+  return out;
 }
 function getP(L, id) { return L.players[id] || (L.retired || {})[id]; }
 function allPlayers(L) { return Object.values(L.players).concat(Object.values(L.retired || {})); }
@@ -3768,7 +3796,7 @@ function leaders(L, key, n, year) {
 }
 function myDraftSlots(L) { const D = L.draft; if (!D) return []; const out = []; for (let i = D.pick; i < D.slotPick.length; i++) { const k = pickById(L, D.slotPick[i]); if (k && k.own === L.user) out.push(i + 1); } return out; }
 
-const API = { chemistry, chemPreview, chemCare, archetypes, archName, ARCH, CHEM, CHEM_PARTS, chemTrack, chemRaw, chemFrom, chemNorm, tenure, baseRatings, histTable, refreshClass, fromBundle, undraftedClass, addUndrafted, tradeCheck, retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
+const API = { draftHistory, chemistry, chemPreview, chemCare, archetypes, archName, ARCH, CHEM, CHEM_PARTS, chemTrack, chemRaw, chemFrom, chemNorm, tenure, baseRatings, histTable, refreshClass, fromBundle, undraftedClass, addUndrafted, tradeCheck, retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
   parseCSV, parseBRef, mergeSeason, newLeague, ensureLeague, addNews, roster, freeAgents, value, release, sign, cutTo, depthChart, setDepth, moveDepth, resetDepth, setPlayHurt,
   minutesFor, rotationOrder, ratings, teamOverall, isBig, isGuard, dispPool, dispOnClock, dispPick, dispPass, beginDispersal, dispAI, endDispersal, answerErving,
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
@@ -3906,6 +3934,7 @@ const HELP = [
 <li><b>Workouts.</b> At the draft you get 10 workouts (more with some history decisions). A workout shows a prospect's true potential and five skill grades. Unused workouts don't carry over.</li>
 <li><b>Lottery.</b> The order follows the real system of the year: coin flip early on, then the lottery formats as they changed.</li>
 <li><b>On the clock.</b> Draft a player, let your scouts pick, sim to your next pick, or auto-draft the rest. Shop your pick to move down; to move up, call the team on the clock.</li>
+<li><b>Draft tracker.</b> Once the draft begins, a tracker on the draft screen lists every pick as it happens, newest first, with the team, round, scout grade and the real-life pick. Filter by team or round. TRUE potential shows only for players you worked out. After the draft, every past draft stays on the League tab under <b>Drafts</b>, with how each player has turned out.</li>
 <li><b>Real draft classes</b> are used through the most recent real draft. After that, classes are made up, but their talent is drawn from what real picks at each slot became, so they match history.</li>
 <li><b>Undrafted rookies</b> (from 1977): real players nobody drafted show up in the summer they really debuted. Their potential stays hidden for a season, so they can be steals. Most sign camp contracts.</li>
 <li><b>Draft rounds</b> shrink over the years, to 2 rounds from 1989.</li>
@@ -3945,6 +3974,7 @@ const HELP = [
 <li><b>Leaders</b>: per-game leaders (70% of games needed).</li>
 <li><b>Results</b>: the last five seasons, with box scores for the last two.</li>
 <li><b>Playoffs</b>: the bracket and series results.</li>
+<li><b>Drafts</b>: every draft held in your league, pick by pick: who each team took, his scout grade on draft day, his rating and potential now, where he really went, and whether he's moved on or retired. Filter by team or round.</li>
 <li><b>History</b>: champions, the Hall of Fame, retired jerseys and team ratings.</li>
 </ul>
 <p><b>Stats tab</b>:</p>
@@ -3997,7 +4027,7 @@ const HELP_TAB = { home: 'office', roster: 'roster', stats: 'league', league: 'l
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-10a';
+const APP_VERSION = '2026-11-10b';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -4409,6 +4439,7 @@ function vDraft() {
       <div class="row">${mine ? '<button class="btn" data-act="autoPick">Let scouts pick</button><button class="btn" data-act="shopPick">Shop this pick</button>' : `<button class="btn primary" data-act="toMyPick">Sim to my pick</button><button class="btn" data-act="callPick">Call ${esc(L.teams[c].city)} about #${D.pick + 1}</button>`}<button class="btn" data-act="draftRest">Auto-draft the rest</button></div>
       <p class="small">${mine ? 'Shop this pick to see what teams will give you to move down. Offers appear above.' : 'To move up, call the team on the clock: the Moves tab opens with their pick selected, so you can add what you would give.'}</p></section>`;
   }
+  if (started && D.log.length) h += draftTracker(D.year, G.draftHistory(L)[D.year], true);
   const show = ui.draftShow || 60;
   const all = D.pool.map(i => L.players[i]).filter(p => ui.draftGrp === 'ALL' || (ui.draftGrp === 'SEEN' ? p.seen : p.pos === ui.draftGrp)).sort((a, b) => b.scout - a.scout);
   const pool = all.slice(0, show);
@@ -4419,6 +4450,42 @@ function vDraft() {
     <div class="pl-btns">${!p.seen && visits > 0 ? `<button class="btn sm" data-act="scout" data-id="${p.id}">Work out</button>` : ''}${mine ? `<button class="btn sm primary" data-act="draftPick" data-id="${p.id}">Draft</button>` : ''}</div></div>`).join('') : `<p>${ui.draftGrp === 'SEEN' ? 'You have not worked out anyone still on the board.' : 'No prospects at this position.'}</p>`}</div>
     ${all.length > show ? `<div class="row"><button class="btn" data-act="draftMore">Show ${Math.min(60, all.length - show)} more</button></div>` : ''}</section>`;
   return h + myPicks();
+}
+/* ---------- Draft tracker ---------- */
+// Every pick of one draft. Live during the draft (newest first, and only what your own workouts revealed);
+// afterwards in pick order with how each player has turned out so far.
+function draftTracker(y, list, live) {
+  if (!list || !list.length) return '';
+  const teamF = ui.dtTeam == null ? 'ALL' : String(ui.dtTeam), rounds = [...new Set(list.map(x => x.r))].sort((a, b) => a - b);
+  const rnd = rounds.includes(ui.dtRnd) ? ui.dtRnd : 0;
+  const tids = [...new Set(list.map(x => x.tid))].sort((a, b) => (L.teams[a] ? L.teams[a].abbr : '').localeCompare(L.teams[b] ? L.teams[b].abbr : ''));
+  let rows = list.filter(x => (teamF === 'ALL' || String(x.tid) === teamF) && (!rnd || x.r === rnd));
+  if (live) rows = rows.slice().reverse();
+  const cap = live && !ui.dtAll ? 10 : 400, shown = rows.slice(0, cap);
+  const mineN = list.filter(x => x.tid === L.user).length, approx = list.some(x => x.approx);
+  const row = x => {
+    const p = G.getP(L, x.pid); if (!p) return '';
+    const now = p.retiredYear != null || p.team === -2 ? 'Retired' : p.team >= 0 && L.teams[p.team] ? (p.team !== x.tid ? 'now ' + L.teams[p.team].abbr : '') : p.team === -1 ? 'free agent' : '';
+    const real = p.realPick && p.realPick.pick ? `real: #${p.realPick.pick} ${esc(p.realPick.tm)}` : (p.realPick ? 'real: undrafted' : '');
+    const right = live
+      ? `<div class="pl-r"><span class="lbl">SCOUT</span>${rating(x.sc != null ? x.sc : p.scout)}</div>${p.seen ? `<div class="pl-r"><span class="lbl">TRUE</span>${rating(p.pot)}</div>` : ''}`
+      : `<div class="pl-r"><span class="lbl">SCOUT</span>${x.sc != null ? rating(x.sc) : '<span class="rt">–</span>'}</div><div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div>`;
+    const name = live ? esc(p.name) : `<button class="lnk" data-act="statPlayer" data-id="${p.id}">${esc(p.name)}</button>`;
+    return `<div class="pl ${x.tid === L.user ? 'mine' : ''}"><div class="pl-main"><span class="pos pk">${x.n}</span><div class="pl-name">${name} <span class="tag">${esc(p.pos)}</span>
+      <div class="pl-sub"><b>${esc(x.ab)}</b> · Round ${x.r}${p.college ? ' · ' + esc(p.college) : ''}${real ? ' · ' + real : ''}${now ? ' · ' + now : ''}</div></div>${right}</div></div>`;
+  };
+  return `<section class="card"><div class="split"><h3>${live ? 'Draft tracker' : y + ' draft'}</h3><span class="small">${list.length} picks${mineN ? ` · ${mineN} yours` : ''}</span></div>
+    <p class="small">${live ? 'Every pick so far, newest first. Your picks are highlighted. TRUE shows only for players you worked out.' : `Every pick, the scout grade on draft day, and how he has turned out. Your picks are highlighted. Tap a name for his career.${approx ? ' This draft happened before the tracker was added, so the team shown is the one he first played for.' : ''}`}</p>
+    <div class="row dt-f"><label class="fld">Team<select id="dtTeam"><option value="ALL">All teams</option>${tids.map(t => `<option value="${t}"${String(t) === teamF ? ' selected' : ''}>${esc(L.teams[t] ? tname(L.teams[t]) : '?')}</option>`).join('')}</select></label></div>
+    ${rounds.length > 1 ? `<div class="chips"><button class="chip ${!rnd ? 'on' : ''}" data-act="dtRnd" data-id="0">All rounds</button>${rounds.map(r => `<button class="chip ${rnd === r ? 'on' : ''}" data-act="dtRnd" data-id="${r}">Round ${r}</button>`).join('')}</div>` : ''}
+    <div class="list">${shown.length ? shown.map(row).join('') : '<p class="small">No picks match.</p>'}</div>
+    ${live && rows.length > cap ? `<div class="row"><button class="btn" data-act="dtAll">Show all ${rows.length} picks</button></div>` : live && ui.dtAll && rows.length > 10 ? '<div class="row"><button class="btn" data-act="dtAll">Show the last 10</button></div>' : ''}</section>`;
+}
+function vDrafts() {
+  const H = G.draftHistory(L), ys = Object.keys(H).map(Number).sort((a, b) => b - a);
+  if (!ys.length) return '<section class="card"><h3>Drafts</h3><p class="small">No drafts yet. After your first draft, every pick by every team shows here, year by year.</p></section>';
+  const y = ys.includes(ui.dtYear) ? ui.dtYear : ys[0];
+  return `<div class="chips">${ys.map(v => `<button class="chip ${v === y ? 'on' : ''}" data-act="dtYear" data-id="${v}">${v}</button>`).join('')}</div>` + draftTracker(y, H[y], L.draft && L.draft.year === y);
 }
 function myPicks() {
   const mine = L.draft.log.filter(x => x.tid === L.user);
@@ -4714,8 +4781,8 @@ function divTable(conf, div) {
 }
 function vLeague() { return (ui.box ? boxCard(ui.box) : '') + vLeagueInner(); }
 function vLeagueInner() {
-  const seg = [['stand', 'Standings'], ['lead', 'Leaders'], ['res', 'Results'], ['po', 'Playoffs'], ['hist', 'History']];
-  let h = `<div class="seg five">${seg.map(([k, n]) => `<button class="${ui.lg === k ? 'on' : ''}" data-act="lg" data-id="${k}">${n}</button>`).join('')}</div>`;
+  const seg = [['stand', 'Standings'], ['lead', 'Leaders'], ['res', 'Results'], ['po', 'Playoffs'], ['drafts', 'Drafts'], ['hist', 'History']];
+  let h = `<div class="seg five six">${seg.map(([k, n]) => `<button class="${ui.lg === k ? 'on' : ''}" data-act="lg" data-id="${k}">${n}</button>`).join('')}</div>`;
   if (ui.lg === 'stand') {
     const divs = G.divisions(L);
     for (const c of ['East', 'West']) {
@@ -4752,6 +4819,7 @@ function vLeagueInner() {
     }
   }
   if (ui.lg === 'po') h += L.playoffs ? playoffResults() : '<section class="card"><p>The playoffs start when the regular season ends.</p></section>';
+  if (ui.lg === 'drafts') h += vDrafts();
   if (ui.lg === 'hist') {
     const AS = L.allstar || {}, asy = Object.keys(AS).map(Number).sort((a, b) => b - a);
     if (asy.length) h += `<section class="card"><h3>All-Star Games</h3><table class="tbl"><tbody>${asy.map(y => { const g = AS[y], mv = G.getP(L, g.mvp); return `<tr><td>${SL(y)}</td><td class="l">${g.es > g.ws ? 'East' : 'West'} ${Math.max(g.es, g.ws)}-${Math.min(g.es, g.ws)}</td><td class="l small">MVP ${mv ? esc(mv.name) : ''}</td></tr>`; }).join('')}</tbody></table></section>`;
@@ -5043,6 +5111,9 @@ function act(a, el) {
     case 'recPo': ui.recPo = id; break;
     case 'clsOpen': ui.clsOpen = !ui.clsOpen; ui.clsShow = 40; break;
     case 'chemOpen': ui.chemOpen = !ui.chemOpen; break;
+    case 'dtRnd': ui.dtRnd = +id; break;
+    case 'dtAll': ui.dtAll = !ui.dtAll; break;
+    case 'dtYear': ui.dtYear = +id; ui.dtTeam = null; ui.dtRnd = 0; break;
     case 'help': if (ui.tab === 'help') { ui.tab = ui.helpFrom || 'home'; window.scrollTo(0, 0); break; }
       ui.helpFrom = ui.tab; ui.helpOpen = helpFor(ui.tab); ui.tab = 'help'; ui.open = null; ui.box = null; window.scrollTo(0, 0); track('help', true); break;
     case 'helpBack': ui.tab = ui.helpFrom && ui.helpFrom !== 'help' ? ui.helpFrom : 'home'; window.scrollTo(0, 0); break;
@@ -5162,6 +5233,7 @@ document.addEventListener('change', e => {
   if (t.id === 'tGrp-give' || t.id === 'tGrp-get') { ui[t.id === 'tGrp-give' ? 'tGrpGive' : 'tGrpGet'] = t.value; render(); }
   else if (t.id === 'planDef') { G.setGamePlan(L, 'def', t.value || null); save(); render(); }
   else if (t.id === 'blockPos') { ui.blockPos = t.value; render(); }
+  else if (t.id === 'dtTeam') { ui.dtTeam = t.value === 'ALL' ? null : t.value; render(); }
   else if (t.id === 'planOff') { G.setGamePlan(L, 'off', t.value || null); save(); render(); }
   else if (t.id === 'tradeTeam') { ui.tradeTeam = +t.value; ui.get = []; render(); }
   else if (t.id === 'tempo') { me().coach.tempo = +t.value; save(); render(); }

@@ -2,7 +2,7 @@
 
 **For a new Claude chat:** this file is the full history and current state of Hardwood GM, a historical NBA general-manager game. Read all of it before changing anything. Attach `hardwood-gm-source.zip` too: it has the real code. This file is only a guide to the code.
 
-*Written 2026-11-09. Current version: **2026-11-10a**.*
+*Written 2026-11-09. Current version: **2026-11-10b**.*
 
 ---
 
@@ -41,7 +41,7 @@ src/style.css    hardwood palette, light/dark themes
 src/engine.js    ALL game logic (≈3,300 lines). Works in the browser (window.HW) and Node (module.exports)
 src/ui.js        ALL screens (≈1,160 lines). APP_VERSION constant lives here
 src/help.js      in-game manual text (HELP sections, HELP_TAB); inlined before ui.js. Keep it current.
-src/sw.js        service worker; cache name PREFIX + 'vNN' (bump each release, currently v23)
+src/sw.js        service worker; cache name PREFIX + 'vNN' (bump each release, currently v24)
 src/nba-data.json  built-in data (≈4.8 MB), made by tools/build_data.py
 tools/build_data.py  turns the dataset CSVs into nba-data.json
 build.py         inlines css+engine+help+ui into shell → dist/hardwood-gm/index.html (+ copies the other 6 files)
@@ -89,6 +89,7 @@ test/            node + Playwright tests (see §8)
 - The next draft class is visible all season. A random handful of prospects get graded each week, so the board reshuffles, and everyone is graded by the end of the regular season.
 - At the draft, 10 workouts (plus perks) show a prospect's true potential and five skill grades.
 - You can shop your pick, and AI teams call to trade up.
+- Draft tracker (11-10b): a live card on the draft screen (newest first, team and round filters, TRUE only for your workouts), and League tab → Drafts for every past draft with draft-day scout grade, current OVR/POT and the real pick. Picks are kept in `L.draftLog[year]` ({n, r, tid, pid, ab, sc, pot}) at `endDraft`; `p.dtid` is the drafting team. `draftHistory(L)` rebuilds drafts from older saves using the team each player first played for.
 - Real undrafted players arrive as free agents in the summer they really debuted (from 1977). Their potential stays hidden for their first season, AI teams judge them by scout grade only, and most get camp contracts.
 
 **Players**
@@ -185,6 +186,7 @@ test/            node + Playwright tests (see §8)
 - **11-09a:** draft classes from real draft history. Made-up classes after 2026 and the newest real classes (last 6 years) draw potential from what real picks at that slot became (1985–2016 drafts). Existing leagues refresh the class on the board once.
 - **11-09b:** team chemistry (six parts plus time together, ±3 team rating), archetypes, chemistry in the trade builder, AI uses fit. The lineup shape now counts through chemistry's positional balance instead of directly. Service worker v22.
 - **11-10a:** in-game Help and manual (`src/help.js`); setup screen's "Import data" button became "How to play". Service worker v23.
+- **11-10b:** draft tracker (live during the draft, plus League → Drafts history). Service worker v24.
 
 ## 7. Known issues and ideas not built yet
 
@@ -210,7 +212,7 @@ test/            node + Playwright tests (see §8)
 - `node test/health.js 45 real|gen out.json` + `node test/hreport.js out.json`: long-run metrics using made-up test data. `test/tune.sh` compares tuning settings.
 - `test/udfa.js`, `sat.js`, `start.js`, `shoot.js`, `feat.js`, `hist.js`: feature checks.
 - Browser tests: start `python3 -m http.server 8765 --directory dist/hardwood-gm` in the background, then run `node test/ui5.js` … `ui12.js` and `gc.js` (Playwright). They print `errors []` when clean, and most save screenshots.
-- `node test/chem.js 10 1990`: chemistry check (archetype mix, score spread, wins per chemistry point, link to talent). Browser: `test/ui13.js` (Chemistry card, roster tags, trade preview), `test/ui14.js` (Help: context sections, links, search, back, phone width).
+- `node test/chem.js 10 1990`: chemistry check (archetype mix, score spread, wins per chemistry point, link to talent). Browser: `test/ui13.js` (Chemistry card, roster tags, trade preview), `test/ui14.js` (Help: context sections, links, search, back, phone width), `test/ui15.js` (draft tracker: rebuilt start-year draft, live tracker, saved history, filters).
 - `test/fixtures.js`: made-up 1976 rosters for tests that don't need real data.
 
 ## 9. Conversation timeline, condensed
@@ -231,3 +233,4 @@ test/            node + Playwright tests (see §8)
 7. Friends played past 2026 and found the draft classes weak. The fix was history-based classes (11-09a).
 8. Talked about letting him play games live, then pivoted to team chemistry. He asked for play style, skill coverage, offensive and defensive synergy, positional balance and archetype diversity, said time together should matter and ±3 points is right. Built in 11-09b.
 9. Asked for a help menu and full manual. Built in 11-10a.
+10. Asked for a draft tracker showing who AI teams drafted. Built in 11-10b.
