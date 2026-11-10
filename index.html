@@ -265,6 +265,29 @@ input[type=range] { width: 100%; accent-color: var(--field); }
 @keyframes toastOut { to { opacity: 0; visibility: hidden; } }
 .toast.inline { margin: 8px 0; }
 .toast.bad { border-color: var(--bad, #b33); }
+/* chemistry */
+.bar.chem { grid-template-columns: 132px 1fr 30px; padding: 3px 0; }
+.bar.chem .bar-l { font-size: 13px; }
+.chem-score { font-family: var(--cond); font-weight: 800; font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; }
+.tag.arch { font-weight: 600; letter-spacing: 0; text-transform: none; padding: 0 5px; font-size: 10.5px; opacity: .85; }
+.archs { margin-top: 4px; display: flex; gap: 4px; flex-wrap: wrap; }
+.bar-f.c-good { background: var(--good); } .bar-f.c-mid { background: var(--warn); } .bar-f.c-bad { background: var(--bad); }
+/* help & manual */
+.help-btn { margin-left: auto; flex: none; width: 40px; height: 40px; border-radius: 50%; border: 2px solid currentColor; background: transparent; color: inherit;
+  font-family: var(--display); font-size: 20px; line-height: 1; display: grid; place-items: center; opacity: .9; }
+.help-btn.on { background: var(--field-ink); color: var(--field); }
+.help-search { width: 100%; box-sizing: border-box; font: inherit; font-size: 16px; padding: 10px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); margin: 8px 0 4px; }
+.help-toc { flex-wrap: wrap; overflow: visible; }
+.help-sec { scroll-margin-top: 84px; }
+.help-sec > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+.help-sec > summary::-webkit-details-marker { display: none; }
+.help-sec > summary::after { content: '+'; font-family: var(--cond); font-size: 22px; font-weight: 700; opacity: .6; }
+.help-sec[open] > summary::after { content: '–'; }
+.help-sec > summary h3 { margin: 0; }
+.help-body { margin-top: 8px; line-height: 1.5; }
+.help-body ul, .help-body ol { padding-left: 20px; margin: 6px 0; }
+.help-body li { margin: 5px 0; }
+.help-body a { color: var(--gold); text-decoration: underline; cursor: pointer; }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -1041,10 +1064,14 @@ function newLeagueAt(imports, userKey, opts) {
   pg.forEach((r, i) => r._ovr = rankRating(rankOf[i], pg.length));
   const fut = futureRatings(im.future, Y), counts = {};
   const drafted = {}; for (const dy in im.drafts || {}) if (+dy < Y) (im.drafts[dy] || []).forEach(r => { drafted[cleanName(r.Player).toLowerCase()] = { year: +dy, pick: num(r.Pk) || num(r.Rk) || 0 }; });
+  // seasons each player has spent with his team, for chemistry's time together
+  const tmsOf = E => { const m = {}; for (const r of im.future[E] || []) { const c = String(r._tm || ''); if (c === 'TOT' || /^\dTM$/.test(c)) continue; (m[r._key] = m[r._key] || new Set()).add(idOf(c)); } return m; };
+  const tms = [tmsOf(Y), tmsOf(Y - 1), tmsOf(Y - 2)];
   for (const r of pg) {
     const tid = idOf(r._tm), team = tid != null && !joined.includes(tid) ? tid : -1;
     const p = playerFromSeason(L, r, team, advBy[r._key], Y - 1, r._ovr);
     applyFuture(p, r, fut);
+    if (team >= 0) { const a = tms[0][r._key]; let k = a && a.size > 1 ? 0.5 : 1; if (k === 1) for (let i = 1; i < 3; i++) { const b = tms[i][r._key]; if (b && b.size === 1 && b.has(team)) k++; else break; } p.jd = { t: team, y: Y - k, f: 0 }; }
     const d = drafted[cleanName(p.name).toLowerCase()]; if (d) { p.draft = { year: d.year, pick: d.pick, rnd: Math.ceil((d.pick || 30) / 30) }; p.yrs = Y - d.year; }
     if (team >= 0) counts[team] = (counts[team] || 0) + 1;
     if (team === -1 && (num(r.MP) < 10 || p.age >= 36)) delete L.players[p.id];
@@ -1376,13 +1403,15 @@ function aiSignings(L, offseason) {
     while (size < max && fa.length) {
       // best fit, not just best available: thin positions first; contenders want veterans, rebuilders want youth
       let i = 0, bs = -1e9;
-      const top = value(fa[0]);
+      const top = value(fa[0]), near = [];
       for (let j = 0; j < Math.min(fa.length, 40); j++) {
         const q = fa[j], c = counts[q.pos];
         if (value(q) < top - 4) break;   // never pass on a clearly better player
-        const sc = value(q) + (c < 2 ? 3 : c >= 4 ? -3 : 0) + (mode === 'win' ? (q.age >= 26 && q.age <= 32 ? 1.5 : 0) : mode === 'rebuild' ? (q.age <= 24 ? 2 : q.age >= 30 ? -2 : 0) : 0);
-        if (sc > bs) { bs = sc; i = j; }
+        near.push([j, value(q) + (c < 2 ? 3 : c >= 4 ? -3 : 0) + (mode === 'win' ? (q.age >= 26 && q.age <= 32 ? 1.5 : 0) : mode === 'rebuild' ? (q.age <= 24 ? 2 : q.age >= 30 ? -2 : 0) : 0)]);
       }
+      // among the closest few, who fits best (chemistry change, in rating points, counts about 2 value points each)
+      if (near.length > 1 && !L.noChem) for (const n of near.slice(0, 5)) { const cp = chemPreview(L, t.id, [], [fa[n[0]].id]); if (cp) n[1] += cp.dEff * chemCare(L, t.id) * 18; }
+      for (const [j, sc] of near) if (sc > bs) { bs = sc; i = j; }
       const p = fa.splice(i, 1)[0];
       const sal = Math.max(minSalary(y), marketValue(L, p, y) * (offseason ? 1 : 0.6));
       if (!canSignOutside(L, t.id, sal, y, true)) { const m = minSalary(y); if (!canSignOutside(L, t.id, m, y, true)) continue; p.team = t.id; setContract(p, m, y, 1); counts[p.pos]++; size++; continue; }
@@ -1494,7 +1523,10 @@ function receiverWeight(L, tid, incoming, outgoing) {
   const inc = (incoming.players || []).map(id => L.players[id]);
   const after = roster(L, tid).filter(p => !out.has(p.id)).concat(inc).sort((a, b) => value(b) - value(a));
   const keep = new Set(after.slice(0, max).map(p => p.id));
-  return inc.reduce((s, p) => s + playerWeight(p) * (keep.has(p.id) ? 1 : 0.05) * (p.tradeReq ? 0.85 : 1), 0) + (incoming.picks || []).reduce((s, id) => s + pickWeight(L, pickById(L, id)), 0);
+  let pw = inc.reduce((s, p) => s + playerWeight(p) * (keep.has(p.id) ? 1 : 0.05) * (p.tradeReq ? 0.85 : 1), 0);
+  // players who make the team fit better are worth more to it, and ones who wreck the fit are worth less
+  if (pw > 0 && tid !== L.user) { const cp = chemPreview(L, tid, outgoing.players, incoming.players); if (cp) pw *= clamp(1 + cp.dEff * chemCare(L, tid), 0.7, 1.3); }
+  return pw + (incoming.picks || []).reduce((s, id) => s + pickWeight(L, pickById(L, id)), 0);
 }
 function tradeVerdict(L, partner, give, get) {
   const g = receiverWeight(L, partner, give, get), r = pkgWeight(L, get);
@@ -2178,7 +2210,15 @@ function makeSchedule(L) {
 
 /* ---------- game simulation ---------- */
 function ratings(L, tid, coach) {
-  const c = coach || L.teams[tid].coach, M = minutesFor(L, tid, c), fw = FOCUS_W[c.off] || FOCUS_W.bal;
+  const c = coach || L.teams[tid].coach, M = minutesFor(L, tid, c), r = baseRatings(L, tid, c, M);
+  if (L.noChem || M.length < 5) { r.chem = null; return r; }
+  r.chem = chemFrom(L, chemRaw(L, tid, c, M, r));
+  r.off += r.chem.effect * CHEM.k; r.def += r.chem.effect * CHEM.k;
+  return r;
+}
+// Talent, scheme fit, star power and staff, before chemistry. The starting five's shape is part of chemistry (positional balance).
+function baseRatings(L, tid, c, M) {
+  const fw = FOCUS_W[c.off] || FOCUS_W.bal;
   let top = 45, pg = 45, bigBest = 45, o = 0, ow = 0, d = 0, mt = 0, inS = 0, inM = 0, outS = 0, outM = 0, reb = 0, stl = 0, blk = 0, t3 = 0, tov = 0, ast = 0, young = 0; const stars = [];
   for (const { p, min } of M) {
     const e = eff(p), pr = p.prof, big = isBig(p);
@@ -2199,7 +2239,6 @@ function ratings(L, tid, coach) {
   r.off += offBonus(L, r, c.off) / 0.55;
   const st = M.filter(x => x.start).map(x => x.p), g = st.filter(isGuard).length, b = st.filter(isBig).length;
   r.pos = lineupEffects(L.year, st, r);
-  r.off += r.pos.off; r.def += r.pos.def;
   // early on a great big man is worth more; in the modern game a great guard is
   const be = bigEra(L.year);
   r.off += (r.bigBest - 72) * 0.07 * be + (r.pg - 72) * 0.07 * (1 - be);
@@ -2225,9 +2264,187 @@ function lineupEffects(y, st, r) {
   if (!hasC && b >= 1) add(1.0 * (1 - rg), 0.6 * (1 - rg), 'Switchable lineup');
   return out;
 }
+/* ---------- team chemistry ----------
+   Six parts plus time together, each compared with the rest of the league that season (50 = average).
+   The overall score moves the team's off and def ratings by up to CHEM.max points: a stacked team that
+   doesn't fit plays a few points below its talent, a set of average players that fit plays a few above. */
+const CHEM = { max: 3, k: 1, sdCap: 2, untalent: 0.8 };
+const CHEM_PARTS = [
+  ['style', 'Play style', 0.14], ['cover', 'Skill coverage', 0.18], ['offs', 'Offensive synergy', 0.18], ['defs', 'Defensive synergy', 0.15],
+  ['pos', 'Positional balance', 0.13], ['div', 'Archetype diversity', 0.08], ['time', 'Time together', 0.14]];
+// raw-unit floors for the league spread, so a part nobody differs on doesn't swing on tiny differences
+const CHEM_SDMIN = { style: 0.25, cover: 0.06, offs: 0.15, defs: 0.15, pos: 0.9, div: 0.5, time: 0.2 };
+const ARCH = {
+  fg: 'Floor general', sg: 'Scoring guard', cr: 'Shot creator', td: '3-and-D wing', sl: 'Slasher', sb: 'Stretch big',
+  po: 'Post scorer', rp: 'Rim protector', rb: 'Rebounder', tw: 'Two-way star', rl: 'Role player' };
+const BALL = { fg: 1, sg: 1, cr: 1, tw: 0.6, po: 0.5 };
+const DZ0 = {}; for (const k in PROF) DZ0[k] = PROF[k].stl * 2 + PROF[k].blk * 2.2 + PROF[k].reb * 0.3;
+// how much the three-point line matters this season (0.25 before it existed, about 1 by the 2010s)
+function spaceW(y) { return y < 1980 ? 0.25 : clamp(0.25 + era(y).t3share * 3, 0.25, 1.2); }
+// shooting: three-point volume (once there is a line) and free-throw touch
+function shootQ(pr, y) { const ft = clamp(((pr.ft || 0.72) - 0.62) / 0.24, 0, 1.2); return y < 1980 ? ft : 0.55 * clamp((pr.t3 || 0) / 1.6, 0, 1.4) + 0.45 * ft; }
+// defense compared with a typical player at his position
+function defZ(p) { const pr = p.prof; return pr.stl * 2 + pr.blk * 2.2 + pr.reb * 0.3 - (DZ0[p.pos] || 7); }
+function usage(pr) { return pr.pts + pr.ast * 1.4; }
+function archetypes(p, y) {
+  const pr = p.prof; if (!pr) return ['rl'];
+  y = y || ERA_Y;
+  const big = isBig(p), g = isGuard(p), sq = shootQ(pr, y), dz = defZ(p), o = p.ovr, s = [];
+  if (o >= 80 && ((dz >= 0.6 && pr.pts >= 18) || (dz >= 1.2 && pr.pts >= 14))) s.push(['tw', 3 + (o - 80) / 5]);
+  if (pr.ast >= (big ? 6.5 : 6.0)) s.push(['fg', 1 + (pr.ast - 6.0) / 1.5]);
+  if (g && pr.pts >= 19 && pr.ast < 6.0) s.push(['sg', 1 + (pr.pts - 19) / 3]);
+  if (!g && pr.pts >= 21 && (pr.ast >= 3.2 || !big)) s.push(['cr', 1 + (pr.pts - 21) / 3]);
+  if (!big && sq >= 0.58 && dz >= -0.5 && pr.pts < 21) s.push(['td', 0.8 + (sq - 0.58) * 3 + dz * 0.3]);
+  if (!big && pr.fg >= 0.47 && sq < 0.58 && pr.pts >= 13) s.push(['sl', 0.8 + (pr.fg - 0.47) * 20]);
+  if (big && sq >= 0.6 && y >= 1980 && pr.t3 >= 0.6) s.push(['sb', 0.8 + (sq - 0.6) * 3]);
+  if (big && pr.pts >= 17 && pr.t3 < 0.6) s.push(['po', 0.9 + (pr.pts - 17) / 3]);
+  if (big && pr.blk >= 1.8) s.push(['rp', 1 + (pr.blk - 1.8) / 0.8]);
+  if (pr.reb >= 11.5 || (!big && pr.reb >= 7.5)) s.push(['rb', 0.8 + (pr.reb - (big ? 11.5 : 7.5)) / 2]);
+  if (!s.length) return ['rl'];
+  s.sort((a, b) => b[1] - a[1]);
+  return s.slice(0, 2).map(x => x[0]);
+}
+function archName(k, y) { return k === 'td' && (y || ERA_Y) < 1980 ? 'Shooter-defender' : ARCH[k] || 'Role player'; }
+// how far into this season we are (0 before it, 1 once the regular season is over)
+function seasonFrac(L) { return L.phase === 'regular' ? clamp(L.day / Math.max(1, (L.schedule || []).length), 0, 1) : ['preseason', 'dispersal'].includes(L.phase) ? 0 : 1; }
+// remembers when each player joined his team (call it whenever rosters may have changed)
+function chemTrack(L) {
+  const f = seasonFrac(L);
+  for (const id in L.players) {
+    const p = L.players[id]; if (!p || p.team == null || p.team < 0) continue;
+    if (p.jd && p.jd.t === p.team) continue;
+    let y = L.year, ff = f;
+    if (!p.jd) { // a new league: count the seasons he has already spent there
+      let k = 0; while (k < 3 && p.hist && p.hist[L.year - 1 - k] && p.hist[L.year - 1 - k].tm === p.team) k++;
+      if (k) { y = L.year - k; ff = 0; }
+    }
+    p.jd = { t: p.team, y, f: ff };
+  }
+}
+function tenure(L, p, tid) { const j = p.jd; if (!j || j.t !== tid) return 0; return clamp(L.year - j.y + seasonFrac(L) - j.f, 0, 3); }
+// The raw chemistry parts for a rotation (M from minutesFor) under a coach, plus notes on what helps and hurts.
+function chemRaw(L, tid, c, M, r) {
+  const y = L.year, sp = spaceW(y), be = bigEra(y), rg = posRigidity(y);
+  const rot = M.filter(x => x.min >= 6 && x.p.prof); let mt = 0; for (const x of rot) mt += x.min; mt = mt || 1;
+  const wm = f => { let s = 0; for (const x of rot) s += f(x.p) * x.min; return s / mt; };
+  const big15 = rot.filter(x => x.min >= 15), notes = [];
+  const best = (list, f) => list.reduce((m, x) => Math.max(m, f(x.p)), 0);
+  const note = (part, good, t) => notes.push({ part, good, t });
+  // 1. play style: do the players suit the tempo, the offense's focus and the defense?
+  const fw = FOCUS_W[c.off] || FOCUS_W.bal, tq = ((c.tempo || 50) - 50) / 30;
+  const quick = (r.youth - 0.45) * 2 + (r.stl - 1.1) * 1.6 - (r.bigBest - 72) * 0.02;
+  const tempoFit = tq * quick, focusFit = (fw.big - fw.perim) * (r.in - r.out) / 8, dsc = defScale(c.def, r) - 1;
+  const style = clamp(tempoFit, -1.2, 1.2) + clamp(focusFit, -1.2, 1.2) + dsc * 1.4;
+  if (tempoFit < -0.35) note('style', false, tq > 0 ? 'Too slow a roster for this tempo' : 'Quick young roster held back by a slow tempo');
+  if (focusFit < -0.35) note('style', false, fw.big > fw.perim ? 'The offense runs through big men who aren\'t your best scorers' : 'The offense runs through perimeter players who aren\'t your best scorers');
+  if (dsc < -0.25) note('style', false, `Wrong personnel for the ${(DEFENSES[c.def] || DEFENSES.man).name.toLowerCase()} defense`);
+  if (tempoFit + focusFit + dsc > 0.8) note('style', true, 'The players suit the system');
+  // 2. skill coverage: is every job on the floor covered by someone who plays real minutes?
+  const handle = clamp((best(big15, p => p.prof.ast) - 4) / 3.5, 0, 1);
+  const nShoot = big15.filter(x => shootQ(x.p.prof, y) >= 0.62).length, shoot = clamp(nShoot / (1 + 2 * sp), 0, 1);
+  const rim = clamp((best(big15.filter(x => isBig(x.p)), p => p.prof.blk) - 0.9) / 1.4, 0, 1);
+  const reb = clamp((r.reb - 5.6) / 2.4, 0, 1);
+  const perD = clamp((best(big15.filter(x => !isBig(x.p)), p => p.prof.stl) - 1.0) / 0.8, 0, 1);
+  const create = clamp((best(rot.filter(x => x.min >= 20), p => p.prof.pts) - 16) / 8, 0, 1);
+  const cw = [[handle, 1, 'ball-handler'], [shoot, 0.5 + 0.7 * sp, 'shooters'], [rim, 0.7 + 0.5 * be, 'rim protector'], [reb, 0.7 + 0.5 * be, 'rebounding'], [perD, 0.8, 'perimeter defender'], [create, 1, 'scorer who can create his own shot']];
+  let cs = 0, cn = 0; for (const [v, w] of cw) { cs += v * w; cn += w; }
+  const cover = cs / cn;
+  for (const [v, , t] of cw) if (v < 0.25) note('cover', false, `Needs a ${t === 'shooters' ? 'few more shooters' : t === 'rebounding' ? 'better rebounding' : t}`.replace('Needs a few', 'Needs a few').replace('Needs a better', 'Needs better'));
+  // 3. offensive synergy: a creator with shooters and finishers around him, and not too many players who need the ball
+  const maxAst = best(big15, p => p.prof.ast), spacing = wm(p => shootQ(p.prof, y));
+  const finish = wm(p => clamp((p.prof.fg - 0.46) / 0.06, 0, 1));
+  const ballers = rot.filter(x => x.min >= 24 && usage(x.p.prof) >= 29).length;
+  const bricks = M.filter(x => x.start && isBig(x.p) && shootQ(x.p.prof, y) < 0.35).length;
+  let offs = clamp((maxAst - 4) / 4, 0, 1.2) * (spacing * sp + finish * (1 - sp * 0.6)) * 1.4 + spacing * sp * 0.6 + finish * 0.4;
+  offs -= Math.max(0, ballers - 2) * 0.45 + (ballers >= 2 && maxAst < 6 ? 0.25 : 0);
+  if (bricks >= 2) offs -= 0.35 * sp * (bricks - 1);
+  if (ballers >= 3) note('offs', false, `${ballers} players who need the ball: not enough shots to go around`);
+  if (bricks >= 2 && sp >= 0.7) note('offs', false, 'Two big men who can\'t shoot clog the lane');
+  if (maxAst >= 7 && spacing >= 0.6) note('offs', true, 'A playmaker with shooters around him');
+  if (maxAst < 4.5) note('offs', false, 'Nobody to set up teammates');
+  // 4. defensive synergy: an anchor behind stoppers, few weak links, and switchable size in the modern game
+  const anchor = clamp((best(big15.filter(x => isBig(x.p)), p => p.prof.blk) - 1.0) / 1.5, 0, 1.2);
+  const stoppers = big15.filter(x => !isBig(x.p) && x.p.prof.stl >= 1.5).length;
+  const weak = wm(p => (defZ(p) < -1.3 || eff(p) < 56) ? 1 : 0);
+  const sw = M.filter(x => x.start && ['SG', 'SF', 'PF'].includes(x.p.pos) && defZ(x.p) >= -0.2).length;
+  const defs = anchor * (0.7 + 0.5 * be) + Math.min(2, stoppers) * 0.3 - weak * 1.6 + Math.max(0, sw - 2) * 0.2 * (1 - rg);
+  if (anchor >= 0.9 && stoppers >= 1) note('defs', true, 'A rim protector behind good perimeter defenders');
+  if (weak >= 0.35) note('defs', false, 'Too many weak defenders in the rotation');
+  // 5. positional balance: the starting five's shape for this era
+  const st = M.filter(x => x.start).map(x => x.p), lp = lineupEffects(y, st, r), pos = lp.off + lp.def;
+  for (const n of lp.notes) note('pos', n.o + n.d > 0, n.t);
+  // 6. archetype diversity: different kinds of players, not eight of the same
+  const top8 = rot.slice().sort((a, b) => b.min - a.min).slice(0, 8), cnt = {};
+  for (const x of top8) { const a = archetypes(x.p, y)[0]; cnt[a] = (cnt[a] || 0) + 1; }
+  let div = Object.keys(cnt).filter(k => k !== 'rl').length * 0.5 + Math.min(2, cnt.rl || 0) * 0.35; // a couple of plain role players is normal
+  const fine = k => k === 'rl' || (k === 'td' && sp >= 0.7); // a modern team can't have too many 3-and-D wings
+  for (const k in cnt) if (!fine(k) && cnt[k] > 1) div -= (cnt[k] - 1) * (BALL[k] ? 0.7 : 0.35);
+  if ((cnt.rl || 0) >= 5) div -= 0.4;
+  for (const k in cnt) if (!fine(k) && cnt[k] >= 3) note('div', false, `Too much of one type: ${cnt[k]} players who are mainly ${archName(k, y)}s`);
+  // 7. time together: minutes-weighted seasons with the team (capped at three)
+  const time = wm(p => tenure(L, p, tid));
+  if (time < 0.6) note('time', false, 'New group: chemistry builds as they play together');
+  else if (time >= 2) note('time', true, 'This group has played together for years');
+  return { style, cover, offs, defs, pos, div, time, notes, lineup: lp, tal: (r.off + r.def) / 2 };
+}
+// League averages and spreads of each raw part for this season (cached until the phase or year changes).
+function chemNorm(L) {
+  const key = L.year + ':' + L.phase + ':' + (L.phase === 'regular' ? Math.floor(L.day / 14) : 0);
+  if (L._chemN && L._chemN.key === key && L._chemN.n === L.teams.length) return L._chemN;
+  chemTrack(L);
+  const raws = L.teams.map(t => { const c = t.coach, M = minutesFor(L, t.id, c); return chemRaw(L, t.id, c, M, baseRatings(L, t.id, c, M)); });
+  const N = { key, n: L.teams.length, m: {}, s: {} };
+  Object.defineProperty(L, '_chemN', { value: N, writable: true, configurable: true, enumerable: false });
+  // Talented teams tend to score well on fit too (stars cover more skills). Most of that is taken out, so
+  // chemistry measures how well the players fit beyond how good they are.
+  const ts = raws.map(x => x.tal), tmn = ts.reduce((a, b) => a + b, 0) / ts.length, tv = ts.reduce((a, b) => a + (b - tmn) ** 2, 0) || 1;
+  N.tal = tmn; N.b = {};
+  for (const [k] of CHEM_PARTS) {
+    const b = raws.reduce((a, x) => a + (x[k]) * (x.tal - tmn), 0) / tv; N.b[k] = b * CHEM.untalent;
+    const v = raws.map(x => x[k] - N.b[k] * (x.tal - tmn)), m = v.reduce((a, b) => a + b, 0) / v.length;
+    N.m[k] = m; N.s[k] = Math.max(CHEM_SDMIN[k], Math.sqrt(v.reduce((a, b) => a + (b - m) * (b - m), 0) / v.length));
+  }
+  // spread of the weighted total, so the final score is on the same 50 +/- 15 scale
+  const tot = raws.map(x => CHEM_PARTS.reduce((s, [k, , w]) => s + w * clamp((x[k] - N.b[k] * (x.tal - tmn) - N.m[k]) / N.s[k], -3, 3), 0));
+  const tm = tot.reduce((a, b) => a + b, 0) / tot.length; N.tm = tm; N.ts = Math.max(0.25, Math.sqrt(tot.reduce((a, b) => a + (b - tm) * (b - tm), 0) / tot.length));
+  return N;
+}
+// Score 0-100 (50 = league average), the six parts and time together on the same scale, the rating effect, and notes.
+function chemFrom(L, raw) {
+  const N = chemNorm(L), parts = {};
+  let t = 0; for (const [k, , w] of CHEM_PARTS) { const z = clamp((raw[k] - N.b[k] * (raw.tal - N.tal) - N.m[k]) / N.s[k], -3, 3); parts[k] = clamp(Math.round(50 + 15 * z), 1, 99); t += w * z; }
+  const z = (t - N.tm) / N.ts, score = clamp(Math.round(50 + 15 * z), 1, 99);
+  const effect = Math.round(clamp(z / CHEM.sdCap, -1, 1) * CHEM.max * 10) / 10;
+  // time-together notes only when this group really is newer or older than the league's
+  const notes = raw.notes.filter(n => n.part !== 'time' || (n.good ? parts.time >= 60 : parts.time <= 40));
+  return { score, effect, parts, notes };
+}
+// Chemistry and team rating before and after a move (players leaving and arriving; picks don't play).
+// With your own rotation order, new arrivals slot into it by rating and the players leaving drop out.
+function chemPreview(L, tid, outIds, inIds) {
+  if (L.noChem) return null;
+  const t = L.teams[tid], dc = t.dc, moved = [];
+  try {
+    const before = ratings(L, tid);
+    for (const id of outIds || []) { const p = L.players[id]; if (p) { moved.push([p, p.team]); p.team = -99; } }
+    for (const id of inIds || []) { const p = L.players[id]; if (p) { moved.push([p, p.team]); p.team = tid; } }
+    if (dc && dc.length) {
+      const ord = dc.filter(id => !(outIds || []).includes(id));
+      for (const id of inIds || []) { const p = L.players[id]; if (!p) continue; const i = ord.findIndex(x => L.players[x] && eff(L.players[x]) < eff(p)); ord.splice(i < 0 ? ord.length : i, 0, id); }
+      t.dc = ord;
+    }
+    const after = ratings(L, tid);
+    if (!before.chem || !after.chem) return null;
+    return { before: before.chem.score, after: after.chem.score, dEff: Math.round((after.chem.effect - before.chem.effect) * 10) / 10,
+      ovrBefore: Math.round((before.off + before.def) / 2), ovrAfter: Math.round((after.off + after.def) / 2), parts: after.chem.parts, partsBefore: before.chem.parts, notes: after.chem.notes };
+  } finally { for (const [p, tm] of moved.reverse()) p.team = tm; if (dc) t.dc = dc; else delete t.dc; }
+}
+// How much an AI front office cares about fit: contenders the most, rebuilding teams barely.
+function chemCare(L, tid) { const m = teamModes(L)[tid]; return m === 'win' ? 0.12 : m === 'rebuild' ? 0.03 : 0.08; }
+function chemistry(L, tid, coach) { const c = coach || L.teams[tid].coach, r = ratings(L, tid, c); return r.chem; }
 function teamOverall(L, tid) { const r = ratings(L, tid); return Math.round((r.off + r.def) / 2); }
 
-const TUNE = { k: 0.75, sd: 9.3, star: 0.08, soft: 5, softK: 0.4 };
+const TUNE = { k: 0.68, sd: 9.3, star: 0.08, soft: 5, softK: 0.4 };
 function expected(L, oR, dR, oC, dC, isHome, neutral, poss) {
   const E = era(L.year);
   let edge = (oR.off - dR.def - (L.offBias || 0)) * TUNE.k + ((oR.star || 0) - (dR.star || 0)) * TUNE.star;
@@ -2469,6 +2686,7 @@ function calibrate(L) {
 function simDay(L) {
   setEra(L);
   if (L.phase !== 'regular') return;
+  chemTrack(L);
   healDay(L);
   if (!pastDeadline(L) && Math.random() < 0.035) aiTrades(L, 1, 6);
   L.offers = (L.offers || []).filter(o => o.exp < 0 || o.exp > L.day);
@@ -3550,7 +3768,7 @@ function leaders(L, key, n, year) {
 }
 function myDraftSlots(L) { const D = L.draft; if (!D) return []; const out = []; for (let i = D.pick; i < D.slotPick.length; i++) { const k = pickById(L, D.slotPick[i]); if (k && k.own === L.user) out.push(i + 1); } return out; }
 
-const API = { histTable, refreshClass, fromBundle, undraftedClass, addUndrafted, tradeCheck, retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
+const API = { chemistry, chemPreview, chemCare, archetypes, archName, ARCH, CHEM, CHEM_PARTS, chemTrack, chemRaw, chemFrom, chemNorm, tenure, baseRatings, histTable, refreshClass, fromBundle, undraftedClass, addUndrafted, tradeCheck, retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
   parseCSV, parseBRef, mergeSeason, newLeague, ensureLeague, addNews, roster, freeAgents, value, release, sign, cutTo, depthChart, setDepth, moveDepth, resetDepth, setPlayHurt,
   minutesFor, rotationOrder, ratings, teamOverall, isBig, isGuard, dispPool, dispOnClock, dispPick, dispPass, beginDispersal, dispAI, endDispersal, answerErving,
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
@@ -3567,11 +3785,219 @@ if (typeof module !== 'undefined' && module.exports) module.exports = API; else 
 
 </script>
 <script>
+/* Hardwood GM — in-game manual. Each section: id, title, the tabs it explains (the ? button opens the
+   section for the tab you are on), and its text. Keep this in step with the game: update it with every release. */
+const HELP = [
+{ id: 'quick', t: 'Quick start', tabs: [], b: `
+<p>You are the general manager of an NBA team, starting in a real season with the real rosters, rules and salary cap of that year. You build the roster (trades, the draft, free agency) and set how the team plays (Coach tab). The games are simulated; you never control a player.</p>
+<ol>
+<li><b>Pick a start season and a team</b> on the first screen. 1976-77 begins at the NBA-ABA merger with the ABA dispersal draft. Any later season starts from the real rosters at the end of the season before.</li>
+<li><b>Pick a difficulty</b> (Data tab; you can change it any time). Pro is the fair setting.</li>
+<li><b>Look at your roster</b> (Roster tab). OVR is how good a player is now, POT is how good he can become. Tap a player for options.</li>
+<li><b>Set your system</b> on the Coach tab: offense, defense, tempo, rotation and lineup style. Check the Chemistry card while you're there.</li>
+<li><b>Tip off</b> from the Office tab and sim: one game, a week, or straight to the playoffs.</li>
+<li><b>Make moves</b> during the season on the Moves tab before the trade deadline, and keep an eye on the next draft class on the Office tab.</li>
+<li><b>After the playoffs</b> comes the draft, then the offseason (re-signing and free agency), then the next season. The owner judges you every year.</li>
+</ol>
+<p>The game saves itself on this device after every action. Download a backup now and then (Data tab).</p>` },
+
+{ id: 'calendar', t: 'How a season runs', tabs: [], b: `
+<ol>
+<li><b>Training camp.</b> Set your roster and staff. Cut down to the roster limit before opening night (Auto-cut does it for you). The owner announces his goal when the season starts.</li>
+<li><b>Regular season.</b> Sim one game, a week, or to the playoffs. Each week: morale changes, injuries heal, AI teams make trades and send you offers, and a few draft prospects get scouted. The All-Star Game is at midseason.</li>
+<li><b>Trade deadline.</b> After it, no trades until the season ends. The Moves tab shows how many days are left.</li>
+<li><b>Playoffs.</b> Sim a round at a time or all of it. Awards are announced when the regular season ends; Finals MVP after the Finals.</li>
+<li><b>Owner review.</b> Did you meet his goal? Your job security moves up or down.</li>
+<li><b>Draft.</b> The lottery (or coin flip, in the early years) sets the order. Work out prospects, then draft or trade picks.</li>
+<li><b>Offseason.</b> Re-sign your own players, then free agency (how it works depends on the era). Undrafted rookies become available.</li>
+<li><b>Start the next season.</b> Players age, develop or decline, and some retire. History decisions may come up (the three-point line, the salary cap, lockouts, and so on).</li>
+</ol>` },
+
+{ id: 'office', t: 'Office tab', tabs: ['home'], b: `
+<p>Your home screen. What's on it depends on the time of year:</p>
+<ul>
+<li><b>Sim buttons</b>: Play next game, Sim week, Sim to playoffs; in the playoffs, Sim this round or Sim the playoffs.</li>
+<li><b>Owner</b>: your job security (0-100) and this season's goal. See <a data-act="helpGo" data-id="owner">The owner and your job</a>.</li>
+<li><b>Last game and Game plan</b>: the box score of your last game, a scouting report on your next opponent, and a one-game plan (a different offense or defense just for that game). The plan resets after the game.</li>
+<li><b>Wire</b>: league news: trades, signings, injuries, awards, retirements.</li>
+<li><b>Trade requests, promises and holdouts</b>: players who are unhappy and what they want.</li>
+<li><b>Draft board / Your class</b>: next summer's draft class, all season long, with scout grades that fill in week by week.</li>
+<li><b>History decisions</b>: when a real-history moment comes up, you choose, and each choice says what it does.</li>
+<li><b>Offseason report</b>: who improved and who declined over the summer.</li>
+<li>During the <b>dispersal draft</b> (1976 only) and the <b>draft</b>, those screens appear here.</li>
+</ul>` },
+
+{ id: 'roster', t: 'Roster tab', tabs: ['roster'], b: `
+<p>Your players, filtered by position and sorted by position, overall or potential. Highlighted positions are starters; the minutes are from your Coach tab rotation. The tag next to a name is his main playing type (see <a data-act="helpGo" data-id="chemistry">Chemistry</a>).</p>
+<p><b>Tap a player</b> for his college and draft spot, plus:</p>
+<ul>
+<li><b>Career stats</b>: year by year, regular season and playoffs, with his types and skill line.</li>
+<li><b>Extend</b>: in the last year of his deal, sign him before he reaches free agency.</li>
+<li><b>New deal</b>: for an underpaid, unhappy player or a holdout. It ends a holdout and resets his mood.</li>
+<li><b>Play through injury</b>: minor injuries only. He plays ${(window.HW && HW.HURT_PENALTY) || 8} points worse and risks a longer injury.</li>
+<li><b>Release</b>: tap twice to confirm. He becomes a free agent and his contract comes off your books.</li>
+<li><b>Offer in trade</b>: opens the Moves tab with him in the deal.</li>
+</ul>
+<p>The count in the corner is your roster size against the limit (12 players, 15 from 2005-06).</p>` },
+
+{ id: 'ratings', t: 'Ratings, potential and development', tabs: [], b: `
+<ul>
+<li><b>OVR</b> is how good he is now. It comes from his real production (game score and box plus/minus, weighted by minutes), ranked against the league that season. The best player in the league is about 95. Colors: orange 82+ (star), green 70+ (good starter), dark 57+ (rotation), gray below.</li>
+<li><b>POT</b> is his <i>prime</i>: about what he'll be at his best. For real players it's built from his best three real seasons, so it doesn't change with luck.</li>
+<li><b>SCOUT</b> appears instead of POT when his true potential isn't known yet: draft prospects, undrafted rookies, and young players in a new league. It's your scouts' guess, and it can be wrong in either direction.</li>
+<li><b>Development</b> happens each offseason. Young players move toward their potential; players 25 and under who play real minutes (800+) get an extra bump, more with a good head coach. Players peak around 27 and decline in their 30s. Some have a hidden "grace" trait and barely slow down.</li>
+<li><b>Injuries</b> heal over days or weeks. A big injury at 28 or older can cost rating points for good.</li>
+<li><b>Retirement</b> depends on age, how far he's fallen from his peak, how good he still is, and injuries. A few stars play to 40.</li>
+<li><b>Positions</b> come from the position he played most. They can't be changed, but how much position matters depends on the era (see Lineup in <a data-act="helpGo" data-id="coach">Coach tab</a>).</li>
+</ul>` },
+
+{ id: 'coach', t: 'Coach tab', tabs: ['coach'], b: `
+<ul>
+<li><b>Offense.</b> Post up, Balanced and Perimeter exist every season. Era offenses appear only in their real years: Fast break (to 1990-91), Triangle (1989-2010), Isolation (1990-2005), Seven seconds or less (2004-2012), Pace and space (2013 on). Each one rewards certain players; the description says which. If your era offense is retired, you switch to Balanced.</li>
+<li><b>Defense.</b> Pack the paint, Man-to-man and Full-court press always exist. Zone is legal from 2001-02. Era defenses: Physical/hand-check (1983-2003), Jordan Rules (1988-1992), Strong-side overload (2007-2018), Switch everything (2015 on). Defenses beat some offenses and lose to others.</li>
+<li><b>Tempo.</b> Faster means more possessions. Slower shortens the game, which gives an underdog a better chance of an upset.</li>
+<li><b>Rotation.</b> The top five healthy players start; the next ones come off the bench, with minutes shown. Reorder with the arrows, or sort by overall or potential. <b>Auto</b> lets the lineup style choose the best balanced five. A shorter rotation gives your best players more minutes. A youth setting gives young players minutes for development.</li>
+<li><b>Lineup style.</b> Traditional, Best five, Twin towers or Small ball. Early on, a real point guard and a real center matter a lot and big men are king; by the mid-2010s positions barely matter and spacing does. The Lineup card shows what your starting five's shape is doing.</li>
+<li><b>Chemistry.</b> See <a data-act="helpGo" data-id="chemistry">Chemistry</a>.</li>
+<li><b>Coaching staff.</b> A head coach and two assistants (offense and defense). Assistants help their side of the ball, fully only when your scheme matches what they prefer. The head coach adds points on game night and helps young players develop. Change staff before opening night or after the season. Top coaches prefer winning teams; retired players can become coaches.</li>
+</ul>` },
+
+{ id: 'chemistry', t: 'Team chemistry', tabs: [], b: `
+<p>Five great players who don't fit can play below their talent; a group of average players who fit can play above it. Chemistry is a score from 1 to 99, where <b>50 is league average</b>. It adds or subtracts up to <b>3 points of team rating</b>, worth roughly 7 wins over a season. Most teams land within about 1.5 points.</p>
+<p><b>Player types.</b> Every player gets one or two types from his stats: Floor general, Scoring guard, Shot creator, 3-and-D wing (Shooter-defender before the three-point line), Slasher, Stretch big, Post scorer, Rim protector, Rebounder, Two-way star, or Role player.</p>
+<p><b>The parts</b>, each compared with every other team that season:</p>
+<ul>
+<li><b>Play style</b>: do the players suit your tempo, your offense's focus (inside or outside) and your defense?</li>
+<li><b>Skill coverage</b>: does someone in the rotation handle the ball, shoot, protect the rim, rebound, guard the perimeter and create his own shot?</li>
+<li><b>Offensive synergy</b>: a playmaker with shooters and finishers around him. Three or more players who need the ball, or two big men who can't shoot in a spacing era, hurt it.</li>
+<li><b>Defensive synergy</b>: a rim protector behind perimeter stoppers, few weak defenders, and (in modern seasons) wings who can switch.</li>
+<li><b>Positional balance</b>: your starting five's shape for the era. No point guard or no center hurts a lot in the 1970s and 80s and barely matters by 2016.</li>
+<li><b>Archetype diversity</b>: different kinds of players. Three scoring guards is a problem; a modern team can't have too many 3-and-D wings.</li>
+<li><b>Time together</b>: seasons played together (up to three). A brand-new group starts low and builds as the season goes on, so big summer overhauls cost you early.</li>
+</ul>
+<p>Talent is mostly taken out of the comparison, so chemistry measures fit, not how good the players are. The card lists what's helping and hurting. The trade builder shows how a deal would change it, and AI teams weigh fit in trades and free agency too (contenders the most).</p>` },
+
+{ id: 'moves', t: 'Moves tab: trades', tabs: ['moves'], b: `
+<ul>
+<li><b>Trade builder.</b> Pick a team, then tap players and picks on both sides (picks for the next three drafts, shown with their projected slot). Before you propose, it shows salary in and out, roster sizes, the chemistry change, and anything that makes the deal impossible.</li>
+<li><b>Salary matching.</b> Once there's a salary cap, a team over the cap must take back no more than 125% of what it sends, plus $100K.</li>
+<li><b>Why a trade fails.</b> Either a rule blocks it (cap, roster size), and the builder says which, or the other team says no because it isn't getting enough value. Raise your offer or ask for less.</li>
+<li><b>Trading block.</b> Put players or picks in "You send" and tap <b>Find offers</b>. Every team that wants them makes its best offer, and the top five appear under Trade offers. Offers last a week.</li>
+<li><b>Incoming offers.</b> AI teams call with offers during the season; the number on the Moves tab is how many are waiting.</li>
+<li><b>AI teams</b> are contending, in the middle, or rebuilding, and trade like it: contenders want proven players and fit, rebuilders want youth and picks. They also value positions by era (centers early, guards later).</li>
+<li><b>Deadline.</b> No trades between the deadline and the end of the playoffs. Draft-night trades are allowed.</li>
+</ul>` },
+
+{ id: 'contracts', t: 'Contracts, the cap and free agency', tabs: [], b: `
+<p>The money rules change with history, and the game follows them:</p>
+<ul>
+<li><b>Salary cap</b> from 1984-85 (a soft cap: you can go over it to re-sign your own players, called Bird rights). Rookie scale from 1995, mid-level exception from 1999, luxury tax from 2002-03. The owner hates paying tax.</li>
+<li><b>Salary floor</b> from 1999: a team under it pays the difference to its players at season's end.</li>
+<li><b>Free agency by era.</b> Until 1980, signing another team's free agent costs you draft picks as compensation. From 1981 to 1987, his team has the right of first refusal: it can match your offer. From 1988 on, unrestricted free agency with bidding, plus restricted free agents and offer sheets the old team can match.</li>
+<li><b>Bidding (1988 on).</b> You get an exclusive window to re-sign your own players. Then there are ${(window.HW && HW.FA_ROUNDS) || 3} rounds: each free agent takes the best offer, judging money, years, team record, style fit, playing time and loyalty. Anyone unsigned drops his price for the next round; leftovers sign cheaply wherever there's room.</li>
+<li><b>In-season signings</b> are one-year deals at a discount. Over the cap you can still offer the minimum.</li>
+<li><b>Extensions.</b> Players in the last year can be extended during the season; the price depends on how they feel about your team.</li>
+<li><b>Sign-and-trade</b> from 1999: a free agent signs with you and is traded on. Limits follow the real rules (apron from 2013, 4-year maximum from 2017).</li>
+</ul>` },
+
+{ id: 'draft', t: 'Draft and scouting', tabs: [], b: `
+<ul>
+<li><b>All season</b>, next summer's class is on the Office tab. At first nobody is graded. Each week a random handful get a scout grade, so the board reshuffles; by the end of the regular season everyone has one. Grades come from projected draft slot and college, not from how careers turned out.</li>
+<li><b>Workouts.</b> At the draft you get 10 workouts (more with some history decisions). A workout shows a prospect's true potential and five skill grades. Unused workouts don't carry over.</li>
+<li><b>Lottery.</b> The order follows the real system of the year: coin flip early on, then the lottery formats as they changed.</li>
+<li><b>On the clock.</b> Draft a player, let your scouts pick, sim to your next pick, or auto-draft the rest. Shop your pick to move down; to move up, call the team on the clock.</li>
+<li><b>Real draft classes</b> are used through the most recent real draft. After that, classes are made up, but their talent is drawn from what real picks at each slot became, so they match history.</li>
+<li><b>Undrafted rookies</b> (from 1977): real players nobody drafted show up in the summer they really debuted. Their potential stays hidden for a season, so they can be steals. Most sign camp contracts.</li>
+<li><b>Draft rounds</b> shrink over the years, to 2 rounds from 1989.</li>
+</ul>` },
+
+{ id: 'people', t: 'Morale, trade requests and holdouts', tabs: [], b: `
+<ul>
+<li><b>Morale</b> (Happy, Content, Unhappy, Angry) rises with winning and playing time. Good players stuck on the bench sour; an underpaid star sours over the summer. Making the playoffs helps everyone.</li>
+<li><b>Trade requests.</b> A good player angry about minutes or losing asks out. While it's open the locker room sours a little each week, and other teams know, so they pay a bit less. He may drop it if his mood recovers. You can <b>Talk him down</b> once a season (about a one-in-three chance; if it fails he's a little more upset), promise him minutes, or trade him.</li>
+<li><b>Promises.</b> Promise 26+ minutes and he'll wait. Keep it for six weeks and he's happy; break it twice and he wants out, now.</li>
+<li><b>Holdouts.</b> An underpaid, unhappy player can refuse to report. He won't play until he gets a new deal. Each week there's a small chance he reports anyway, angrier. You can also trade him.</li>
+</ul>` },
+
+{ id: 'owner', t: 'The owner and your job', tabs: [], b: `
+<ul>
+<li>On opening night the owner sets a goal based on where your roster ranks: from "Win at least N games" for a weak team up to "Reach the NBA Finals" for the best one.</li>
+<li>After the season he reviews you. Meeting the goal, making the playoffs, a winning record and deep runs raise job security; missing it lowers it, and luxury tax lowers it more. Rookie difficulty is forgiving; All-Star is harsh.</li>
+<li>At 0 you're fired. You'll get offers from a few of the league's worst teams and can keep playing with one of them.</li>
+<li><b>History decisions</b> (the three-point line in 1979, the salary cap in 1983, the Olympics from 1992, overseas scouting in 1996, the lockouts of 1998 and 2011, the luxury tax in 2002, analytics in 2007, and more) change your job security, morale or abilities. Each option says what it does before you choose.</li>
+</ul>` },
+
+{ id: 'eras', t: 'Rules by era', tabs: [], b: `
+<ul>
+<li><b>Season length</b>: 82 games, except 50 in the 1998-99 lockout, 66 in 2011-12, and 72 in 2019-20 and 2020-21.</li>
+<li><b>Playoffs</b>: 12 teams with first-round byes through 1982-83, then 16 teams; a play-in tournament for seeds 7-10 from 2020.</li>
+<li><b>Three-point line</b> from 1979-80. Early on almost nobody shoots threes; the share grows every decade, and players' shooting habits come from their real seasons.</li>
+<li><b>Zone defense</b> is legal from 2001-02; hand-checking ends after 2003-04.</li>
+<li><b>Roster limit</b>: 12 players, 15 from 2005-06.</li>
+<li><b>Fouls</b>: six fouls and he's out. Foul-outs were far more common in the 1970s than today.</li>
+<li><b>Expansion and moves</b>: new teams (with expansion drafts), relocations, renames and realignments happen in their real years.</li>
+</ul>` },
+
+{ id: 'league', t: 'League and Stats tabs', tabs: ['league', 'stats'], b: `
+<p><b>League tab</b>:</p>
+<ul>
+<li><b>Standings</b> by conference and division, with the playoff format for the season.</li>
+<li><b>Leaders</b>: per-game leaders (70% of games needed).</li>
+<li><b>Results</b>: the last five seasons, with box scores for the last two.</li>
+<li><b>Playoffs</b>: the bracket and series results.</li>
+<li><b>History</b>: champions, the Hall of Fame, retired jerseys and team ratings.</li>
+</ul>
+<p><b>Stats tab</b>:</p>
+<ul>
+<li><b>Teams</b>: team stats per game (tap a column to sort). <b>My players</b>: your players this season. <b>Careers</b>: career numbers in this league. Tap a name for year-by-year stats.</li>
+<li><b>Awards</b>: MVP and the rest, All-NBA and All-Defensive teams, the All-Star Game. Awards start in their real years (Defensive Player and Sixth Man 1982-83, Most Improved 1985-86, All-NBA Third Team 1988-89).</li>
+<li><b>Records</b>: the record book for the league or any franchise: single-season, career and playoff leaders, best and worst seasons.</li>
+</ul>
+<p>Only seasons played in this league count; real stats before your start season aren't included. Hall of Fame: players become eligible four full seasons after retiring. A franchise retires a jersey after at least four strong seasons there, or for a Hall of Famer.</p>` },
+
+{ id: 'data', t: 'Data tab, saving and installing', tabs: ['data'], b: `
+<ul>
+<li><b>Saving.</b> Your league saves on this device automatically after every action, separately from Gridiron GM. Use <b>Download backup</b> before clearing Safari data or switching devices, and import it to restore.</li>
+<li><b>Difficulty.</b> <b>Rookie</b>: AI teams accept slightly lopsided trades, send generous offers, scout less, and your team gets a small edge on game night. <b>Pro</b>: fair trades and offers, no edge. <b>All-Star</b>: AI teams want a clear win in every trade, lowball offers, scout more, adjust their game plan to yours every night, and your team plays at a small disadvantage. You can change it any time.</li>
+<li><b>Built-in data.</b> Every real roster, season and draft since 1975-76 is built in and stored on the device, so the game works offline. The import tools are optional and only fill gaps.</li>
+<li><b>Install on iPad.</b> In Safari, tap Share, then <b>Add to Home Screen</b>. It then opens full-screen like an app and works without a connection.</li>
+<li><b>Updates.</b> The game picks up a new version the next time it opens online. If it seems stuck on an old version, close it fully and open it again.</li>
+</ul>` },
+
+{ id: 'faq', t: 'Tips and common questions', tabs: [], b: `
+<ul>
+<li><b>My trade won't go through.</b> The builder says why if a rule blocks it. Otherwise the other team wants more value. Try the trading block to see what teams will actually give.</li>
+<li><b>Can I change a player's position?</b> No. Set your starting five with the rotation arrows and pick a lineup style instead.</li>
+<li><b>My stars aren't winning.</b> Check Chemistry and the Lineup card on the Coach tab: missing skills, too many players who need the ball, or a bad starting shape can cost a few points. Also check that your offense and defense suit your players.</li>
+<li><b>Why does a prospect's grade change?</b> Scout grades are estimates that fill in during the season, and workouts reveal the truth.</li>
+<li><b>How do I avoid getting fired?</b> Know the goal on opening night, stay out of the luxury tax unless you're contending, and don't trade away the season in a year the owner expects the playoffs.</li>
+<li><b>Overhauling the roster in summer?</b> Fine, but expect chemistry to start low and climb as the group plays together.</li>
+<li><b>Young players not developing?</b> They need real minutes (800+ a season) for the extra bump, and a good head coach helps.</li>
+</ul>` },
+
+{ id: 'glossary', t: 'Glossary', tabs: [], b: `
+<ul>
+<li><b>OVR / POT / SCOUT</b>: current rating / prime potential / scouts' estimate of potential.</li>
+<li><b>Bird rights</b>: going over the cap to re-sign your own players.</li>
+<li><b>Mid-level exception (MLE)</b>: lets a team over the cap sign one free agent at a set salary (from 1999).</li>
+<li><b>Luxury tax</b>: a penalty for payroll above the tax line (from 2002-03).</li>
+<li><b>Apron</b>: a line above the tax that limits sign-and-trades (from 2013).</li>
+<li><b>Restricted free agent / offer sheet</b>: his old team can match any offer you make.</li>
+<li><b>Right of first refusal</b>: the 1981-87 version of matching offers.</li>
+<li><b>Compensation picks</b>: draft picks you give up for signing another team's free agent (to 1980).</li>
+<li><b>Dispersal draft</b>: the 1976 draft of players from the folded ABA teams.</li>
+<li><b>BPM / WS</b>: box plus/minus and win shares, the real stats behind ratings and potential.</li>
+<li><b>Rotation</b>: the players who get minutes, in order.</li>
+</ul>` }
+];
+// The section the ? button opens for each tab
+const HELP_TAB = { home: 'office', roster: 'roster', stats: 'league', league: 'league', moves: 'moves', coach: 'coach', data: 'data' };
+
 /* Hardwood GM — interface */
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-09a';
+const APP_VERSION = '2026-11-10a';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -3659,12 +4085,14 @@ function render() {
   const t = L ? me() : null;
   $('#top').innerHTML = `<div class="top-inner">
     <div class="crest">${t ? esc(t.abbr) : 'GM'}</div>
-    <div class="top-txt"><div class="top-team">${t ? esc(tname(t)) : 'Hardwood GM'}</div><div class="top-sub">${esc(phaseLabel())}${t && ['regular', 'playoffs'].includes(L.phase) ? ' · ' + rec(t) : ''}</div></div></div>`;
+    <div class="top-txt"><div class="top-team">${t ? esc(tname(t)) : 'Hardwood GM'}</div><div class="top-sub">${esc(phaseLabel())}${t && ['regular', 'playoffs'].includes(L.phase) ? ' · ' + rec(t) : ''}</div></div>
+    <button class="help-btn ${ui.tab === 'help' ? 'on' : ''}" data-act="help" aria-label="Help and game manual">?</button></div>`;
   const nOff = L ? (L.offers || []).filter(o => G.offerValid(L, o)).length : 0;
   $('#tabs').innerHTML = TABS.map(([k, n]) => `<button class="tab ${ui.tab === k ? 'on' : ''}" data-act="tab" data-id="${k}"${!L && k !== 'data' && k !== 'home' ? ' disabled' : ''}>${n}${k === 'moves' && nOff ? `<span class="badge">${nOff}</span>` : ''}</button>`).join('');
-  const view = { home: vHome, roster: vRoster, stats: vStats, league: vLeague, moves: vMoves, coach: vCoach, data: vData }[ui.tab];
+  const view = { home: vHome, roster: vRoster, stats: vStats, league: vLeague, moves: vMoves, coach: vCoach, data: vData, help: vHelp }[ui.tab] || vHome;
   $('#main').innerHTML = (ui.msg ? `<div class="toast">${esc(ui.msg)}</div>` : '') + view();
   ui.msg = null;
+  if (ui.helpScroll) { const el = document.getElementById('h-' + ui.helpScroll); ui.helpScroll = null; if (el) setTimeout(() => el.scrollIntoView({ block: 'start' }), 0); }
 }
 
 /* ---------- Front Office ---------- */
@@ -3815,7 +4243,7 @@ function vSetup() {
   if (!teams.some(t => t.key === ui.newTeam)) ui.newTeam = later ? teams[0].key : 'bkn';
   const yOpts = years.map(v => `<option value="${v}"${v === y ? ' selected' : ''}>${SL(v)}${v === 1976 ? ' (the merger)' : ''}</option>`).join('');
   const intro = later
-    ? `<p>${teams.length} teams, with the rules, salary cap and labor deal of ${SL(y)}. Rosters and ratings come from the ${SL(y - 1)} per-game table you imported, using each player's last team that season. ${X.drafts[y] ? `The real ${y} draft class joins the teams that picked them.` : `No ${y} draft class imported, so there are no rookies.`}</p>
+    ? `<p>${teams.length} teams, with the rules, salary cap and labor deal of ${SL(y)}. Rosters and ratings come from the real ${SL(y - 1)} season, using each player's last team that season. ${X.drafts[y] ? `The real ${y} draft class joins the teams that picked them.` : `No ${y} draft class imported, so there are no rookies.`}</p>
        <p class="small">Off-season trades and free-agent moves from the summer of ${y} are not in the data, so a few players start on their old team. Career stats, awards and records begin with this season.</p>`
     : `<p>The ABA-NBA merger: 22 teams, 82 games, and an ABA dispersal draft before training camp. ${BUNDLE ? 'Real rosters, every real draft class, and real undrafted free agents are built in.' : 'Real rosters load from what you import on the Data tab; any team you have not imported gets a placeholder roster.'}</p>
        ${BUNDLE ? '' : `<p><b>${nba ? nba + ' NBA' : 'No NBA'}</b> and <b>${aba ? aba + ' ABA' : 'no ABA'}</b> player rows imported · draft classes: <b>${Object.keys(X.drafts).sort().join(', ') || 'none'}</b></p>`}`;
@@ -3826,7 +4254,7 @@ function vSetup() {
     <div class="fld">Difficulty<div class="seg">${Object.keys(G.DIFF).map(k => `<button class="${(ui.newDiff || 'pro') === k ? 'on' : ''}" data-act="newDiff" data-id="${k}">${G.DIFF[k].name}</button>`).join('')}</div></div>
     <p class="small">${diffBlurb(ui.newDiff || 'pro')}</p>
     <label class="fld">Your team<select id="pickTeam">${teams.map(t => `<option value="${t.key}"${t.key === ui.newTeam ? ' selected' : ''}>${esc(t.city + ' ' + t.name)}</option>`).join('')}</select></label>
-    <div class="row"><button class="btn primary" data-act="newLeague">Start the ${SL(y)} league</button><button class="btn" data-act="tab" data-id="data">Import data</button></div></section>`;
+    <div class="row"><button class="btn primary" data-act="newLeague">Start the ${SL(y)} league</button><button class="btn" data-act="help">How to play</button></div></section>`;
 }
 function diffBlurb(k) {
   return ({
@@ -4122,7 +4550,7 @@ function vRoster() {
     <p class="small">Highlighted positions are starters; the number is minutes per game in your rotation (Coach tab). Tap a player for options.</p>${chips('grp', ui.grp)}${sortSeg('rSort', true, 'pos')}
     <div class="list">${list.map(p => { const m = mins[p.id]; return `<div class="pl ${ui.open === p.id ? 'open' : ''}">
       <button class="pl-main" data-act="open" data-id="${p.id}"><span class="pos ${m && m.start ? 'st' : ''}">${esc(p.pos)}</span>
-      <div class="pl-name">${esc(p.name)}${p.inj ? `<span class="inj">INJ ${injTxt(p)}</span>` : ''}<div class="pl-sub">${p.holdout ? '<b class="bad">HOLDOUT</b> · ' : ''}${p.tradeReq ? '<b class="bad">WANTS OUT</b> · ' : ''}${p.promise ? '<b class="warn">PROMISED MINUTES</b> · ' : ''}Age ${p.age} · ${p.yrs ? p.yrs + ' yr' + (p.yrs > 1 ? 's' : '') : 'Rookie'} · ${m ? Math.round(m.min) + ' min · ' : 'Out of rotation · '}<span class="${G.mor(p) < 50 ? 'bad' : (G.mor(p) >= 75 ? 'good' : '')}">${G.moraleWord(p)}</span> · ${conText(p)}${statLine(p) ? ' · ' + statLine(p) : ''}</div></div>
+      <div class="pl-name">${esc(p.name)} ${archTags(p, 1)}${p.inj ? `<span class="inj">INJ ${injTxt(p)}</span>` : ''}<div class="pl-sub">${p.holdout ? '<b class="bad">HOLDOUT</b> · ' : ''}${p.tradeReq ? '<b class="bad">WANTS OUT</b> · ' : ''}${p.promise ? '<b class="warn">PROMISED MINUTES</b> · ' : ''}Age ${p.age} · ${p.yrs ? p.yrs + ' yr' + (p.yrs > 1 ? 's' : '') : 'Rookie'} · ${m ? Math.round(m.min) + ' min · ' : 'Out of rotation · '}<span class="${G.mor(p) < 50 ? 'bad' : (G.mor(p) >= 75 ? 'good' : '')}">${G.moraleWord(p)}</span> · ${conText(p)}${statLine(p) ? ' · ' + statLine(p) : ''}</div></div>
       <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></button>
       ${ui.open === p.id ? `<div class="pl-act">${p.college || p.draft ? `<span class="small">${esc(p.college || '')}${p.draft ? ` · drafted ${p.draft.year} R${p.draft.rnd} #${p.draft.pick}` : ''}</span>` : ''}<button class="btn sm" data-act="statPlayer" data-id="${p.id}">Career stats</button>${(p.holdout || (G.mor(p) < 50 && G.underpaid(L, p))) && p.con ? `<button class="btn sm primary" data-act="reneg" data-id="${p.id}">New deal ${G.money(G.renegotiatePrice(L, p))}</button>` : ''}${G.extInfo(L, p) ? `<button class="btn sm primary" data-act="extend" data-id="${p.id}">Extend ${G.money(G.extInfo(L, p).sal)}</button>` : ''}${G.canPlayHurt(p) ? `<button class="btn sm" data-act="hurt" data-id="${p.id}">${p.playHurt ? 'Rest him' : 'Play through injury'}</button>` : ''}${confirmBtn('rel' + p.id, 'Release')}<button class="btn sm" data-act="shop" data-id="${p.id}">Offer in trade</button></div>` : ''}
     </div>`; }).join('')}</div></section>`;
@@ -4170,7 +4598,7 @@ function playerCard(p) {
   const aw = jr + (p.hof > 0 ? `<span class="award">Hall of Fame ${p.hof + 1}</span>` : '') + (p.rings ? `<span class="award">${p.rings}× champion</span>` : '')
     + (p.awards || []).filter(a => !(G.MULTI_AWARDS.includes(a.a) || /T$/.test(a.a))).map(a => `<span class="award">${SL(a.y)} ${esc(G.AWARD_NAMES[a.a])}</span>`).join('')
     + Object.entries(cnt).map(([k, n]) => `<span class="award">${n > 1 ? n + '× ' : ''}${esc(G.AWARD_NAMES[k])}</span>`).join('');
-  return `<section class="card hero"><div class="split"><div><div class="eyebrow">${esc(p.pos)} · age ${p.age} · ${p.team >= 0 && L.teams[p.team] ? esc(tname(L.teams[p.team])) : (p.team === -2 || p.retiredYear ? 'Retired' : 'Free agent')}</div><h2>${esc(p.name)}</h2></div><button class="btn sm" data-act="statPlayer" data-id="">Close</button></div>
+  return `<section class="card hero"><div class="split"><div><div class="eyebrow">${esc(p.pos)} · age ${p.age} · ${p.team >= 0 && L.teams[p.team] ? esc(tname(L.teams[p.team])) : (p.team === -2 || p.retiredYear ? 'Retired' : 'Free agent')}</div><h2>${esc(p.name)}</h2>${p.retiredYear == null && p.team !== -2 ? `<div class="archs">${archTags(p)}</div>` : ''}</div><button class="btn sm" data-act="statPlayer" data-id="">Close</button></div>
     ${aw ? `<div class="awards">${aw}</div>` : ''}
     ${ys.length ? table(cols, rows.concat([totRow])) : '<p class="small">No NBA stats in this league yet. Stats before 1976-77 are not imported.</p>'}
     ${p.phist && Object.keys(p.phist).length ? (() => { const py = Object.keys(p.phist).map(Number).sort((a, b) => a - b), prs = py.map(y => ({ y, s: p.phist[y] })), pt = { seasons: 0 }; py.forEach(y => { pt.seasons++; for (const k in p.phist[y]) if (k !== 'tm') pt[k] = n0(pt[k]) + p.phist[y][k]; });
@@ -4372,6 +4800,9 @@ function vMoves() {
     const v = G.tradeVerdict(L, tt, give, get), ratio = v.give / (v.get * v.ask);
     const chk = G.tradeCheck(L, tt, give, get);
     gauge = `<p class="small ${v.ok && !chk.cap ? 'good' : 'bad'}">${v.ok ? (chk.cap ? '<b>They like the value, but this trade can\'t go through as built.</b>' : ratio > 1.6 ? 'They would accept. You may be overpaying.' : 'They would likely accept.') : (ratio > 0.8 ? 'Close on value. Add a little more.' : 'Not close on value. They want much more back.')}</p>${chk.cap ? `<p class="small bad">${esc(chk.cap)}</p>` : ''}`;
+    const cp = (give.players.length || get.players.length) ? G.chemPreview(L, L.user, give.players, get.players) : null;
+    if (cp) { const d = cp.after - cp.before, nb = cp.notes.filter(n => !n.good).map(n => n.t).slice(0, 3);
+      gauge += `<p class="small"><b>Chemistry ${cp.before} → <span class="${d >= 3 ? 'good' : d <= -3 ? 'bad' : ''}">${cp.after}</span></b> if you make this deal${Math.abs(cp.dEff) >= 0.1 ? ` (${cp.dEff > 0 ? '+' : '−'}${Math.abs(cp.dEff).toFixed(1)} team rating from fit)` : ''}. Team rating ${cp.ovrBefore} → ${cp.ovrAfter} with talent and fit together.${nb.length ? ` After the deal: ${esc(nb.join('; '))}.` : ''}</p>`; }
     if (capOn) { const y = G.capYear(L), s = ids => ids.reduce((a, id) => a + (G.salFor(L.players[id], y) || 0), 0); gauge += `<p class="small">Salary out ${G.money(s(give.players))} · in ${G.money(s(get.players))}. Teams over the cap must take back no more than 125% of what they send, plus $100K.</p>`; }
   }
   const chosen = sel => sel.length ? `<ul class="chosen">${sel.map(x => x[0] === 'p' ? `<li>${esc(L.players[+x.slice(2)].pos)} ${esc(L.players[+x.slice(2)].name)}</li>` : `<li>${esc(G.pickLabel(L, G.pickById(L, +x.slice(2))))} pick</li>`).join('')}</ul>` : '<p class="small">Nothing yet.</p>';
@@ -4391,6 +4822,45 @@ function vMoves() {
   return h;
 }
 
+/* ---------- Help ---------- */
+// The section the ? button opens: the current tab's, or the draft/contracts section at those times of year.
+function helpFor(tab) {
+  if (L && tab === 'home' && (L.phase === 'draft' || L.phase === 'dispersal')) return L.phase === 'draft' ? 'draft' : 'quick';
+  if (L && tab === 'moves' && L.phase === 'offseason') return 'contracts';
+  return !L ? 'quick' : HELP_TAB[tab] || 'quick';
+}
+function vHelp() {
+  const open = ui.helpOpen || 'quick', from = ui.helpFrom && ui.helpFrom !== 'help' ? ui.helpFrom : 'home';
+  const back = (TABS.find(x => x[0] === from) || ['home', 'Office'])[1];
+  return `<section class="card hero"><div class="eyebrow">Game manual</div><h2>How to play Hardwood GM</h2>
+    <p class="small">Tap a topic to open it. The ? at the top opens the part for the screen you're on. Version ${APP_VERSION}.</p>
+    <input id="helpSearch" class="help-search" type="search" placeholder="Search the manual (try &quot;cap&quot; or &quot;chemistry&quot;)" autocomplete="off">
+    <div class="chips help-toc">${HELP.map(h => `<button class="chip ${h.id === open ? 'on' : ''}" data-act="helpGo" data-id="${h.id}">${h.t}</button>`).join('')}</div>
+    <div class="row"><button class="btn" data-act="helpBack">Back to ${back}</button></div></section>
+    <p class="small help-none" hidden>Nothing in the manual matches that.</p>
+    ${HELP.map(h => `<details class="card help-sec" id="h-${h.id}"${h.id === open ? ' open' : ''}><summary><h3>${h.t}</h3></summary><div class="help-body">${h.b}</div></details>`).join('')}
+    <div class="row"><button class="btn" data-act="helpBack">Back to ${back}</button></div>`;
+}
+/* ---------- Chemistry ---------- */
+const archTags = (p, n) => p.prof ? G.archetypes(p, L.year).slice(0, n || 2).map(a => `<span class="tag arch">${esc(G.archName(a, L.year))}</span>`).join(' ') : '';
+const chemWins = e => Math.round(e * 2.4);
+function chemCard(r) {
+  const ch = r.chem; if (!ch) return '';
+  const sg = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(1);
+  const lab = ch.score >= 70 ? 'Excellent' : ch.score >= 58 ? 'Good' : ch.score >= 43 ? 'Average' : ch.score >= 30 ? 'Poor' : 'Bad';
+  const bar = (n, v) => `<div class="bar chem"><span class="bar-l">${n}</span><span class="bar-t"><span class="bar-f ${v >= 60 ? 'c-good' : v >= 41 ? 'c-mid' : 'c-bad'}" style="width:${Math.max(3, v)}%"></span></span><span class="bar-v">${v}</span></div>`;
+  const good = ch.notes.filter(n => n.good), bad = ch.notes.filter(n => !n.good);
+  const rot = r.mins.slice().sort((a, b) => b.min - a.min).slice(0, 8);
+  const open = !!ui.chemOpen;
+  return `<section class="card"><div class="split"><h3>Chemistry</h3><span class="chem-score ${ch.score >= 58 ? 'good' : ch.score < 43 ? 'bad' : ''}">${ch.score}</span></div>
+    <p class="small"><b>${lab}.</b> ${Math.abs(ch.effect) < 0.1 ? 'No effect on your team rating.' : `${sg(ch.effect)} to your team rating, about ${ch.effect > 0 ? '+' : '−'}${Math.abs(chemWins(ch.effect))} wins over a season.`} 50 is league average; the effect tops out at ±${G.CHEM.max}.</p>
+    ${G.CHEM_PARTS.map(([k, n]) => bar(n, ch.parts[k])).join('')}
+    ${bad.length ? `<p class="small"><b>Hurting:</b> ${bad.map(n => esc(n.t)).join('; ')}.</p>` : ''}
+    ${good.length ? `<p class="small"><b>Helping:</b> ${good.map(n => esc(n.t)).join('; ')}.</p>` : ''}
+    <button class="lnk small" data-act="chemOpen">${open ? 'Hide' : 'How chemistry works and your rotation\'s roles'}</button>
+    ${open ? `<p class="small">Each part compares your rotation with the rest of the league this season. <b>Play style</b>: do the players suit your tempo, offense and defense. <b>Skill coverage</b>: someone to handle, shoot, protect the rim, rebound, guard the perimeter and create a shot. <b>Offensive synergy</b>: a playmaker with shooters and finishers, not too many players who need the ball. <b>Defensive synergy</b>: a rim protector behind perimeter stoppers, few weak links. <b>Positional balance</b>: the starting five's shape for this era (see Lineup). <b>Archetype diversity</b>: different kinds of players. <b>Time together</b>: seasons played together; a new group starts low and builds as the season goes on. Talent is taken out of the comparison, so this measures fit, not how good the players are.</p>
+    <div class="list">${rot.map(x => `<div class="pl"><div class="pl-main"><span class="pos ${x.start ? 'st' : ''}">${esc(x.p.pos)}</span><div class="pl-name">${esc(x.p.name)} ${archTags(x.p)}<div class="pl-sub">${Math.round(x.min)} min · ${(() => { const t = G.tenure(L, x.p, L.user); return t >= 3 ? '3+ seasons here' : t < 0.05 ? 'new' : t.toFixed(1) + ' seasons here'; })()}</div></div></div></div>`).join('')}</div>` : ''}</section>`;
+}
 /* ---------- Coach ---------- */
 function lineupCard(c, r, custom) {
   const y = L.year, rg = G.posRigidity(y), be = G.bigEra(y);
@@ -4405,7 +4875,7 @@ function lineupCard(c, r, custom) {
     ${meter('Big men matter', be)}${meter('Position flexibility', 1 - rg)}
     <div class="list">${Object.keys(G.LINEUPS).map(k => { const o = G.LINEUPS[k], on = G.lineupFor(c) === k, d = on || custom ? null : opt(k);
       return `<button class="tp ${on ? 'on' : ''} offopt" data-act="coach" data-key="lineup" data-id="${k}"><span class="pl-name">${esc(o.name)}${d ? ` <span class="small ${d.o + d.d > 0.3 ? 'good' : d.o + d.d < -0.3 ? 'bad' : ''}">${sg(d.o)} off · ${sg(d.d)} def vs now</span>` : ''}<span class="pl-sub">${esc(o.desc)}</span></span>${on ? '<span class="award">Using</span>' : ''}</button>`; }).join('')}</div>
-    ${notes.length ? `<p class="small"><b>Your starting five right now:</b> ${notes.map(n => `${esc(n.t)} (${[n.o ? sg(n.o) + ' off' : '', n.d ? sg(n.d) + ' def' : ''].filter(Boolean).join(', ')})`).join('; ')}.</p>` : '<p class="small"><b>Your starting five right now:</b> no positional penalties or bonuses.</p>'}
+    ${notes.length ? `<p class="small"><b>Your starting five right now:</b> ${notes.map(n => esc(n.t)).join('; ')}. This shape is scored as Positional balance in Chemistry.</p>` : '<p class="small"><b>Your starting five right now:</b> a standard shape, no positional pluses or minuses. It is scored as Positional balance in Chemistry.</p>'}
     ${custom ? '<p class="small">You set your own rotation order, so the lineup style is not picking your starters. Its effects still apply to whoever starts. Tap Auto in Rotation to let the style choose.</p>' : ''}</section>`;
 }
 function vCoach() {
@@ -4446,7 +4916,7 @@ function vCoach() {
       <div class="list">${dcRows || '<p>No players.</p>'}</div>
       <div class="row"><button class="btn sm" data-act="dcSort" data-key="ovr">Order by overall</button><button class="btn sm" data-act="dcSort" data-key="pot">Order by potential</button>${custom ? '<button class="btn sm" data-act="dcReset">Auto (best balanced five)</button>' : ''}</div>
       <p class="small">How much a starting five's shape matters depends on the era; see Lineup below. A shorter rotation gives your best players more minutes.</p></section>
-    ${lineupCard(c, r, custom)}
+    ${chemCard(r)}${lineupCard(c, r, custom)}
     <section class="card"><h3>Offense</h3>
       <p class="small">The first three exist in every season. Era offenses appear in the years they were run and are retired when the era ends; if yours is retired, you switch to Balanced.</p>
       <div class="list">${offKeys().map(k => { const o = G.OFFENSES[k], on = c.off === k; return `<button class="tp ${on ? 'on' : ''} offopt" data-act="coach" data-key="off" data-id="${k}"><span class="pl-name">${esc(o.name)}${o.from ? ` <span class="small">${SL(o.from)} to ${o.to ? SL(o.to) : 'today'}</span>` : ''}<span class="pl-sub">${esc(o.desc)}</span></span>${on ? '<span class="award">Running</span>' : ''}</button>`; }).join('')}</div>
@@ -4572,6 +5042,11 @@ function act(a, el) {
     case 'recKey': ui.recKey = id; break;
     case 'recPo': ui.recPo = id; break;
     case 'clsOpen': ui.clsOpen = !ui.clsOpen; ui.clsShow = 40; break;
+    case 'chemOpen': ui.chemOpen = !ui.chemOpen; break;
+    case 'help': if (ui.tab === 'help') { ui.tab = ui.helpFrom || 'home'; window.scrollTo(0, 0); break; }
+      ui.helpFrom = ui.tab; ui.helpOpen = helpFor(ui.tab); ui.tab = 'help'; ui.open = null; ui.box = null; window.scrollTo(0, 0); track('help', true); break;
+    case 'helpBack': ui.tab = ui.helpFrom && ui.helpFrom !== 'help' ? ui.helpFrom : 'home'; window.scrollTo(0, 0); break;
+    case 'helpGo': ui.helpOpen = id; ui.helpScroll = id; if (ui.tab !== 'help') { ui.helpFrom = ui.tab; ui.tab = 'help'; } break;
     case 'clsMore': ui.clsShow = (ui.clsShow || 40) + 40; break;
     case 'sat': { const r = G.signAndTrade(L, +id); flash(r.msg); break; }
     case 'recCar': ui.recCar = id; break;
@@ -4704,6 +5179,12 @@ document.addEventListener('change', e => {
       render();
     });
   }
+});
+document.addEventListener('input', e => {
+  if (e.target.id !== 'helpSearch') return;
+  const q = e.target.value.trim().toLowerCase(); let n = 0;
+  document.querySelectorAll('.help-sec').forEach(d => { const hit = !q || d.textContent.toLowerCase().includes(q); d.hidden = !hit; if (hit) n++; if (q.length >= 2) d.open = hit; });
+  const none = document.querySelector('.help-none'); if (none) none.hidden = n > 0;
 });
 document.addEventListener('input', e => { if (e.target.id === 'tempo') { const h = e.target.closest('.card').querySelector('h3'); if (h) h.textContent = 'Tempo: ' + e.target.value; } });
 
