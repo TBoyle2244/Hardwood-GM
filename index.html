@@ -302,6 +302,7 @@ input[type=range] { width: 100%; accent-color: var(--field); }
 .t3-item { display: flex; flex-direction: column; gap: 4px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
 .t3-item:first-of-type { border-top: 0; }
 .t3-item .btn { align-self: flex-start; }
+.prot { font: inherit; font-size: 12px; margin-left: 6px; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -1391,18 +1392,105 @@ function minutesFor(L, tid, coach) {
 function posCounts(L, tid) { const c = {}; POS.forEach(g => c[g] = 0); roster(L, tid).forEach(p => c[p.pos]++); return c; }
 // Dead money (cap era): a released player's guaranteed salary stays on the team's books for the rest of his deal.
 // Minimum-level contracts (up to 1.5x the minimum) are treated as non-guaranteed and come off for free.
-function addDead(L, tid, p) {
+// o.mult: share of the money still owed (a buyout is less than 1); o.stretch (from 2011): the money for future seasons
+// is spread evenly over twice those seasons plus one.
+function deadPay(L, p, o) {
+  o = o || {}; const y0 = capYear(L), pay = {}, inSeason = L.phase === 'regular' || L.phase === 'playoffs', m = o.mult == null ? 1 : o.mult;
+  if (capFor(y0) == null || !p || !p.con) return pay;
+  const yrs = []; for (let y = y0; y < y0 + 8; y++) { const sal = salFor(p, y); if (sal == null) break; if (sal <= minSalary(y) * 1.5 && !o.buyout) continue; yrs.push([y, Math.round(sal * m)]); }
+  if (!o.stretch || !stretchOn(L)) { for (const [y, a] of yrs) pay[y] = a; return pay; }
+  const now = inSeason ? yrs.filter(([y]) => y === y0) : [], fut = yrs.filter(x => !now.includes(x));
+  for (const [y, a] of now) pay[y] = a;
+  if (fut.length) { const tot = fut.reduce((s, [, a]) => s + a, 0), n = fut.length * 2 + 1, start = fut[0][0], per = Math.round(tot / n); for (let i = 0; i < n; i++) pay[start + i] = (pay[start + i] || 0) + per; }
+  return pay;
+}
+function stretchOn(L) { return capYear(L) >= 2011; }
+function addDead(L, tid, p, o) {
   if (!p || !p.con || tid == null || tid < 0) return 0;
-  const y0 = capYear(L); if (capFor(y0) == null) return 0;
-  const pay = {}; let tot = 0;
-  for (let y = y0; y < y0 + 8; y++) { const sal = salFor(p, y); if (sal == null) break; if (sal <= minSalary(y) * 1.5) continue; pay[y] = sal; tot += sal; }
+  const pay = deadPay(L, p, o), tot = Object.values(pay).reduce((a, b) => a + b, 0);
   if (!tot) return 0;
-  (L.dead = L.dead || []).push({ tid, pid: p.id, name: p.name, pay });
+  (L.dead = L.dead || []).push({ tid, pid: p.id, name: p.name, pay, stretch: !!(o && o.stretch), buyout: !!(o && o.buyout) });
   return tot;
 }
+/* ---------- waivers and buyouts ----------
+   A released player on a real contract goes on waivers for two days in the season. Any team can claim him and take
+   over his whole contract; the worst record gets first claim. If nobody does, he becomes a free agent and the old
+   team keeps paying (dead money). In the offseason the claim happens at once. Bought-out players skip waivers. */
+const WAIVE_DAYS = 2;
+function onWaivers(L) { return roster(L, -5); }
+function waive(L, tid, p, o) {
+  const real = p.con && capFor(capYear(L)) != null && salFor(p, capYear(L)) > minSalary(capYear(L)) * 1.5;
+  if (!real) { p.team = -1; delete p.con; return null; }
+  addDead(L, tid, p, o);
+  p.waiv = { from: tid, con: Object.assign({}, p.con), until: L.phase === 'regular' ? L.day + WAIVE_DAYS : -1, claims: [] };
+  p.team = -5;
+  if (!(L.phase === 'regular')) clearWaiver(L, p);
+  return p.waiv;
+}
+function claimOk(L, tid, p) {
+  const y = capYear(L), sal = salFor({ con: p.waiv.con }, y) || 0, cap = capFor(y), inSeason = L.phase === 'regular' || L.phase === 'playoffs';
+  if (tid === p.waiv.from) return 'He was just released by that team.';
+  if (inSeason && roster(L, tid).length >= rules(L.year).rosterMax) return 'No roster spot: release someone first.';
+  if (cap != null && payroll(L, tid, y) + sal > cap && sal > minSalary(y) * 1.5) return `Claiming him means taking his ${money(sal)} salary, and that needs cap space.`;
+  return null;
+}
+function claimWaiver(L, pid, on) { const p = L.players[pid]; if (!p || !p.waiv) return 'He is not on waivers.'; const e = claimOk(L, L.user, p); if (on !== false && e) return e; p.waiv.user = on !== false; return null; }
+function clearWaiver(L, p) {
+  const W = p.waiv, y = capYear(L), order = L.teams.slice().sort((a, b) => lastWP(a) - lastWP(b) || a.w / Math.max(1, a.w + a.l) - b.w / Math.max(1, b.w + b.l));
+  const wpNow = t => (t.w + t.l) ? t.w / (t.w + t.l) : lastWP(t);
+  order.sort((a, b) => wpNow(a) - wpNow(b));
+  let to = null;
+  for (const t of order) {
+    if (claimOk(L, t.id, p)) continue;
+    if (t.id === L.user) { if (W.user) { to = t.id; break; } continue; }
+    const tmp = { con: W.con }, worth = playerWeight(p) + contractW(L, t.id, Object.assign(Object.create(p), tmp));
+    const tenth = roster(L, t.id).map(x => x.ovr).sort((a, b) => b - a)[9] || 0;
+    if (worth > 1.2 && p.ovr >= tenth + 2) { to = t.id; break; }
+  }
+  delete p.waiv;
+  if (to == null) { p.team = -1; delete p.con; if (value(p) >= 62) addNews(L, `${p.pos} ${p.name} cleared waivers and is a free agent.`); return null; }
+  p.con = W.con; p.team = to;
+  L.dead = (L.dead || []).filter(d => !(d.pid === p.id && d.tid === W.from)); // the claiming team takes over the contract
+  addNews(L, `${L.teams[to].abbr} claimed ${p.pos} ${p.name} off waivers from ${L.teams[W.from].abbr}.`);
+  if (to !== L.user && (L.phase === 'regular' || L.phase === 'playoffs')) cutTo(L, to, rules(L.year).rosterMax, true);
+  return to;
+}
+function processWaivers(L) { for (const p of onWaivers(L)) if (p.waiv && (p.waiv.until < 0 || L.day >= p.waiv.until)) clearWaiver(L, p); }
+// Buyout: the player gives back part of what he's owed to become a free agent now. Players who want out, or who
+// can sign with a contender, give back more. Returns the terms; buyout() does it.
+function buyoutTerms(L, pid) {
+  const p = L.players[pid]; if (!p || !p.con) return null;
+  const y = capYear(L), owed = Object.values(deadPay(L, p, { buyout: true })).reduce((a, b) => a + b, 0); if (!owed) return null;
+  const give = clamp(0.06 + (60 - mor(p)) / 300 + (value(p) >= 60 && p.age >= 28 ? 0.08 : 0) + (p.tradeReq ? 0.06 : 0), 0.04, 0.3);
+  return { owed, give, cost: Math.round(owed * (1 - give)), saved: Math.round(owed * give), stretchOk: stretchOn(L) };
+}
+function buyout(L, pid, stretch) {
+  const p = L.players[pid]; if (!p || p.team !== L.user) return 'He is not on your team.';
+  const T = buyoutTerms(L, pid); if (!T) return 'He has no contract to buy out.';
+  addDead(L, L.user, p, { mult: 1 - T.give, buyout: true, stretch: !!stretch && T.stretchOk });
+  const t = L.teams[L.user]; if (t.dc) t.dc = t.dc.filter(x => x !== p.id);
+  p.team = -1; delete p.con; p.bought = L.year;
+  addNews(L, `${t.abbr} bought out ${p.pos} ${p.name}. He gave back ${money(T.saved)} and is a free agent.`);
+  return null;
+}
+// AI rebuilding teams buy out veterans after the trade deadline; contenders with room sign them for the minimum.
+function aiBuyouts(L) {
+  if (L.phase !== 'regular' || !pastDeadline(L) || capFor(capYear(L)) == null) return;
+  const M = teamModes(L), y = capYear(L);
+  for (const t of L.teams) {
+    if (t.id === L.user || M[t.id] !== 'rebuild' || Math.random() > 0.03) continue;
+    const p = roster(L, t.id).filter(x => x.age >= 29 && value(x) >= 55 && x.con && salFor(x, y) > minSalary(y) * 1.5 && !salFor(x, y + 2)).sort((a, b) => value(b) - value(a))[0];
+    if (!p) continue;
+    addDead(L, t.id, p, { mult: 0.85, buyout: true }); if (t.dc) t.dc = t.dc.filter(x => x !== p.id);
+    p.team = -1; delete p.con; p.bought = L.year;
+    const dest = L.teams.filter(x => x.id !== L.user && M[x.id] === 'win' && roster(L, x.id).length < rules(L.year).rosterMax).sort((a, b) => b.w - a.w)[0];
+    if (dest && Math.random() < 0.8) { p.team = dest.id; setContract(p, minSalary(y), y, 1, 'none'); addNews(L, `${t.abbr} bought out ${p.pos} ${p.name}, and he signed with the contending ${dest.abbr}.`); }
+    else addNews(L, `${t.abbr} bought out ${p.pos} ${p.name}. He's a free agent.`);
+  }
+}
 function deadFor(L, tid, y) { let s = 0; for (const d of L.dead || []) if (d.tid === tid && d.pay[y]) s += d.pay[y]; return s; }
-function deadList(L, tid, y) { return (L.dead || []).filter(d => d.tid === tid && d.pay[y]).map(d => ({ name: d.name, sal: d.pay[y], left: Object.keys(d.pay).filter(k => +k >= y).length })); }
-function release(L, pid) { const p = L.players[pid]; if (!p) return; const t = L.teams[p.team]; addDead(L, p.team, p); p.team = -1; delete p.con; if (t) { if (t.dc) t.dc = t.dc.filter(x => x !== pid); addNews(L, `${t.abbr} released ${p.pos} ${p.name}.`); } }
+function deadList(L, tid, y) { return (L.dead || []).filter(d => d.tid === tid && d.pay[y]).map(d => ({ name: d.name, sal: d.pay[y], left: Object.keys(d.pay).filter(k => +k >= y).length, stretch: d.stretch, buyout: d.buyout })); }
+function release(L, pid, o) { const p = L.players[pid]; if (!p) return; const t = L.teams[p.team], from = p.team; if (t) { if (t.dc) t.dc = t.dc.filter(x => x !== pid); addNews(L, `${t.abbr} released ${p.pos} ${p.name}${o && o.stretch && stretchOn(L) ? ' and stretched his contract' : ''}.`); } waive(L, from, p, o); }
 
 function aiCutdowns(L) { const max = rules(L.year).rosterMax; for (const t of L.teams) if (t.id !== L.user) cutTo(L, t.id, max, true); }
 function cutTo(L, tid, max, quiet) {
@@ -1519,25 +1607,104 @@ function projectedOverall(L, k) {
   else slot = Math.round((rk.str[k.orig] + n / 2) / 2);
   return (k.rnd - 1) * n + (slot || Math.round(n / 2));
 }
-function pickLabel(L, k) { const o = L.teams[k.orig]; return `${k.y} Round ${k.rnd}${k.orig !== k.own ? ' (' + o.abbr + ')' : ''}`; }
+function pickLabel(L, k) { const o = L.teams[k.orig]; return `${k.y} Round ${k.rnd}${k.orig !== k.own ? ' (' + o.abbr + ')' : ''}${k.prot ? ` top-${k.prot} protected` : ''}`; }
+/* ---------- pick protections, swaps, Stepien rule ----------
+   A first-round pick can be traded "top-N protected": if it lands in the top N, the original team keeps it and
+   owes its next first instead (protection eases by 3 each time), and after two rollovers it becomes a second-rounder.
+   A swap right lets the holder trade first-rounders with the giver that year if the giver's pick is better.
+   The Stepien rule (from 1982): a team can't be left without a first-round pick in two straight future drafts;
+   a pick it traded with protection, or one it holds that is protected, may not be there, so it doesn't count. */
+const PROTS = [3, 5, 8, 10, 14, 20];
+function stepienOn(L) { return capYear(L) >= 1982 || L.year >= 1981; }
+function firstsOwned(L, tid, pkgOut, pkgIn) {
+  const out = new Set((pkgOut && pkgOut.picks) || []), inn = new Set((pkgIn && pkgIn.picks) || []), y = {};
+  for (const k of L.picks || []) if (k.rnd === 1 && !k.prot && ((k.own === tid && !out.has(k.id)) || inn.has(k.id))) y[k.y] = true;
+  return y;
+}
+// Returns a message if the move would break the Stepien rule for this team.
+function stepienMsg(L, tid, pkgOut, pkgIn) {
+  if (!stepienOn(L) || !((pkgOut && pkgOut.picks || []).some(id => (pickById(L, id) || {}).rnd === 1) || (pkgOut && pkgOut.prot && Object.keys(pkgOut.prot).length))) return null;
+  const have = firstsOwned(L, tid, pkgOut, pkgIn), y0 = firstPickYear(L);
+  for (const id in (pkgOut && pkgOut.prot) || {}) { const k = pickById(L, +id); if (k) delete have[k.y]; }
+  for (let y = y0; y < y0 + 2; y++) if (!have[y] && !have[y + 1]) return `Stepien rule: ${tid === L.user ? 'you' : L.teams[tid].city} would have no guaranteed first-round pick in ${y} or ${y + 1}. A team can't go two straight drafts without one (a protected pick doesn't count).`;
+  return null;
+}
+// What a protected pick is worth: likely conveys, or rolls over (later and weaker) if it lands in the protection.
+function protWeight(L, k, ov, base) {
+  if (!k.prot || k.rnd !== 1) return base;
+  const n = L.teams.length, far = Math.max(0, k.y - (L.year + 1));
+  const pIn = clamp((k.prot - ov) / (4 + far * 3) * 0.5 + 0.5 * (ov <= k.prot ? 1 : 0.3), 0, 0.97);
+  const conv = weight(slotGrade(Math.max(ov, k.prot + Math.round((n - k.prot) * 0.3))) - 4);
+  return (1 - pIn) * conv * (base / Math.max(0.01, weight(slotGrade(ov) - 4))) + pIn * conv * 0.45;
+}
+// A swap right's worth to the holder: the chance the giver's pick ends up better, and by how much.
+function swapW(L, y, giver, holder) {
+  const kg = (L.picks || []).find(k => k.y === y && k.rnd === 1 && k.orig === giver), kh = (L.picks || []).find(k => k.y === y && k.rnd === 1 && k.orig === holder);
+  if (!kg || !kh) return 0;
+  const wg = pickWeight(L, kg), wh = pickWeight(L, kh);
+  return Math.max(0, wg - wh) * 0.85 + 0.12 * Math.min(wg, wh);
+}
+function swapsOf(L) { return L.swaps || (L.swaps = []); }
+// years in which giver could still grant holder a swap: both own their own first, unprotected, no swap yet
+function swapYears(L, giver, holder) {
+  ensurePicks(L); const y0 = firstPickYear(L), out = [];
+  for (let y = y0; y < y0 + 3; y++) {
+    const own = t => (L.picks || []).some(k => k.y === y && k.rnd === 1 && k.orig === t && k.own === t && !k.prot);
+    if (own(giver) && own(holder) && !swapsOf(L).some(w => w.y === y && (w.giver === giver || w.holder === giver || w.giver === holder || w.holder === holder))) out.push(y);
+  }
+  return out;
+}
+function swapText(L, w) { return `${w.y} first-round swap rights (${L.teams[w.holder].abbr} can swap with ${L.teams[w.giver].abbr})`; }
+// At the draft: protections decide who gets each first, then swaps are exercised.
+function resolvePickTerms(L, dy, firstOrder) {
+  const slot = tid => firstOrder.indexOf(tid) + 1, nextY = dy + 1;
+  ensurePicks(L);
+  for (const k of (L.picks || []).filter(k => k.y === dy && k.rnd === 1 && k.prot)) {
+    const s = slot(k.orig);
+    if (k.own === k.orig) { delete k.prot; continue; }
+    if (s > k.prot) { addNews(L, `${L.teams[k.own].abbr} get ${L.teams[k.orig].abbr}'s pick (#${s}); it was top-${k.prot} protected.`); delete k.prot; continue; }
+    const to = k.own, roll = (k.roll || 0) + 1; k.own = k.orig; const was = k.prot; delete k.prot;
+    const k1 = (L.picks || []).find(x => x.y === nextY && x.rnd === 1 && x.orig === k.orig), k2 = (L.picks || []).find(x => x.y === nextY && x.rnd === 2 && x.orig === k.orig);
+    if (roll <= 2 && k1 && k1.own === k.orig && !k1.prot) { k1.own = to; k1.roll = roll; if (was - 3 > 0) k1.prot = was - 3; addNews(L, `${L.teams[k.orig].abbr} keep their pick (#${s}, top-${was} protected). ${L.teams[to].abbr} get their ${nextY} first instead${was - 3 > 0 ? `, top-${was - 3} protected` : ''}.`); }
+    else if (k2 && k2.own === k.orig) { k2.own = to; addNews(L, `${L.teams[k.orig].abbr} keep their pick (#${s}, top-${was} protected). It turns into their ${nextY} second-rounder for ${L.teams[to].abbr}.`); }
+    else addNews(L, `${L.teams[k.orig].abbr} keep their pick (#${s}, top-${was} protected); the obligation to ${L.teams[to].abbr} ends.`);
+  }
+  for (const w of swapsOf(L).filter(w => w.y === dy)) {
+    const kg = L.picks.find(k => k.y === dy && k.rnd === 1 && k.orig === w.giver), kh = L.picks.find(k => k.y === dy && k.rnd === 1 && k.orig === w.holder);
+    if (kg && kh && kg.own === w.giver && kh.own === w.holder && slot(w.giver) < slot(w.holder)) { kg.own = w.holder; kh.own = w.giver; addNews(L, `${L.teams[w.holder].abbr} swap first-rounders with ${L.teams[w.giver].abbr}: #${slot(w.giver)} for #${slot(w.holder)}.`); }
+    else if (kg && kh) addNews(L, `${L.teams[w.holder].abbr} keep their own first (#${slot(w.holder)}); the swap with ${L.teams[w.giver].abbr} isn't worth using.`);
+  }
+  L.swaps = swapsOf(L).filter(w => w.y > dy);
+}
+// Apply a package's pick terms when a trade goes through: protections the sender set, and swap rights it grants.
+function applyTerms(L, from, to, pkg) {
+  for (const id in pkg.prot || {}) { const k = pickById(L, +id); if (k && k.rnd === 1 && !k.prot && PROTS.includes(+pkg.prot[id])) k.prot = +pkg.prot[id]; }
+  for (const y of pkg.swaps || []) swapsOf(L).push({ id: (L.nextSwapId = (L.nextSwapId || 0) + 1), y: +y, giver: from, holder: to });
+}
 // Trade value: steep curve so a pile of role players never adds up to one star.
 function weight(v) { const w = Math.pow(1.09, v - 50); return v < 50 ? w * 0.5 : w; }
 function playerWeight(p) { return weight(value(p)); }
-function pickWeight(L, k) {
+function pickWeight(L, k, prot) {
   const ov = projectedOverall(L, k);
   const yrsOut = Math.max(0, k.y - (L.year + 1) - (L.phase === 'offseason' ? 1 : 0));
-  return weight(slotGrade(ov) - 4) * Math.pow(0.9, yrsOut);
+  const base = weight(slotGrade(ov) - 4) * Math.pow(0.9, yrsOut), pr = prot || k.prot;
+  return pr ? protWeight(L, Object.assign({}, k, { prot: pr }), ov, base) : base;
 }
-function pkgWeight(L, pkg) { return (pkg.players || []).reduce((s, id) => s + playerWeight(L.players[id]), 0) + (pkg.picks || []).reduce((s, id) => s + pickWeight(L, pickById(L, id)), 0); }
+// sent: the package's swap rights are granted by `giver` (pass it to value them)
+function pkgWeight(L, pkg, giver, holder) {
+  return (pkg.players || []).reduce((s, id) => s + playerWeight(L.players[id]), 0) + (pkg.picks || []).reduce((s, id) => s + pickWeight(L, pickById(L, id), pkg.prot && pkg.prot[id]), 0)
+    + (giver != null && holder != null ? (pkg.swaps || []).reduce((s, y) => s + swapW(L, +y, giver, holder), 0) : 0);
+}
 function pkgText(L, pkg) {
-  const parts = (pkg.players || []).map(id => { const p = L.players[id]; return `${p.pos} ${p.name}`; }).concat((pkg.picks || []).map(id => pickLabel(L, pickById(L, id)) + ' pick'));
+  const parts = (pkg.players || []).map(id => { const p = L.players[id]; return `${p.pos} ${p.name}`; }).concat((pkg.picks || []).map(id => { const k = pickById(L, id), pr = pkg.prot && pkg.prot[id]; return pickLabel(L, k) + (pr && !k.prot ? ` top-${pr} protected` : '') + ' pick'; }), (pkg.swaps || []).map(y => `${y} first-round swap rights`));
   return parts.join(', ') || 'nothing';
 }
-function validPkg(L, tid, pkg) { return (pkg.players || []).every(id => L.players[id] && L.players[id].team === tid) && (pkg.picks || []).every(id => { const k = pickById(L, id); return k && k.own === tid; }); }
+function validPkg(L, tid, pkg) { return (pkg.players || []).every(id => L.players[id] && L.players[id].team === tid) && (pkg.picks || []).every(id => { const k = pickById(L, id); return k && k.own === tid; }) && Object.keys(pkg.prot || {}).every(id => { const k = pickById(L, +id); return k && k.own === tid && !k.prot && k.rnd === 1; }); }
 function execTrade(L, a, b, aGive, bGive) {
   (aGive.players || []).concat(bGive.players || []).forEach(id => { const p = L.players[id]; if (p.tradeReq || p.promise) { delete p.tradeReq; delete p.promise; addMor(p, 25); } });
   (aGive.players || []).forEach(id => L.players[id].team = b); (bGive.players || []).forEach(id => L.players[id].team = a);
   (aGive.picks || []).forEach(id => pickById(L, id).own = b); (bGive.picks || []).forEach(id => pickById(L, id).own = a);
+  applyTerms(L, a, b, aGive); applyTerms(L, b, a, bGive);
   [a, b].forEach(t => { const T = L.teams[t]; if (T.dc) T.dc = T.dc.filter(id => L.players[id] && L.players[id].team === t); });
   addNews(L, `TRADE: ${L.teams[a].abbr} send ${pkgText(L, aGive)} to ${L.teams[b].abbr} for ${pkgText(L, bGive)}.`);
   const inSeason = L.phase === 'regular' || L.phase === 'playoffs';
@@ -1558,6 +1725,8 @@ function contractW(L, tid, p) {
   for (let k = 0; k < 6; k++) {
     const sal = salFor(p, y0 + k); if (sal == null) break;
     const age = p.age + k, fy = age >= 31 ? fair * Math.pow(0.86, Math.min(k, age - 30)) : fair;
+    const o = k > 0 && optOn(p, y0 + k); // a player opts out of a bargain; a team declines an overpay
+    if (o && ((o.t === 'P' && fy > sal) || (o.t === 'T' && fy < sal))) break;
     s += (fy - sal) * f; f *= 0.82;
   }
   const M = teamModes(L)[tid], care = (M === 'win' ? 0.6 : M === 'rebuild' ? 1.4 : 1) * (spends(L, tid) ? 0.7 : 1) * (capFor(y0) == null ? 0.5 : 1);
@@ -1576,7 +1745,7 @@ function expiringW(L, tid, p, y0, scale, M) {
   return sal / scale * EXPIRING.k * want * room;
 }
 // What a team gives up, as that team sees it: the players' worth plus their contracts (shedding a bad one is a gain).
-function sendWeight(L, tid, pkg) { return pkgWeight(L, pkg) + (pkg.players || []).reduce((s, id) => s + contractW(L, tid, L.players[id]), 0); }
+function sendWeight(L, tid, pkg, to) { return pkgWeight(L, pkg, tid, to) + (pkg.players || []).reduce((s, id) => s + contractW(L, tid, L.players[id]), 0); }
 // Does a team come out ahead? A team shedding negative value takes less back.
 function dealOk(L, g, r, ask) { return (r > 0 ? g >= r * ask : g >= r / ask) && (g > 0 || r < 0); }
 function receiverWeight(L, tid, incoming, outgoing) {
@@ -1588,10 +1757,11 @@ function receiverWeight(L, tid, incoming, outgoing) {
   const cw = inc.reduce((s, p) => s + contractW(L, tid, p), 0); // a player they'd cut still costs them his salary
   // players who make the team fit better are worth more to it, and ones who wreck the fit are worth less
   if (pw > 0 && tid !== L.user) { const cp = chemPreview(L, tid, outgoing.players, incoming.players); if (cp) pw *= clamp(1 + cp.dEff * chemCare(L, tid), 0.7, 1.3); }
-  return pw + cw + (incoming.picks || []).reduce((s, id) => s + pickWeight(L, pickById(L, id)), 0);
+  return pw + cw + (incoming.picks || []).reduce((s, id) => s + pickWeight(L, pickById(L, id), incoming.prot && incoming.prot[id]), 0) + (incoming.swaps || []).reduce((s, y) => s + swapW(L, +y, incoming.from != null ? incoming.from : -1, tid), 0);
 }
 function tradeVerdict(L, partner, give, get) {
-  const g = receiverWeight(L, partner, give, get), r = sendWeight(L, partner, get), ask = diff(L).tradeAsk;
+  give = Object.assign({ from: L.user }, give);
+  const g = receiverWeight(L, partner, give, get), r = sendWeight(L, partner, get, L.user), ask = diff(L).tradeAsk;
   return { give: g, get: r, ask, ok: dealOk(L, g, r, ask) };
 }
 // Salary matching (cap era): a team over the cap after a trade can take back at most 125% of what it sends, plus $100K.
@@ -1619,15 +1789,18 @@ function pastDeadline(L) { return (L.phase === 'regular' && L.day >= deadlineDay
 // Same checks as a proposal, without making the trade: for showing the reason before you tap Propose.
 function tradeCheck(L, partner, give, get) {
   const snap = JSON.stringify([give, get]);
-  const v = tradeVerdict(L, partner, give, get), cm = tradeCapMsg(L, L.user, partner, give, get);
+  const v = tradeVerdict(L, partner, give, get), cm = tradeCapMsg(L, L.user, partner, give, get) || stepienMsg(L, L.user, give, get) || stepienMsg(L, partner, get, give);
   return { value: v.ok, cap: cm, snap };
 }
 function proposeTrade(L, partner, give, get) {
   ensurePicks(L);
   if (pastDeadline(L)) return { ok: false, msg: 'The trade deadline has passed. Trading reopens after the playoffs.' };
-  const n = x => (x.players || []).length + (x.picks || []).length;
+  const n = x => (x.players || []).length + (x.picks || []).length + (x.swaps || []).length;
   if (!n(give) || !n(get)) return { ok: false, msg: 'Put at least one player or pick on each side.' };
   if (!validPkg(L, L.user, give) || !validPkg(L, partner, get)) return { ok: false, msg: 'Something in this deal is no longer on the right team.' };
+  const sw1 = swapYears(L, L.user, partner), sw2 = swapYears(L, partner, L.user);
+  if ((give.swaps || []).some(y => !sw1.includes(+y)) || (get.swaps || []).some(y => !sw2.includes(+y))) return { ok: false, msg: 'A swap needs both teams to own their own unprotected first-round pick that year, and only one swap per team per year.' };
+  const st = stepienMsg(L, L.user, give, get) || stepienMsg(L, partner, get, give); if (st) return { ok: false, msg: st };
   const max = rules(L.year).rosterMax, after = roster(L, L.user).length - (give.players || []).length + (get.players || []).length;
   if ((L.phase === 'regular' || L.phase === 'playoffs') && after > max) return { ok: false, msg: `That would put you at ${after} players, over the ${max} limit. Release someone first.` };
   const t = L.teams[partner], v = tradeVerdict(L, partner, give, get);
@@ -1678,15 +1851,21 @@ function buildPackage(L, tid, need, cap, strict, youth, maxP, keepTop) {
   const st = new Set(keepTop ? roster(L, tid).sort((a, b) => value(b) - value(a)).slice(0, keepTop).map(p => p.id) : starters(L, tid).map(p => p.id));
   const yf = p => !youth ? 1 : p.age <= 24 ? 1.2 : p.age >= 29 ? 0.6 : 1;
   const items = roster(L, tid).filter(p => !st.has(p.id)).map(p => ({ t: 'p', id: p.id, w: playerWeight(p) * yf(p) }))
-    .concat(teamPicks(L, tid).map(k => ({ t: 'k', id: k.id, w: pickWeight(L, k) * (youth ? 1.2 : 1) })))
+    .concat(teamPicks(L, tid).map(k => {
+      // AI teams often protect their own first when it could be high: worth less to the other side, safer for them
+      const pr = k.rnd === 1 && k.orig === tid && !k.prot && stepienOn(L) && projectedOverall(L, k) <= 16 && Math.random() < 0.55 ? R.pick([5, 8, 10, 14]) : 0;
+      return { t: 'k', id: k.id, prot: pr || undefined, w: pickWeight(L, k, pr || undefined) * (youth ? 1.2 : 1) };
+    }))
     .map(it => Object.assign(it, { r: strict ? it.w : it.w * (0.8 + Math.random() * 0.4) })).sort((x, y) => y.r - x.r);
-  const pkg = { players: [], picks: [] }; let left = need, count = 0;
+  const pkg = { players: [], picks: [], prot: {} }; let left = need, count = 0;
   for (const it of items) {
     if (left <= 0 || count >= (cap || 4)) break;
     if (it.w > left + need * 0.3) continue;
     if (it.t === 'p' && maxP != null && pkg.players.length >= maxP) continue;
-    (it.t === 'p' ? pkg.players : pkg.picks).push(it.id); left -= it.w; count++;
+    if (it.t === 'k' && stepienMsg(L, tid, { picks: pkg.picks.concat(it.id), prot: Object.assign({}, pkg.prot, it.prot ? { [it.id]: it.prot } : {}) }, {})) continue;
+    (it.t === 'p' ? pkg.players : pkg.picks).push(it.id); if (it.prot) pkg.prot[it.id] = it.prot; left -= it.w; count++;
   }
+  if (!Object.keys(pkg.prot).length) delete pkg.prot;
   return left > 0 ? null : pkg;
 }
 // AI teams send the user offers. Each one lasts a week (or until opening night in the offseason).
@@ -1746,7 +1925,10 @@ function rejectOffer(L, id) { L.offers = (L.offers || []).filter(x => x.id !== i
 function moveFrom(L, m) { return m.t === 'p' ? (L.players[m.id] || {}).team : (pickById(L, m.id) || {}).own; }
 function dealSides(L, moves) {
   const S = {}, side = t => S[t] || (S[t] = { inc: { players: [], picks: [] }, out: { players: [], picks: [] } });
-  for (const m of moves) { const f = m.from != null ? m.from : moveFrom(L, m); (m.t === 'p' ? side(f).out.players : side(f).out.picks).push(m.id); (m.t === 'p' ? side(m.to).inc.players : side(m.to).inc.picks).push(m.id); }
+  for (const m of moves) {
+    const f = m.from != null ? m.from : moveFrom(L, m); (m.t === 'p' ? side(f).out.players : side(f).out.picks).push(m.id); (m.t === 'p' ? side(m.to).inc.players : side(m.to).inc.picks).push(m.id);
+    if (m.prot) { (side(f).out.prot = side(f).out.prot || {})[m.id] = m.prot; (side(m.to).inc.prot = side(m.to).inc.prot || {})[m.id] = m.prot; }
+  }
   return S;
 }
 function dealValid(L, moves) { return moves.length > 0 && moves.every(m => m.from != null && moveFrom(L, m) === m.from && m.to !== m.from && L.teams[m.to]); }
@@ -1758,7 +1940,7 @@ function dealText(L, moves) {
 function reviewDeal(L, moves, ask) {
   const S = dealSides(L, moves), tids = Object.keys(S).map(Number), inSeason = L.phase === 'regular' || L.phase === 'playoffs', out = [];
   for (const t of tids) {
-    const x = S[t], r = { tid: t, ok: true, cap: teamCapMsg(L, t, x.out.players, x.inc.players), roster: null };
+    const x = S[t], r = { tid: t, ok: true, cap: teamCapMsg(L, t, x.out.players, x.inc.players) || stepienMsg(L, t, x.out, x.inc), roster: null };
     if (t !== L.user) { r.g = receiverWeight(L, t, x.inc, x.out); r.r = sendWeight(L, t, x.out); r.ok = dealOk(L, r.g, r.r, ask); }
     const max = rules(capYear(L)).rosterMax + (inSeason ? 0 : 3), n = roster(L, t).length - x.out.players.length + x.inc.players.length;
     if ((t === L.user ? inSeason && n > rules(L.year).rosterMax : n > max)) r.roster = `${t === L.user ? 'You' : L.teams[t].city} would have ${n} players, over the limit.`;
@@ -1769,7 +1951,7 @@ function reviewDeal(L, moves, ask) {
 function execDeal(L, moves) {
   const txt = dealText(L, moves), S = dealSides(L, moves), tids = Object.keys(S).map(Number);
   for (const m of moves) if (m.t === 'p') { const p = L.players[m.id]; if (p.tradeReq || p.promise) { delete p.tradeReq; delete p.promise; addMor(p, 25); } }
-  for (const m of moves) { if (m.t === 'p') L.players[m.id].team = m.to; else pickById(L, m.id).own = m.to; }
+  for (const m of moves) { if (m.t === 'p') L.players[m.id].team = m.to; else { const k = pickById(L, m.id); k.own = m.to; if (m.prot && !k.prot && k.rnd === 1 && PROTS.includes(+m.prot)) k.prot = +m.prot; } }
   for (const t of tids) { const T = L.teams[t]; if (T.dc) T.dc = T.dc.filter(id => L.players[id] && L.players[id].team === t); }
   addNews(L, `${tids.length === 3 ? 'THREE-TEAM ' : ''}TRADE: ${txt}.`);
   if (L.phase === 'regular' || L.phase === 'playoffs') for (const t of tids) if (t !== L.user) cutTo(L, t, rules(L.year).rosterMax, true);
@@ -1808,8 +1990,8 @@ function makeOffer3(L) {
   const roomC = rules(L.year).rosterMax + (inSeason ? 0 : 3) - roster(L, C.id).length + Q.players.length;
   const P = buildPackage(L, A.id, Math.max(0.5, sendWeight(L, C.id, Q)) * 1.04, 4, true, false, Math.max(0, roomC), 3); if (!P) return false;
   const moves = [{ t: 'p', id: X.id, from: L.user, to: A.id }]
-    .concat(Q.players.map(id => ({ t: 'p', id, from: C.id, to: L.user })), Q.picks.map(id => ({ t: 'k', id, from: C.id, to: L.user })))
-    .concat(P.players.map(id => ({ t: 'p', id, from: A.id, to: C.id })), P.picks.map(id => ({ t: 'k', id, from: A.id, to: C.id })));
+    .concat(Q.players.map(id => ({ t: 'p', id, from: C.id, to: L.user })), Q.picks.map(id => ({ t: 'k', id, from: C.id, to: L.user, prot: Q.prot && Q.prot[id] })))
+    .concat(P.players.map(id => ({ t: 'p', id, from: A.id, to: C.id })), P.picks.map(id => ({ t: 'k', id, from: A.id, to: C.id, prot: P.prot && P.prot[id] })));
   const v = reviewDeal(L, moves, 1); if (!v.ok) return false;
   L.offers.push({ id: L.nextOfferId++, from: A.id, also: C.id, moves, give: Q, get: { players: [X.id], picks: [] }, exp: L.phase === 'regular' ? L.day + 7 : -1 });
   addNews(L, `${L.teams[A.id].city} and ${L.teams[C.id].city} sent you a three-team offer for ${X.pos} ${X.name}.`);
@@ -2844,7 +3026,7 @@ function calibrate(L) {
 function simDay(L) {
   setEra(L);
   if (L.phase !== 'regular') return;
-  chemTrack(L);
+  chemTrack(L); processWaivers(L); aiBuyouts(L);
   healDay(L);
   if (!pastDeadline(L) && Math.random() < 0.035) aiTrades(L, 1, 6);
   L.offers = (L.offers || []).filter(o => o.exp < 0 || o.exp > L.day);
@@ -3247,6 +3429,7 @@ function startDraft(L, imports) {
   let genCount = 0;
   while (pool.length < target) { pool.push(genProspect(L, dy, pool.length + 1).id); genCount++; }
   ensurePicks(L);
+  resolvePickTerms(L, dy, orders[0]);
   const slotPick = [];
   orders.forEach((ord, ri) => ord.forEach(tid => {
     let k = L.picks.find(x => x.y === dy && x.rnd === ri + 1 && x.orig === tid);
@@ -3545,6 +3728,7 @@ function retireOffenses(L) {
   if (L.plan && L.plan.c && L.plan.c.off && !ok.includes(L.plan.c.off)) delete L.plan.c.off;
 }
 function startNextSeason(L) {
+  if (L.fa) autoTeamOptions(L);
   setEra(L);
   if (L.phase !== 'offseason') return 'Finish the draft first.';
   closeFreeAgency(L);
@@ -3624,7 +3808,56 @@ function leagueNorm(L) {
 }
 function marketValue(L, p, y) { y = y || capYear(L); if (p.udfa && !(p.yrs > 0) && p.team === -1) return minSalary(y); return clamp(avgSalary(y) * multFor(p) / leagueNorm(L), minSalary(y), maxSalary(p, y)); }
 function contractYears(p) { return p.age <= 25 ? 4 : (p.age <= 28 ? 4 : (p.age <= 30 ? 3 : (p.age <= 32 ? 2 : 1))); }
-function setContract(p, sal, firstYear, yrs) { p.con = { sal: Math.round(sal), exp: firstYear + yrs - 1, signed: firstYear }; p.mor = Math.max(mor(p), 70); delete p.holdout; }
+/* Options (from 1988): con.opts = [{ y, t }] where t is 'P' (player option: he decides) or 'T' (team option: the team
+   decides), decided at the start of free agency before that season. opt: 'P', 'T', 'none', or undefined = typical
+   for a player like him (stars often get a player option, fringe players a team option). */
+const OPT_MULT = { P: 1.05, T: 0.94, none: 1 }; // how much more (or less) a deal with that option is worth to the player
+function setContract(p, sal, firstYear, yrs, opt) {
+  p.con = { sal: Math.round(sal), exp: firstYear + yrs - 1, signed: firstYear }; p.mor = Math.max(mor(p), 70); delete p.holdout;
+  const o = opt === undefined ? autoOpt(p, firstYear, yrs) : opt;
+  if ((o === 'P' || o === 'T') && yrs >= 2 && firstYear >= 1988) p.con.opts = [{ y: firstYear + yrs - 1, t: o }];
+}
+function autoOpt(p, y, yrs) {
+  if (yrs < 2 || y < 1988) return null;
+  const v = value(p), r = Math.random(), late = y >= 2000 ? 1 : 0.6;
+  if (v >= 72 && p.age <= 31) return r < 0.5 * late ? 'P' : null;
+  if (v < 60) return r < 0.25 * late ? 'T' : null;
+  return r < 0.12 * late ? 'P' : r < 0.22 * late ? 'T' : null;
+}
+function optOn(p, y) { return p && p.con && p.con.opts ? p.con.opts.find(o => o.y === y) : null; }
+function optText(p) { return p && p.con && p.con.opts && p.con.opts.length ? p.con.opts.map(o => `${o.t === 'P' ? 'player' : 'team'} option ${SLc(o.y)}`).join(', ') : ''; }
+function SLc(y) { return `${y}-${String((y + 1) % 100).padStart(2, '0')}`; }
+function endContractAt(p, y) { p.con.exp = y - 1; delete p.con.opts; delete p.con.ext; }
+// Would a team pick up this option? Yes if he's worth about his salary (a cheap young player almost always).
+function teamKeepsOption(L, p, y) { const sal = salFor(p, y), mv = marketValue(L, p, y); return mv * 1.15 >= sal && value(p) >= 45; }
+// Start of free agency: players decide their options, AI teams decide theirs, yours wait for you.
+// What re-signing him costs right now, with the option you've chosen for new deals (a qualifying offer has none).
+function resignQuote(L, p) { const rfa = isRestricted(L, p), opt = rfa ? 'none' : userOpt(L, contractYears(p)); return { opt, sal: Math.round((rfa ? tenderPrice(L, p) : resignPrice(L, p)) / OPT_MULT[opt]) }; }
+function signQuote(L, p) { const inSeason = L.phase === 'regular' || L.phase === 'playoffs', opt = inSeason ? 'none' : userOpt(L, contractYears(p)); return Math.round(askPrice(L, p) * (inSeason ? 0.6 : 1) / OPT_MULT[opt]); }
+function userOpt(L, yrs) { const o = L.optPref || 'none'; return yrs >= 2 && capYear(L) >= 1988 ? o : 'none'; }
+function resolveOptions(L) {
+  const y = capYear(L); L.fa.topts = [];
+  for (const id in L.players) {
+    const p = L.players[id]; if (!p.con || !p.con.opts || p.team < 0) continue;
+    const o = optOn(p, y); if (!o) { p.con.opts = p.con.opts.filter(x => x.y > y); if (!p.con.opts.length) delete p.con.opts; continue; }
+    const sal = salFor(p, y), mv = marketValue(L, p, y), t = L.teams[p.team];
+    if (o.t === 'P') {
+      if (p.age <= 32 && mv > sal * 1.08) { endContractAt(p, y); if (value(p) >= 62 || p.team === L.user) addNews(L, `${p.pos} ${p.name} opted out of his ${money(sal)} player option with ${t.abbr}.`); }
+      else { p.con.opts = p.con.opts.filter(x => x !== o); if (!p.con.opts.length) delete p.con.opts; if (p.team === L.user) addNews(L, `${p.pos} ${p.name} picked up his ${money(sal)} player option. He stays for ${SLc(y)}.`); }
+    } else if (p.team === L.user) L.fa.topts.push(p.id);
+    else if (teamKeepsOption(L, p, y)) { p.con.opts = p.con.opts.filter(x => x !== o); if (!p.con.opts.length) delete p.con.opts; }
+    else { endContractAt(p, y); if (value(p) >= 55) addNews(L, `${t.abbr} declined their ${money(sal)} team option on ${p.pos} ${p.name}.`); }
+  }
+}
+function teamOption(L, pid, keep) {
+  const p = L.players[pid], y = capYear(L), F = L.fa; if (!p || p.team !== L.user || !optOn(p, y) || !F || !(F.topts || []).includes(pid)) return 'There is no option to decide on him.';
+  const sal = salFor(p, y);
+  if (keep) { p.con.opts = p.con.opts.filter(x => x.y !== y); if (!p.con.opts.length) delete p.con.opts; addNews(L, `${L.teams[L.user].abbr} picked up the ${money(sal)} team option on ${p.pos} ${p.name}.`); }
+  else { endContractAt(p, y); addNews(L, `${L.teams[L.user].abbr} declined the ${money(sal)} team option on ${p.pos} ${p.name}. You can still re-sign him before the market opens.`); }
+  F.topts = F.topts.filter(x => x !== pid); return null;
+}
+// Options you haven't decided when the market opens: your front office decides the usual way.
+function autoTeamOptions(L) { const F = L.fa; if (!F || !(F.topts || []).length) return; for (const pid of F.topts.slice()) { const p = L.players[pid]; if (p && optOn(p, capYear(L))) teamOption(L, pid, teamKeepsOption(L, p, capYear(L))); } F.topts = []; }
 function salFor(p, y) { if (!p || !p.con) return null; if (y <= p.con.exp) return p.con.sal; if (p.con.ext && y <= p.con.ext.exp) return p.con.ext.sal; return null; }
 function onBooks(p, y) { return salFor(p, y) != null; }
 function payroll(L, tid, y) { y = y || capYear(L); return roster(L, tid).reduce((s, p) => s + (salFor(p, y) || 0), 0) + (L.dead ? deadFor(L, tid, y) : 0); }
@@ -3660,7 +3893,8 @@ function rookieDeal(L, p, year, overall, rnd) {
     else { sal = minSalary(year); yrs = 2; }
   } else if (rnd === 1) { sal = avgSalary(year) * (0.4 + 3.2 * Math.exp(-(overall - 1) / 6)); yrs = overall <= 5 ? 5 : 3; }
   else { sal = minSalary(year) * (rnd === 2 ? 1.3 : 1); yrs = rnd <= 2 ? 2 : 1; }
-  setContract(p, sal, year, yrs);
+  setContract(p, sal, year, yrs, 'none');
+  if (rules(year).rookieScale && rnd === 1) p.con.opts = [{ y: year + 2, t: 'T' }, { y: year + 3, t: 'T' }]; // rookie-scale team options, years 3 and 4
 }
 function ensureContracts(L) {
   const y = capYear(L);
@@ -3728,7 +3962,7 @@ function placeBid(L, pid, sal, yrs) {
   sal = Math.min(Math.round(sal), maxSalary(p, y));
   if (!canSignOutside(L, L.user, sal, y)) return outsideMsg(L, sal, y);
   F.bids = F.bids || {};
-  F.bids[pid] = { sal, yrs: clamp(yrs, 1, 5) }; return null;
+  F.bids[pid] = { sal, yrs: clamp(yrs, 1, 5), opt: userOpt(L, yrs) }; return null;
 }
 function withdrawBid(L, pid) { if (L.fa && L.fa.bids) delete L.fa.bids[pid]; }
 function bidOutlook(L, pid) {
@@ -3751,15 +3985,15 @@ function resolveRound(L) {
       bids.push({ tid: t.id, sal, yrs: clamp(contractYears(p) + R.int(-1, 1), 1, 5) });
     }
     const ub = F.bids && F.bids[p.id];
-    if (ub && canSignOutside(L, L.user, ub.sal, y, false, C[L.user].pay)) bids.push({ tid: L.user, sal: ub.sal, yrs: ub.yrs });
+    if (ub && canSignOutside(L, L.user, ub.sal, y, false, C[L.user].pay)) bids.push({ tid: L.user, sal: ub.sal, yrs: ub.yrs, opt: ub.yrs >= 2 ? ub.opt || 'none' : 'none' });
     if (!bids.length) { p.askMult = (p.askMult || 1) * 0.92; continue; }
-    bids.forEach(b => b.score = offerScore(L, p, b.tid, b.sal, b.yrs, C));
+    bids.forEach(b => b.score = offerScore(L, p, b.tid, b.sal * (b.opt ? OPT_MULT[b.opt] : 1), b.yrs, C));
     bids.sort((a, b) => b.score - a.score);
     const best = bids[0], userIn = bids.some(b => b.tid === L.user);
     if (best.score < ROUND_MIN[r - 1]) { p.askMult = (p.askMult || 1) * 0.92; if (userIn) addNews(L, `${p.pos} ${p.name} turned down every offer this round, including yours.`); continue; }
     const from = p.prevTeam;
     useException(L, best.tid, best.sal, y, C[best.tid].pay);
-    p.team = best.tid; setContract(p, best.sal, y, best.yrs); delete p.askMult;
+    p.team = best.tid; setContract(p, best.sal, y, best.yrs, best.opt); delete p.askMult;
     const ce = C[best.tid]; ce.pay += best.sal; ce.size++; (ce.g[p.pos] = ce.g[p.pos] || []).push(p.ovr); ce.g[p.pos].sort((a, b) => b - a);
     signed.push({ pid: p.id, tid: best.tid, sal: best.sal, yrs: best.yrs, bidders: bids.map(b => b.tid) });
     if (userIn || from === L.user || value(p) >= 70) {
@@ -3783,7 +4017,7 @@ function advanceFA(L) {
   ensureFA(L); const F = L.fa;
   if (F.era !== 'ufa') return 'Bidding rounds start in 1988.';
   if (F.round > FA_ROUNDS) return 'Free agency is over for this year.';
-  if (F.round === 0) { startMarket(L); L.offers = (L.offers || []).filter(o => !o.sat); }
+  if (F.round === 0) { autoTeamOptions(L); startMarket(L); L.offers = (L.offers || []).filter(o => !o.sat); }
   F.round++;
   resolveRound(L);
   if (F.round >= FA_ROUNDS) F.round = FA_ROUNDS + 1;
@@ -3798,7 +4032,7 @@ function extInfo(L, p) {
 }
 function extend(L, pid) {
   const p = L.players[pid], x = extInfo(L, p); if (!x) return 'He is not in the last year of his contract.';
-  p.con.ext = { sal: x.sal, exp: x.from + x.yrs - 1 };
+  p.con.ext = { sal: x.sal, exp: x.from + x.yrs - 1 }; delete p.con.opts;
   addNews(L, `${L.teams[L.user].abbr} extended ${p.pos} ${p.name}: ${x.yrs} yrs at ${money(x.sal)} starting in ${seasonLabel(x.from)}.`);
   return null;
 }
@@ -3808,6 +4042,7 @@ function openFreeAgency(L) {
   const y = capYear(L), era = faEra(y), tax = taxLine(y);
   L.fa = { y, era, sheets: [], done: {}, round: 0, bids: {} };
   L.mle = { y, used: {} };
+  resolveOptions(L);
   for (const t of L.teams) {
     if (t.id === L.user) continue;
     const exp = expiring(L, t.id); if (!exp.length) continue;
@@ -3834,7 +4069,7 @@ function openFreeAgency(L) {
   addNews(L, `${seasonLabel(y)} offseason: ${ERA_INFO[era].name}.${cap != null ? ` The salary cap is ${money(cap)}.` : ''}${tax != null ? ` Luxury tax line: ${money(tax)}.` : ''}`);
 }
 function ensureFA(L) { if (L.phase === 'offseason' && (!L.fa || L.fa.y !== capYear(L))) openFreeAgency(L); if (L.fa) { if (L.fa.round == null) L.fa.round = 0; if (!L.fa.bids) L.fa.bids = {}; } }
-function askPrice(L, p) { const y = capYear(L); return Math.round(clamp(marketValue(L, p, y) * (p.team === L.user ? 1 : userAskMult(L)), minSalary(y), maxSalary(p, y))); }
+function askPrice(L, p) { const y = capYear(L); if (p.bought === L.year && L.phase === 'regular') return minSalary(y); return Math.round(clamp(marketValue(L, p, y) * (p.team === L.user ? 1 : userAskMult(L)), minSalary(y), maxSalary(p, y))); }
 function resignPrice(L, p) { return faEra(capYear(L)) === 'ufa' ? priceFor(L, p, L.user, capYear(L)) : askPrice(L, p); }
 function tenderPrice(L, p) { return Math.round(Math.max(minSalary(capYear(L)), marketValue(L, p, capYear(L)) * 0.75)); }
 function isRestricted(L, p) { return faEra(capYear(L)) === 'ufa' && (p.yrs || 0) < 4; }
@@ -3857,8 +4092,8 @@ function resign(L, pid) {
   const p = L.players[pid], y = capYear(L);
   if (!p || p.team !== L.user || onBooks(p, y)) return 'He is not an expiring player on your team.';
   if ((L.fa.sheets || []).some(s => s.pid === pid)) return 'He has an offer sheet. Match it or let him go.';
-  const sal = isRestricted(L, p) ? tenderPrice(L, p) : resignPrice(L, p);
-  setContract(p, sal, y, contractYears(p));
+  const q = resignQuote(L, p), op = q.opt, sal = q.sal;
+  setContract(p, sal, y, contractYears(p), op);
   addNews(L, `${L.teams[L.user].abbr} re-signed ${p.pos} ${p.name}: ${contractYears(p)} yrs, ${money(sal)} a year.`);
   return null;
 }
@@ -3903,10 +4138,11 @@ function signFA(L, pid) {
   if (L.phase === 'offseason' && L.fa && L.fa.era === 'ufa' && L.fa.round <= FA_ROUNDS) return 'During free agency, place a bid instead. Players choose between offers each round.';
   const inSeason = L.phase === 'regular' || L.phase === 'playoffs';
   if (inSeason && roster(L, L.user).length >= max) return `Your roster is full (${max}). Release someone first.`;
-  let sal = askPrice(L, p) * (inSeason ? 0.6 : 1);
+  const op = inSeason ? 'none' : userOpt(L, contractYears(p));
+  let sal = askPrice(L, p) * (inSeason ? 0.6 : 1) / OPT_MULT[op];
   if (!canSignOutside(L, L.user, sal, y)) { if (sal <= minSalary(y) * 1.6) sal = minSalary(y); else return outsideMsg(L, sal, y); }
   useException(L, L.user, sal, y);
-  p.team = L.user; setContract(p, sal, y, inSeason ? 1 : contractYears(p));
+  p.team = L.user; setContract(p, sal, y, inSeason ? 1 : contractYears(p), op);
   addNews(L, `${L.teams[L.user].abbr} signed ${p.pos} ${p.name}: ${p.con.exp - y + 1} yr${p.con.exp > y ? 's' : ''}, ${money(sal)} a year.`);
   return null;
 }
@@ -3951,7 +4187,7 @@ function leaders(L, key, n, year) {
 }
 function myDraftSlots(L) { const D = L.draft; if (!D) return []; const out = []; for (let i = D.pick; i < D.slotPick.length; i++) { const k = pickById(L, D.slotPick[i]); if (k && k.own === L.user) out.push(i + 1); } return out; }
 
-const API = { expiringW, EXPIRING, buildPackage, receiverWeight, reviewDeal, proposeDeal, execDeal, dealSides, dealValid, dealText, makeOffer3, moveFrom, teamCapMsg, contractW, sendWeight, dealOk, deadFor, deadList, addDead, CONTRACT, draftHistory, chemistry, chemPreview, chemCare, archetypes, archName, ARCH, CHEM, CHEM_PARTS, chemTrack, chemRaw, chemFrom, chemNorm, tenure, baseRatings, histTable, refreshClass, fromBundle, undraftedClass, addUndrafted, tradeCheck, retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
+const API = { resignQuote, signQuote, OPT_MULT, optOn, optText, teamOption, autoTeamOptions, resolveOptions, teamKeepsOption, userOpt, setContract, onWaivers, waive, claimWaiver, claimOk, clearWaiver, processWaivers, buyoutTerms, buyout, aiBuyouts, deadPay, stretchOn, execTrade, PROTS, stepienMsg, stepienOn, swapYears, swapW, swapsOf, swapText, resolvePickTerms, applyTerms, protWeight, firstsOwned, expiringW, EXPIRING, buildPackage, receiverWeight, reviewDeal, proposeDeal, execDeal, dealSides, dealValid, dealText, makeOffer3, moveFrom, teamCapMsg, contractW, sendWeight, dealOk, deadFor, deadList, addDead, CONTRACT, draftHistory, chemistry, chemPreview, chemCare, archetypes, archName, ARCH, CHEM, CHEM_PARTS, chemTrack, chemRaw, chemFrom, chemNorm, tenure, baseRatings, histTable, refreshClass, fromBundle, undraftedClass, addUndrafted, tradeCheck, retireChance, grace, teamsFor, startYears, CODE_KEY, FOUL, fixShooting, shootingFor, eraPosAdj, setEra, starters, LINEUPS, lineupEffects, posRigidity, bigEra, lineupFor, PAY, TUNE, prospectFromDraft, prepClass, scoutWeek, classBoard, scoutBatch, entryAge, careerHints, teamModes, spends, floorFor, satAllowed, signAndTrade, promoteExPlayers, rescoreDraft, careerFromWS, recordBook, answerDecision, checkDecisions, DECISIONS, scoutVisits, franchiseScore, JERSEY_LINE, shopPick, promiseMinutes, talkDown, allStarDay, MULTI_AWARDS, shopBlock, DEFENSES, OFFENSES, offOptions, R, clamp, rules, era, seasonLabel, EVENTS, TEAMS_1976, POS, GRPS, DIFF, diff, setDifficulty, DEF_VS, OFF_TXT, DEF_TXT, defOptions, HURT_PENALTY, eff, canPlayHurt,
   parseCSV, parseBRef, mergeSeason, newLeague, ensureLeague, addNews, roster, freeAgents, value, release, sign, cutTo, depthChart, setDepth, moveDepth, resetDepth, setPlayHurt,
   minutesFor, rotationOrder, ratings, teamOverall, isBig, isGuard, dispPool, dispOnClock, dispPick, dispPass, beginDispersal, dispAI, endDispersal, answerErving,
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
@@ -4018,7 +4254,9 @@ const HELP = [
 <li><b>Extend</b>: in the last year of his deal, sign him before he reaches free agency.</li>
 <li><b>New deal</b>: for an underpaid, unhappy player or a holdout. It ends a holdout and resets his mood.</li>
 <li><b>Play through injury</b>: minor injuries only. He plays ${(window.HW && HW.HURT_PENALTY) || 8} points worse and risks a longer injury.</li>
-<li><b>Release</b>: tap twice to confirm. He becomes a free agent. From 1984-85 (once there's a salary cap), the rest of his guaranteed salary stays on your payroll as <b>dead money</b> until his deal would have ended; minimum-level contracts come off free. Dead money is listed on the payroll card.</li>
+<li><b>Release</b>: tap twice to confirm. From 1984-85 (once there's a salary cap), a player on a real contract goes on <b>waivers</b>: during the season for two days, in the offseason at once. Any team can claim him and take over his whole contract (worst record first). If nobody does, he becomes a free agent and the rest of his guaranteed salary stays on your payroll as <b>dead money</b> until his deal would have ended. Minimum-level contracts come off free.</li>
+<li><b>Release and stretch</b> (from 2011-12): the same, but the money for future seasons is spread evenly over twice that many seasons plus one: smaller hits for longer.</li>
+<li><b>Buy out</b>: he gives back part of what he's owed (more if he's unhappy or can sign with a contender) and becomes a free agent right away, skipping waivers. The rest is dead money, and you can stretch it too. Bought-out players sign for the minimum for the rest of that season.</li>
 <li><b>Offer in trade</b>: opens the Moves tab with him in the deal.</li>
 </ul>
 <p>The count in the corner is your roster size against the limit (12 players, 15 from 2005-06).</p>` },
@@ -4065,12 +4303,17 @@ const HELP = [
 <li><b>Trade builder.</b> Pick a team, or <b>All teams</b> to browse every player and pick in the league (choosing one sets the partner to his team; a trade is always with one team). Then tap players and picks on both sides (picks for the next three drafts, shown with their projected slot). Sort both lists by position, overall, potential or salary; the number beside each player is his salary this season. Before you propose, it shows salary in and out, roster sizes, the chemistry change, and anything that makes the deal impossible.</li>
 <li><b>Three-team trades.</b> Choose a <b>Third team</b> under the trade partner. Switch between the three rosters, tap players and picks to add them, and use <b>Send to</b> to change where each one goes (by default yours go to your partner and theirs come to you). Every team has to get something, and each AI team judges only its own part: what it gets against what it gives up. Salary matching and roster limits are checked for each team.</li>
 <li><b>Contracts count.</b> AI teams weigh a player's salary against what he's worth for the years left on his deal. An overpaid player can be worth less than nothing, so dumping a bad contract costs you picks or young players; an underpaid one is worth extra. Contenders and big-spending owners mind salary least, rebuilding teams most. <b>Expiring contracts</b> (deals that end after this season) are worth extra to teams that want cap room next summer, most of all rebuilding teams with little salary committed; contenders barely care. From 1984-85, once there's a cap.</li>
+<li><b>Protected picks.</b> When you trade your own first-round pick, you can protect it (top 3, 5, 8, 10, 14 or 20). If it lands in the protection, you keep it and owe your next first instead, with the protection eased by 3; after two rollovers it becomes your next second-rounder. A protected pick is worth less to the other team, so expect to add more. AI teams often protect their own firsts too.</li>
+<li><b>Pick swaps.</b> In the Picks view you can give (or ask for) <b>first-round swap rights</b> for a coming draft. At that draft, the team holding the right takes the better of the two picks. Both teams must own their own unprotected first that year.</li>
+<li><b>Stepien rule</b> (from the early 1980s): a team can't be left without a first-round pick in two straight future drafts. A protected pick may not convey, so it doesn't count toward that. The builder tells you when a deal breaks it.</li>
 <li><b>Salary matching.</b> Once there's a salary cap, a team over the cap must take back no more than 125% of what it sends, plus $100K.</li>
 <li><b>Why a trade fails.</b> Either a rule blocks it (cap, roster size), and the builder says which, or the other team says no because it isn't getting enough value. Raise your offer or ask for less.</li>
 <li><b>Trading block.</b> Put players or picks in "You send" and tap <b>Find offers</b>. Every team that wants them makes its best offer, and the top five appear under Trade offers. Offers last a week.</li>
 <li><b>Incoming offers.</b> AI teams call with offers during the season; the number on the Moves tab is how many are waiting. Sometimes two teams build a <b>three-team offer</b> around one of your players: one team gets him, the other sends you players or picks, and the two settle up between themselves. They only send it when both of their parts help them.</li>
 <li><b>AI teams</b> are contending, in the middle, or rebuilding, and trade like it: contenders want proven players and fit, rebuilders want youth and picks. They also value positions by era (centers early, guards later).</li>
 <li><b>Deadline.</b> No trades between the deadline and the end of the playoffs. Draft-night trades are allowed.</li>
+<li><b>Waiver wire.</b> Players released on real contracts show up on the Moves tab for two days. Tap <b>Claim</b> to take over his contract (you need a roster spot, and cap space unless he's on a near-minimum deal). If several teams claim him, the worst record wins.</li>
+<li><b>Buyout market.</b> After the deadline, rebuilding teams buy out veterans, and contenders with an open spot often sign them for the minimum. Watch the free agent list.</li>
 </ul>` },
 
 { id: 'contracts', t: 'Contracts, the cap and free agency', tabs: [], b: `
@@ -4080,6 +4323,7 @@ const HELP = [
 <li><b>Salary floor</b> from 1999: a team under it pays the difference to its players at season's end.</li>
 <li><b>Free agency by era.</b> Until 1980, signing another team's free agent costs you draft picks as compensation. From 1981 to 1987, his team has the right of first refusal: it can match your offer. From 1988 on, unrestricted free agency with bidding, plus restricted free agents and offer sheets the old team can match.</li>
 <li><b>Bidding (1988 on).</b> You get an exclusive window to re-sign your own players. Then there are ${(window.HW && HW.FA_ROUNDS) || 3} rounds: each free agent takes the best offer, judging money, years, team record, style fit, playing time and loyalty. Anyone unsigned drops his price for the next round; leftovers sign cheaply wherever there's room.</li>
+<li><b>Player and team options</b> (from 1988). A deal can end with an option year. A <b>player option</b> lets him decide: he opts out to get paid if he's worth more than his salary, and opts in if he isn't. A <b>team option</b> lets the team decide. Options are decided at the start of free agency; your team options appear on the Moves tab to pick up or decline (decline and he becomes an expiring contract you can still re-sign). First-round rookie-scale deals (from 1995) carry team options on years three and four. When you sign or re-sign, choose the option for the last year: a player option makes players take about 5% less, a team option makes them want about 6% more. AI teams value options too: a player option on a bargain will probably disappear, and a team option on an overpay will probably be declined.</li>
 <li><b>In-season signings</b> are one-year deals at a discount. Over the cap you can still offer the minimum.</li>
 <li><b>Extensions.</b> Players in the last year can be extended during the season; the price depends on how they feel about your team.</li>
 <li><b>Sign-and-trade</b> from 1999: a free agent signs with you and is traded on. Limits follow the real rules (apron from 2013, 4-year maximum from 2017).</li>
@@ -4170,6 +4414,13 @@ const HELP = [
 <li><b>Luxury tax</b>: a penalty for payroll above the tax line (from 2002-03).</li>
 <li><b>Apron</b>: a line above the tax that limits sign-and-trades (from 2013).</li>
 <li><b>Dead money</b>: salary still owed to a player you released, counted on your payroll (from 1984-85).</li>
+<li><b>Waivers</b>: the period after a player is released when any team can claim him and his contract.</li>
+<li><b>Stretch provision</b>: spreading a released player's future salary over twice the years left plus one (from 2011).</li>
+<li><b>Buyout</b>: a player gives back some of his salary to be released and sign elsewhere.</li>
+<li><b>Player option / team option</b>: a final contract year the player (or the team) can choose to keep or drop.</li>
+<li><b>Protected pick</b>: a traded pick the original team keeps if it lands in the protected range.</li>
+<li><b>Swap rights</b>: the right to trade first-round picks with another team that year if theirs is better.</li>
+<li><b>Stepien rule</b>: no team can trade away its firsts in two straight future drafts.</li>
 <li><b>Three-team trade</b>: one deal among three teams; each team must get something and like its own part.</li>
 <li><b>Restricted free agent / offer sheet</b>: his old team can match any offer you make.</li>
 <li><b>Right of first refusal</b>: the 1981-87 version of matching offers.</li>
@@ -4186,7 +4437,7 @@ const HELP_TAB = { home: 'office', roster: 'roster', stats: 'league', league: 'l
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-11a';
+const APP_VERSION = '2026-11-11b';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -4544,7 +4795,8 @@ function offersCard() {
   const list = (L.offers || []).filter(o => G.offerValid(L, o));
   if (!list.length) return '';
   const items = pkg => (pkg.players || []).map(id => { const p = L.players[id]; return `<li><span class="pos">${esc(p.pos)}</span> ${esc(p.name)} <span class="small">age ${p.age}</span> ${rating(p.ovr)} ${rating(G.shownPot(L, p))}</li>`; })
-    .concat((pkg.picks || []).map(id => { const k = G.pickById(L, id); return `<li><span class="pos pk">PICK</span> ${esc(G.pickLabel(L, k))} <span class="small">≈#${G.projectedOverall(L, k)}</span></li>`; })).join('');
+    .concat((pkg.picks || []).map(id => { const k = G.pickById(L, id), pr = pkg.prot && pkg.prot[id]; return `<li><span class="pos pk">PICK</span> ${esc(G.pickLabel(L, k))}${pr && !k.prot ? ` <b>top-${pr} protected</b>` : ''} <span class="small">≈#${G.projectedOverall(L, k)}</span></li>`; }))
+    .concat((pkg.swaps || []).map(y => `<li><span class="pos pk">SWAP</span> ${y} first-round swap rights</li>`)).join('');
   return `<section class="card offers"><h3>Trade offers (${list.length})</h3>${list.map(o => `
     <div class="offer"><div class="split"><b>${esc(tname(L.teams[o.from]))}${o.moves ? ' + ' + esc(L.teams[o.also].abbr) : ''}${o.block ? ' <span class="small">· trading block</span>' : ''}</b><span class="small">${o.exp >= 0 ? `Expires in ${Math.max(1, o.exp - L.day)} days` : 'Expires on opening night'}</span></div>
       ${o.moves ? `<p class="small"><b>Three-team trade</b> with the ${esc(tname(L.teams[o.also]))}. ${esc(G.dealText(L, o.moves.filter(m => m.to !== L.user && m.from !== L.user)).replace(/ get /g, ' also get '))}.</p>` : ''}${o.sat ? `<p class="small"><b>Sign-and-trade:</b> ${esc(L.players[o.sat.pid].name)} signs ${o.sat.yrs} years at ${G.money(o.sat.sal)}, then goes to ${esc(L.teams[o.from].abbr)}.</p>` : ''}<div class="trade"><div><div class="eyebrow">You get</div><ul class="olist">${items(o.give)}</ul></div><div><div class="eyebrow">You give</div><ul class="olist">${items(o.get)}</ul></div></div>
@@ -4610,6 +4862,25 @@ function vDraft() {
     ${all.length > show ? `<div class="row"><button class="btn" data-act="draftMore">Show ${Math.min(60, all.length - show)} more</button></div>` : ''}</section>`;
   return h + myPicks();
 }
+// A trade side from the builder's keys: p: players, k: picks (with any protection you set on your own firsts), w: swap rights.
+function tradePkg(sel, mine) {
+  const out = { players: sel.filter(x => x[0] === 'p').map(x => +x.slice(2)), picks: sel.filter(x => x[0] === 'k').map(x => +x.slice(2)), swaps: sel.filter(x => x[0] === 'w').map(x => +x.slice(2)) };
+  if (mine && ui.prot) { const pr = {}; for (const id of out.picks) if (ui.prot[id]) pr[id] = ui.prot[id]; if (Object.keys(pr).length) out.prot = pr; }
+  return out;
+}
+// Extra ways to let a player go: stretch his dead money (from 2011) or buy him out.
+function relExtras(p) {
+  if (!p.con || G.capFor(G.capYear(L)) == null) return '';
+  const y = G.capYear(L), multi = G.salFor(p, y + 1) != null, T = G.buyoutTerms(L, p.id);
+  return (G.stretchOn(L) && multi ? confirmBtn('rls' + p.id, 'Release and stretch') : '') + (T && p.age >= 24 ? confirmBtn('buy' + p.id, `Buy out (he gives back ${Math.round(T.give * 100)}%, you pay ${G.money(T.cost)})`) : '');
+}
+function waivedMsg(p, stretched) {
+  if (!p) return 'Player released.';
+  if (p.team === -5) return `${p.name} is on waivers for ${p.waiv && p.waiv.until > 0 ? 'two days' : 'now'}. If a team claims him, it takes over his contract. If not, he becomes a free agent and what you still owe him stays on your payroll as dead money${stretched ? ', stretched over more seasons' : ''}.`;
+  if (p.team >= 0 && L.teams[p.team]) return `${p.name} was claimed off waivers by the ${tname(L.teams[p.team])}. They take over his contract.`;
+  const d = (L.dead || []).filter(x => x.pid === p.id && x.tid === L.user);
+  return d.length ? `Player released. You still owe him ${G.money(d.reduce((a, x) => a + Object.values(x.pay).reduce((b, c) => b + c, 0), 0))} in dead money${stretched ? ', stretched' : ''}.` : 'Player released.';
+}
 /* ---------- Draft tracker ---------- */
 // Every pick of one draft. Live during the draft (newest first, and only what your own workouts revealed);
 // afterwards in pick order with how each player has turned out so far.
@@ -4657,7 +4928,7 @@ function conText(p) {
   if (!p.con) return 'No contract';
   if (!G.onBooks(p, G.capYear(L))) return `<b class="warn">Expiring</b>`;
   if (p.con.ext) return `${G.money(p.con.sal)} thru ${SL(p.con.exp)}, then ${G.money(p.con.ext.sal)} thru ${SL(p.con.ext.exp)}`;
-  return `${G.money(p.con.sal)} thru ${SL(p.con.exp)}${G.extInfo(L, p) ? ' · <b class="warn">final year</b>' : ''}`;
+  return `${G.money(p.con.sal)} thru ${SL(p.con.exp)}${p.con.opts ? ' · ' + esc(G.optText(p)) : ''}${G.extInfo(L, p) ? ' · <b class="warn">final year</b>' : ''}`;
 }
 function payrollCard() {
   const y = G.capYear(L), cap = G.capFor(y), pay = G.payroll(L, L.user, y), tax = G.taxLine(y);
@@ -4672,7 +4943,15 @@ function payrollCard() {
   }
   return `<section class="card"><div class="split"><h3>${SL(y)} payroll</h3><span class="count">${G.money(pay)}${cap ? ' / ' + G.money(cap) : ''}</span></div>
     ${cap ? `<div class="bar-t cap"><span class="bar-f ${tax && pay > tax ? 'g-low bad' : pay > cap ? 'warn' : 'g-good'}" style="width:${pct}%"></span></div>` : ''}
-    <p class="small">${note}.</p>${(() => { const dl = G.deadList(L, L.user, y); return dl.length ? `<p class="small"><b>Dead money</b> (released players still being paid): ${dl.map(d => `${esc(d.name)} ${G.money(d.sal)}${d.left > 1 ? ` (${d.left} seasons left)` : ''}`).join('; ')}. Total ${G.money(dl.reduce((a, d) => a + d.sal, 0))}.</p>` : ''; })()}</section>`;
+    <p class="small">${note}.</p>${(() => { const dl = G.deadList(L, L.user, y); return dl.length ? `<p class="small"><b>Dead money</b> (released players still being paid): ${dl.map(d => `${esc(d.name)} ${G.money(d.sal)}${d.stretch ? ' stretched' : d.buyout ? ' buyout' : ''}${d.left > 1 ? ` (${d.left} seasons left)` : ''}`).join('; ')}. Total ${G.money(dl.reduce((a, d) => a + d.sal, 0))}.</p>` : ''; })()}</section>`;
+}
+function waiverCard() {
+  const W = G.onWaivers(L); if (!W.length) return '';
+  const y = G.capYear(L);
+  return `<section class="card"><h3>Waiver wire (${W.length})</h3><p class="small">Released players on real contracts. Claim one to take over his whole contract; if several teams claim him, the worst record wins. Unclaimed players become free agents when their waiver period ends.</p>
+    <div class="list">${W.map(p => { const sal = G.salFor({ con: p.waiv.con }, y) || 0, left = Math.max(0, p.waiv.until - L.day), err = G.claimOk(L, L.user, p);
+      return `<div class="pl wide"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)} ${archTags(p, 1)}<div class="pl-sub">Age ${p.age} · from ${esc(L.teams[p.waiv.from].abbr)} · ${G.money(sal)} thru ${SL(p.waiv.con.exp)}${p.waiv.con.opts ? ' · ' + esc(G.optText({ con: p.waiv.con })) : ''} · ${left ? `clears in ${left} day${left > 1 ? 's' : ''}` : 'clears today'}${err && !p.waiv.user ? ` · <span class="bad">${esc(err)}</span>` : ''}</div></div>
+        <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div></div><div class="pl-btns"><button class="btn sm ${p.waiv.user ? 'primary' : ''}" data-act="claim" data-id="${p.id}"${err && !p.waiv.user ? ' disabled' : ''}>${p.waiv.user ? 'Claimed (tap to withdraw)' : 'Claim'}</button></div></div>`; }).join('')}</div></section>`;
 }
 function faCard() {
   if (L.phase !== 'offseason') return '';
@@ -4688,12 +4967,15 @@ function faCard() {
       <div class="row"><button class="btn sm primary" data-act="matchSheet" data-id="${i}">Match</button><button class="btn sm" data-act="declineSheet" data-id="${i}">Let him go${picks ? ' for ' + picks : ''}</button></div></div>`;
   });
   const ufa = F.era === 'ufa';
+  if ((F.topts || []).length) h += `<h3 class="sub">Team options to decide (${F.topts.length})</h3><p class="small">Pick up the option and he's under contract for ${SL(y)} at that salary. Decline it and he becomes an expiring contract: you can still re-sign him before the market opens. Anything you don't decide when the market opens, your front office decides.</p>`
+    + F.topts.map(id => L.players[id]).filter(Boolean).map(p => prow(p, '', `<button class="btn sm primary" data-act="topt" data-id="${p.id}" data-k="1">Pick up ${G.money(G.salFor(p, y))}</button><button class="btn sm" data-act="topt" data-id="${p.id}" data-k="0">Decline</button>`)).join('');
+  if (ufa) h += `<label class="fld">Option on the last year of new deals you sign<select id="optPref"><option value="none"${(L.optPref || 'none') === 'none' ? ' selected' : ''}>None: fully guaranteed</option><option value="P"${L.optPref === 'P' ? ' selected' : ''}>Player option: he decides (players take about 5% less)</option><option value="T"${L.optPref === 'T' ? ' selected' : ''}>Team option: you decide (players want about 6% more)</option></select></label>`;
   if (ufa) h += marketHeader(F);
   const exp = (ufa && F.round > 0) ? [] : ctFilter(G.expiring(L, L.user).filter(p => !F.sheets.some(s => s.pid === p.id)));
   if (!(ufa && F.round > 0)) {
     h += `<h3 class="sub">Your expiring contracts (${exp.length})</h3>`;
     h += exp.length ? `<div class="list">${exp.map(p => {
-      const rfa = G.isRestricted(L, p), price = rfa ? G.tenderPrice(L, p) : G.resignPrice(L, p);
+      const rfa = G.isRestricted(L, p), price = G.resignQuote(L, p).sal;
       const why = ufa && !rfa ? reasonsText(G.fitFor(L, p, L.user).reasons) : '';
       const btns = `<button class="btn sm primary" data-act="resign" data-id="${p.id}">${rfa ? 'Qualifying offer' : 'Re-sign'} ${G.money(price)}</button><button class="btn sm" data-act="letGo" data-id="${p.id}">Let go</button>${G.satAllowed(L) ? `<button class="btn sm" data-act="sat" data-id="${p.id}">Sign-and-trade</button>` : ''}`;
       return prow(p, (rfa ? 'Restricted' : (ufa ? 'Unrestricted · market value ' + G.money(G.marketValue(L, p)) : 'Asking ' + G.money(price))) + why, btns);
@@ -4780,7 +5062,7 @@ function vRoster() {
       <button class="pl-main" data-act="open" data-id="${p.id}"><span class="pos ${m && m.start ? 'st' : ''}">${esc(p.pos)}</span>
       <div class="pl-name">${esc(p.name)} ${archTags(p, 1)}${p.inj ? `<span class="inj">INJ ${injTxt(p)}</span>` : ''}<div class="pl-sub">${p.holdout ? '<b class="bad">HOLDOUT</b> · ' : ''}${p.tradeReq ? '<b class="bad">WANTS OUT</b> · ' : ''}${p.promise ? '<b class="warn">PROMISED MINUTES</b> · ' : ''}Age ${p.age} · ${p.yrs ? p.yrs + ' yr' + (p.yrs > 1 ? 's' : '') : 'Rookie'} · ${m ? Math.round(m.min) + ' min · ' : 'Out of rotation · '}<span class="${G.mor(p) < 50 ? 'bad' : (G.mor(p) >= 75 ? 'good' : '')}">${G.moraleWord(p)}</span> · ${conText(p)}${statLine(p) ? ' · ' + statLine(p) : ''}</div></div>
       <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></button>
-      ${ui.open === p.id ? `<div class="pl-act">${p.college || p.draft ? `<span class="small">${esc(p.college || '')}${p.draft ? ` · drafted ${p.draft.year} R${p.draft.rnd} #${p.draft.pick}` : ''}</span>` : ''}<button class="btn sm" data-act="statPlayer" data-id="${p.id}">Career stats</button>${(p.holdout || (G.mor(p) < 50 && G.underpaid(L, p))) && p.con ? `<button class="btn sm primary" data-act="reneg" data-id="${p.id}">New deal ${G.money(G.renegotiatePrice(L, p))}</button>` : ''}${G.extInfo(L, p) ? `<button class="btn sm primary" data-act="extend" data-id="${p.id}">Extend ${G.money(G.extInfo(L, p).sal)}</button>` : ''}${G.canPlayHurt(p) ? `<button class="btn sm" data-act="hurt" data-id="${p.id}">${p.playHurt ? 'Rest him' : 'Play through injury'}</button>` : ''}${confirmBtn('rel' + p.id, 'Release')}<button class="btn sm" data-act="shop" data-id="${p.id}">Offer in trade</button></div>` : ''}
+      ${ui.open === p.id ? `<div class="pl-act">${p.college || p.draft ? `<span class="small">${esc(p.college || '')}${p.draft ? ` · drafted ${p.draft.year} R${p.draft.rnd} #${p.draft.pick}` : ''}</span>` : ''}<button class="btn sm" data-act="statPlayer" data-id="${p.id}">Career stats</button>${(p.holdout || (G.mor(p) < 50 && G.underpaid(L, p))) && p.con ? `<button class="btn sm primary" data-act="reneg" data-id="${p.id}">New deal ${G.money(G.renegotiatePrice(L, p))}</button>` : ''}${G.extInfo(L, p) ? `<button class="btn sm primary" data-act="extend" data-id="${p.id}">Extend ${G.money(G.extInfo(L, p).sal)}</button>` : ''}${G.canPlayHurt(p) ? `<button class="btn sm" data-act="hurt" data-id="${p.id}">${p.playHurt ? 'Rest him' : 'Play through injury'}</button>` : ''}${confirmBtn('rel' + p.id, 'Release')}${relExtras(p)}<button class="btn sm" data-act="shop" data-id="${p.id}">Offer in trade</button></div>` : ''}
     </div>`; }).join('')}</div></section>`;
 }
 
@@ -4998,16 +5280,18 @@ function vMoves() {
   const inSeason = L.phase === 'regular' || L.phase === 'playoffs';
   const faNote = inSeason ? 'Players released, cut, or left unsigned. In-season signings are 1-year deals at a discount; over the cap you can still offer the minimum.' : 'Players released, cut, undrafted, or left unsigned.';
   const bidding = L.phase === 'offseason' && L.fa && L.fa.era === 'ufa' && L.fa.round <= G.FA_ROUNDS;
-  let h = offersCard() + payrollCard() + udfaCard() + faCard() + extCard() + (bidding ? '' : `<section class="card"><div class="split"><h3>Free agents</h3><span class="count">${n} / ${max}</span></div>
+  let h = offersCard() + waiverCard() + payrollCard() + udfaCard() + faCard() + extCard() + (bidding ? '' : `<section class="card"><div class="split"><h3>Free agents</h3><span class="count">${n} / ${max}</span></div>
     <p class="small">${faNote}</p>${chips('faGrp', ui.faGrp)}${sortSeg('mSort')}
     <div class="list">${fa.length ? fa.map(p => `<div class="pl"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}${p.udfa ? ' <span class="tag">UNDRAFTED</span>' : ''}<div class="pl-sub">Age ${p.age}${p.prevTeam != null && L.teams[p.prevTeam] ? ' · was ' + esc(L.teams[p.prevTeam].abbr) : ''}</div></div>
       <div class="pl-r"><span class="lbl">OVR</span>${rating(p.ovr)}</div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></div>
-      <button class="btn sm" data-act="sign" data-id="${p.id}"${inSeason && n >= max ? ' disabled' : ''}>Sign ${G.money(G.askPrice(L, p) * (inSeason ? 0.6 : 1))}</button></div>`).join('') : '<p>No free agents at this position.</p>'}</div></section>`);
+      <button class="btn sm" data-act="sign" data-id="${p.id}"${inSeason && n >= max ? ' disabled' : ''}>Sign ${G.money(G.signQuote(L, p))}</button></div>`).join('') : '<p>No free agents at this position.</p>'}</div></section>`);
   const others = L.teams.filter(t => t.id !== L.user);
   const tt = ui.tradeTeam == null || ui.tradeTeam === L.user || !L.teams[ui.tradeTeam] ? others[0].id : ui.tradeTeam;
-  const pkg = sel => ({ players: sel.filter(x => x[0] === 'p').map(x => +x.slice(2)), picks: sel.filter(x => x[0] === 'k').map(x => +x.slice(2)) });
-  ui.give = ui.give.filter(x => x[0] === 'p' ? (L.players[+x.slice(2)] || {}).team === L.user : (G.pickById(L, +x.slice(2)) || {}).own === L.user);
-  ui.get = ui.get.filter(x => x[0] === 'p' ? (L.players[+x.slice(2)] || {}).team === tt : (G.pickById(L, +x.slice(2)) || {}).own === tt);
+  const pkg = sel => tradePkg(sel, sel === ui.give);
+  const swGive = G.swapYears(L, L.user, tt), swGet = G.swapYears(L, tt, L.user);
+  const keep = (x, tid, sw) => x[0] === 'p' ? (L.players[+x.slice(2)] || {}).team === tid : x[0] === 'w' ? sw.includes(+x.slice(2)) : (G.pickById(L, +x.slice(2)) || {}).own === tid;
+  ui.give = ui.give.filter(x => keep(x, L.user, swGive));
+  ui.get = ui.get.filter(x => keep(x, tt, ui.tradeAll ? [] : swGet));
   const gGive = ui.tGrpGive || 'ALL', gGet = ui.tGrpGet || 'ALL';
   const tc = cmp(ui.tSort || 'pos'), showPot = ui.tSort === 'pot';
   const mine = G.roster(L, L.user).filter(p => gGive === 'ALL' || p.pos === gGive).sort(tc);
@@ -5017,12 +5301,13 @@ function vMoves() {
   const posSel = (side, cur) => `<label class="fld tpos">Position<select id="tGrp-${side}">${['ALL'].concat(G.POS).map(g => `<option value="${g}"${cur === g ? ' selected' : ''}>${g === 'ALL' ? 'All positions' : g}</option>`).join('')}</select></label>`;
   const btnP = (p, side) => { const key = 'p:' + p.id, on = ui[side].includes(key); return `<button class="tp ${on ? 'on' : ''}" data-act="tp" data-side="${side}" data-id="${key}"><span class="pos">${esc(p.pos)}</span><span class="tp-n">${all && side === 'get' ? `<b class="tp-tm">${esc(L.teams[p.team].abbr)}</b>` : ''}${esc(p.name)}</span><span class="tp-a">${capOn || ui.tSort === 'sal' ? G.money(salNow(p)) : p.age}</span>${rating(showPot ? G.shownPot(L, p) : p.ovr)}</button>`; };
   const btnK = (k, side) => { const key = 'k:' + k.id, on = ui[side].includes(key); return `<button class="tp ${on ? 'on' : ''}" data-act="tp" data-side="${side}" data-id="${key}"><span class="pos pk">PICK</span><span class="tp-n">${all && side === 'get' ? `<b class="tp-tm">${esc(L.teams[k.own].abbr)}</b>` : ''}${k.y} R${k.rnd}${k.orig !== k.own ? ' ' + esc(L.teams[k.orig].abbr) : ''}</span><span class="tp-a">≈#${G.projectedOverall(L, k)}</span></button>`; };
+  const swapBtns = side => (side === 'give' ? swGive : all ? [] : swGet).map(y => { const key = 'w:' + y, on = ui[side].includes(key); return `<button class="tp ${on ? 'on' : ''}" data-act="tp" data-side="${side}" data-id="${key}"><span class="pos pk">SWAP</span><span class="tp-n">${y} 1st-round swap rights</span><span class="tp-a">${side === 'give' ? 'they may swap' : 'you may swap'}</span></button>`; });
   const col = (side, players, tid, label) => {
     const picks = side === 'get' && all ? poolTeams.flatMap(id => G.teamPicks(L, id)) : G.teamPicks(L, tid);
     return `<div><div class="eyebrow">${label} (${ui[side].length})</div>
       <div class="seg mini"><button class="${(ui.tview || 'p') === 'p' ? 'on' : ''}" data-act="tview" data-id="p">Players</button><button class="${ui.tview === 'k' ? 'on' : ''}" data-act="tview" data-id="k">Picks (${picks.length})</button></div>
       ${ui.tview === 'k' ? '' : posSel(side, side === 'give' ? gGive : gGet)}
-      <div class="tlist">${(ui.tview === 'k' ? picks.map(k => btnK(k, side)) : players.map(p => btnP(p, side))).join('') || '<p class="small">Nothing here.</p>'}</div></div>`;
+      <div class="tlist">${(ui.tview === 'k' ? picks.map(k => btnK(k, side)).concat(swapBtns(side)) : players.map(p => btnP(p, side))).join('') || '<p class="small">Nothing here.</p>'}</div></div>`;
   };
   const give = pkg(ui.give), get = pkg(ui.get), ready = ui.give.length && ui.get.length;
   let gauge = '';
@@ -5035,7 +5320,12 @@ function vMoves() {
       gauge += `<p class="small"><b>Chemistry ${cp.before} → <span class="${d >= 3 ? 'good' : d <= -3 ? 'bad' : ''}">${cp.after}</span></b> if you make this deal${Math.abs(cp.dEff) >= 0.1 ? ` (${cp.dEff > 0 ? '+' : '−'}${Math.abs(cp.dEff).toFixed(1)} team rating from fit)` : ''}. Team rating ${cp.ovrBefore} → ${cp.ovrAfter} with talent and fit together.${nb.length ? ` After the deal: ${esc(nb.join('; '))}.` : ''}</p>`; }
     if (capOn) { const y = G.capYear(L), s = ids => ids.reduce((a, id) => a + (G.salFor(L.players[id], y) || 0), 0); gauge += `<p class="small">Salary out ${G.money(s(give.players))} · in ${G.money(s(get.players))}. Teams over the cap must take back no more than 125% of what they send, plus $100K.</p>`; }
   }
-  const chosen = sel => sel.length ? `<ul class="chosen">${sel.map(x => x[0] === 'p' ? `<li>${esc(L.players[+x.slice(2)].pos)} ${esc(L.players[+x.slice(2)].name)}</li>` : `<li>${esc(G.pickLabel(L, G.pickById(L, +x.slice(2))))} pick</li>`).join('')}</ul>` : '<p class="small">Nothing yet.</p>';
+  const chosen = sel => sel.length ? `<ul class="chosen">${sel.map(x => {
+    if (x[0] === 'p') return `<li>${esc(L.players[+x.slice(2)].pos)} ${esc(L.players[+x.slice(2)].name)}</li>`;
+    if (x[0] === 'w') return `<li>${x.slice(2)} first-round swap rights</li>`;
+    const k = G.pickById(L, +x.slice(2)), canProt = sel === ui.give && k.rnd === 1 && !k.prot && G.stepienOn(L);
+    return `<li>${esc(G.pickLabel(L, k))} pick${canProt ? ` <select class="prot" id="prot-${k.id}"><option value="0">Unprotected</option>${G.PROTS.map(n => `<option value="${n}"${(ui.prot || {})[k.id] === n ? ' selected' : ''}>Top-${n} protected</option>`).join('')}</select>` : ''}</li>`;
+  }).join('')}</ul>` : '<p class="small">Nothing yet.</p>';
   const blockCard = tradeBlockCard();
   h += `<section class="card"><h3>Trade</h3>${G.pastDeadline(L) ? '<p class="small bad"><b>The trade deadline has passed.</b> Trading reopens after the playoffs.</p>' : (L.phase === 'regular' ? `<p class="small">Trade deadline in ${Math.max(0, G.deadlineDay(L) - L.day)} days.</p>` : '')}
     <p class="small">Trade players and picks for the next three drafts. Picks show their projected overall slot.${capOn ? ' The number next to each player is his salary.' : ''}</p>
@@ -5296,7 +5586,9 @@ function act(a, el) {
       if (id === 'reset') { L = null; DB.set('league', null); ui.tab = 'home'; flash('League deleted. Your imported data is still here.'); }
       else if (id === 'clearImp') { IM = { pg: {}, adv: {}, drafts: {}, future: {} }; flash('Imported data cleared.'); }
       else if (id.startsWith('fire')) { const e = G.fireCoach(L, id.slice(4)); flash(e || 'Coach fired. Hire a replacement before opening night.'); }
-      else if (id.startsWith('rel')) { const pid = +id.slice(3), n0 = (L.dead || []).length; G.release(L, pid); ui.open = null; const d = (L.dead || []).length > n0 ? L.dead[L.dead.length - 1] : null; flash(d ? `Player released. His remaining ${G.money(Object.values(d.pay).reduce((a, b) => a + b, 0))} stays on your payroll as dead money through ${SL(Math.max(...Object.keys(d.pay).map(Number)))}.` : 'Player released.'); }
+      else if (id.startsWith('rls')) { const pid = +id.slice(3); G.release(L, pid, { stretch: true }); ui.open = null; flash(waivedMsg(L.players[pid], true)); }
+      else if (id.startsWith('buy')) { const e = G.buyout(L, +id.slice(3)); ui.open = null; flash(e || 'Bought out. He is a free agent; what you still pay him is on your payroll as dead money.'); }
+      else if (id.startsWith('rel')) { const pid = +id.slice(3); G.release(L, pid); ui.open = null; flash(waivedMsg(L.players[pid], false)); }
       break;
     case 'newDiff': ui.newDiff = id; break;
     case 'setDiff': G.setDifficulty(L, id); flash(`Difficulty is now ${G.DIFF[id].name}.`); break;
@@ -5345,6 +5637,8 @@ function act(a, el) {
     case 'week': ui.resWeek = +id; break;
     case 'resMine': ui.resMine = id === '1'; break;
     case 'sign': { const e = G.sign(L, +id); flash(e || 'Signed.'); break; }
+    case 'topt': { const e = G.teamOption(L, +id, el.dataset.k === '1'); flash(e || (el.dataset.k === '1' ? 'Option picked up.' : 'Option declined. He is now an expiring contract.')); break; }
+    case 'claim': { const p = L.players[+id], on = !(p && p.waiv && p.waiv.user); const e = G.claimWaiver(L, +id, on); flash(e || (on ? 'Claim placed. The worst record among teams that claim him gets him.' : 'Claim withdrawn.')); break; }
     case 'resign': { const e = G.resign(L, +id); flash(e || 'Re-signed.'); break; }
     case 'letGo': { const e = G.letGo(L, +id); flash(e || 'Released to free agency.'); break; }
     case 'matchSheet': { const e = G.matchSheet(L, +id); flash(e || 'Offer matched. He stays.'); break; }
@@ -5385,8 +5679,8 @@ function act(a, el) {
       const T = [L.user, tb, ui.t3], from = G.moveFrom(L, { t: id[0], id: +id.slice(2) }); m.to = T.find(x => x !== from && x !== m.to); break; }
     case 'propose3': { const moves = (ui.mv || []).map(m => ({ t: m.key[0], id: +m.key.slice(2), to: m.to })); const r = G.proposeDeal(L, moves); flash(r.msg); if (r.ok) ui.mv = []; break; }
     case 'blockKind': ui.blockKind = id; break;
-    case 'shopBlock': { const pk = sel => ({ players: sel.filter(x => x[0] === 'p').map(x => +x.slice(2)), picks: sel.filter(x => x[0] === 'k').map(x => +x.slice(2)) }); const r = G.shopBlock(L, pk(ui.give), { kind: ui.blockKind || 'any', pos: ui.blockPos || 'ALL' }); flash(r.msg); if (r.offers.length) window.scrollTo(0, 0); break; }
-    case 'propose': { const pk = sel => ({ players: sel.filter(x => x[0] === 'p').map(x => +x.slice(2)), picks: sel.filter(x => x[0] === 'k').map(x => +x.slice(2)) }); const tt = ui.tradeTeam == null || ui.tradeTeam === L.user ? L.teams.find(t => t.id !== L.user).id : ui.tradeTeam; const r = G.proposeTrade(L, tt, pk(ui.give), pk(ui.get)); flash(r.msg); ui.tradeMsg = r.msg; ui.tradeOk = r.ok; if (r.ok) { ui.give = []; ui.get = []; } break; }
+    case 'shopBlock': { const pk = sel => tradePkg(sel, true); const r = G.shopBlock(L, pk(ui.give), { kind: ui.blockKind || 'any', pos: ui.blockPos || 'ALL' }); flash(r.msg); if (r.offers.length) window.scrollTo(0, 0); break; }
+    case 'propose': { const pk = sel => tradePkg(sel, sel === ui.give); const tt = ui.tradeTeam == null || ui.tradeTeam === L.user ? L.teams.find(t => t.id !== L.user).id : ui.tradeTeam; const r = G.proposeTrade(L, tt, pk(ui.give), pk(ui.get)); flash(r.msg); ui.tradeMsg = r.msg; ui.tradeOk = r.ok; if (r.ok) { ui.give = []; ui.get = []; } break; }
     case 'coach': me().coach[el.dataset.key] = el.dataset.key === 'rot' ? +id : id; break;
     case 'plan': G.setGamePlan(L, el.dataset.key, id || null); break;
     case 'dcMove': G.moveDepth(L, L.user, +id, +el.dataset.key); break;
@@ -5451,6 +5745,8 @@ document.addEventListener('change', e => {
   else if (t.id === 'tradeTeam') { if (t.value === 'ALL') ui.tradeAll = true; else { ui.tradeAll = false; ui.tradeTeam = +t.value; ui.get = []; if (ui.t3 === ui.tradeTeam) ui.t3 = null; ui.mv = (ui.mv || []).filter(m => G.moveFrom(L, { t: m.key[0], id: +m.key.slice(2) }) === L.user).map(m => Object.assign(m, { to: ui.tradeTeam })); } render(); }
   else if (t.id === 'tradeTeam3') { ui.t3 = t.value === '' ? null : +t.value; ui.mv = []; ui.t3v = L.user; if (ui.t3 != null) track('three-team-builder', true); render(); }
   else if (t.id === 'tGrp-3') { ui.tGrp3 = t.value; render(); }
+  else if (t.id.startsWith('prot-')) { ui.prot = ui.prot || {}; const v = +t.value; if (v) ui.prot[+t.id.slice(5)] = v; else delete ui.prot[+t.id.slice(5)]; render(); }
+  else if (t.id === 'optPref') { L.optPref = t.value; save(); render(); }
   else if (t.id === 'tempo') { me().coach.tempo = +t.value; save(); render(); }
   else if (t.id === 'youth') { me().coach.youth = t.checked; save(); }
   else if (t.id === 'pickTeam') ui.newTeam = t.value;

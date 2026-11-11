@@ -2,7 +2,7 @@
 
 **For a new Claude chat:** this file is the full history and current state of Hardwood GM, a historical NBA general-manager game. Read all of it before changing anything. Attach `hardwood-gm-source.zip` too: it has the real code. This file is only a guide to the code.
 
-*Written 2026-11-09. Current version: **2026-11-11a**.*
+*Written 2026-11-09. Current version: **2026-11-11b**.*
 
 ---
 
@@ -41,7 +41,7 @@ src/style.css    hardwood palette, light/dark themes
 src/engine.js    ALL game logic (≈3,300 lines). Works in the browser (window.HW) and Node (module.exports)
 src/ui.js        ALL screens (≈1,160 lines). APP_VERSION constant lives here
 src/help.js      in-game manual text (HELP sections, HELP_TAB); inlined before ui.js. Keep it current.
-src/sw.js        service worker; cache name PREFIX + 'vNN' (bump each release, currently v29)
+src/sw.js        service worker; cache name PREFIX + 'vNN' (bump each release, currently v31)
 src/nba-data.json  built-in data (≈4.8 MB), made by tools/build_data.py
 tools/build_data.py  turns the dataset CSVs into nba-data.json
 build.py         inlines css+engine+help+ui into shell → dist/hardwood-gm/index.html (+ copies the other 6 files)
@@ -192,6 +192,10 @@ test/            node + Playwright tests (see §8)
 - **11-10e:** trade partner "All teams" option (`ui.tradeAll`): You receive lists every player (and pick) on every other team with its team; choosing one sets `ui.tradeTeam`, and choosing from another team clears the receive side and switches partner. Trades stay two-team. Service worker v27.
 - **11-10f:** contracts count in AI trade math (`contractW`: fair pay from `marketValue` vs salary over the years left, later years and aging discounted; care by mode win 0.6 / mid 1 / rebuild 1.4, x0.7 for big spenders, x0.5 before the cap; bargains count 60%; clamp -25..+8; `sendWeight` and `dealOk` used by `tradeVerdict`, AI-AI trades and offers). Dead money from 1984-85 (`addDead` on release and cuts, `L.dead`, counted in `payroll`; min-level deals up to 1.5x the minimum are free to cut). Three-team trades: `reviewDeal`/`proposeDeal`/`execDeal` on move lists `{t, id, from, to}`; builder via "Third team" select (`trade3View`, `ui.mv`, `ui.t3`). AI three-team offers (`makeOffer3`: team A wants one of your players, team C pays you, A pays C; each AI part must pass `dealOk` at break-even; about 1-2 a season). Service worker v28.
 - **11-11a:** expiring-contract premium (`expiringW`, `EXPIRING.k` 12): a deal ending after this season adds salary/scale x 12 x want (rebuild 1, mid 0.6, win 0.15) x room (how close the team's committed next-year payroll is to cap space, 0.2-1). Cap era only, not for minimum-level deals. Fair-paid expiring ≈ +20% value to rebuilders; an overpaid expiring goes from clearly negative to about even. Service worker v29.
+- **11-11b:** pick protections, swaps and the Stepien rule; waivers, buyouts and the stretch provision; player and team options. Service worker v31.
+  - Picks: `k.prot` (top-N, from `PROTS`), set by the sender through `pkg.prot` (trade builder select; AI `buildPackage` protects its own firsts projected top-16 about half the time). `resolvePickTerms` at `startDraft`: in the protection the pick reverts and the next first goes instead (protection -3), after two rollovers the next second-rounder. Swap rights `L.swaps` ({y, giver, holder}) from `pkg.swaps`, exercised at the draft. `stepienMsg` (from 1982; protected picks don't count) blocks user trades, AI packages and three-team deals. Value: `protWeight`, `swapW`.
+  - Waivers: `release` → `waive` (team -5, `p.waiv`, two days in season, instant otherwise); `clearWaiver` gives him to the worst-record claimant (AI if he beats their 10th man and fits the cap; you via `claimWaiver`), whose claim removes your dead money. Buyouts: `buyoutTerms`/`buyout` (gives back 4-30%), AI rebuilders after the deadline (`aiBuyouts`), contenders sign them for the minimum; `p.bought` asks the minimum. Stretch (from 2011): `deadPay(..., {stretch})`.
+  - Options: `con.opts` [{y, t:'P'|'T'}], from 1988. `setContract(..., opt)`; AI deals get `autoOpt`; rookie-scale firsts get team options years 3-4. `resolveOptions` at `openFreeAgency`; your team options wait in `L.fa.topts` (`teamOption`), auto-decided at the market open or next season. Your pick for new deals: `L.optPref` (`OPT_MULT`: player option 5% cheaper, team option 6% dearer); `resignQuote`/`signQuote` show real prices. `contractW` drops option years that won't happen.
 
 ## 7. Known issues and ideas not built yet
 
@@ -217,7 +221,7 @@ test/            node + Playwright tests (see §8)
 - `node test/health.js 45 real|gen out.json` + `node test/hreport.js out.json`: long-run metrics using made-up test data. `test/tune.sh` compares tuning settings.
 - `test/udfa.js`, `sat.js`, `start.js`, `shoot.js`, `feat.js`, `hist.js`: feature checks.
 - Browser tests: start `python3 -m http.server 8765 --directory dist/hardwood-gm` in the background, then run `node test/ui5.js` … `ui12.js` and `gc.js` (Playwright). They print `errors []` when clean, and most save screenshots.
-- `node test/chem.js 10 1990`: chemistry check (archetype mix, score spread, wins per chemistry point, link to talent). Browser: `test/ui13.js` (Chemistry card, roster tags, trade preview), `test/ui14.js` (Help: context sections, links, search, back, phone width), `test/ui15.js` (draft tracker: rebuilt start-year draft, live tracker, saved history, filters), `test/ui16.js` (salary sort, 1976 and 2016, phone width), `test/ui17.js` (All teams trade browsing), `test/ui18.js` (three-team builder, iPad and phone).
+- `node test/chem.js 10 1990`: chemistry check (archetype mix, score spread, wins per chemistry point, link to talent). Browser: `test/ui13.js` (Chemistry card, roster tags, trade preview), `test/ui14.js` (Help: context sections, links, search, back, phone width), `test/ui15.js` (draft tracker: rebuilt start-year draft, live tracker, saved history, filters), `test/ui16.js` (salary sort, 1976 and 2016, phone width), `test/ui17.js` (All teams trade browsing), `test/ui18.js` (three-team builder, iPad and phone), `test/ui19.js` (protections, swaps, release/stretch/buyout, waiver wire, options), `node test/picks.js`, `node test/contracts.js`.
 - `test/fixtures.js`: made-up 1976 rosters for tests that don't need real data.
 
 ## 9. Conversation timeline, condensed
@@ -244,3 +248,4 @@ test/            node + Playwright tests (see §8)
 13. Clarified he meant an "All teams" option listing every player in the league. Built in 11-10e.
 14. Talked through three-team trades. I flagged that AI ignored salary (so dumps were free) and said to fix that first; he agreed and also asked for AI three-team offers. Built in 11-10f, with dead money so releasing a bad contract isn't free either.
 15. Asked for expiring contracts to be worth more because teams clear the salary next year. Built in 11-11a, scaled by how much each team wants cap room.
+16. Asked what else from NBA history to add. I listed contract/trade fine print; he picked pick protections/swaps/Stepien, waivers/buyouts/stretch, and options. Built in 11-11b. Still open from that list: amnesty, tax repeater, second apron, max tiers/Rose rule/supermax, trade exceptions, BAE/room exceptions, no-trade clauses, two-way/G League, NBA Cup, 65-game rule, suspensions.
