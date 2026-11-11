@@ -2,7 +2,7 @@
 
 **For a new Claude chat:** this file is the full history and current state of Hardwood GM, a historical NBA general-manager game. Read all of it before changing anything. Attach `hardwood-gm-source.zip` too: it has the real code. This file is only a guide to the code.
 
-*Written 2026-11-09. Current version: **2026-11-10c**.*
+*Written 2026-11-09. Current version: **2026-11-11a**.*
 
 ---
 
@@ -41,7 +41,7 @@ src/style.css    hardwood palette, light/dark themes
 src/engine.js    ALL game logic (≈3,300 lines). Works in the browser (window.HW) and Node (module.exports)
 src/ui.js        ALL screens (≈1,160 lines). APP_VERSION constant lives here
 src/help.js      in-game manual text (HELP sections, HELP_TAB); inlined before ui.js. Keep it current.
-src/sw.js        service worker; cache name PREFIX + 'vNN' (bump each release, currently v25)
+src/sw.js        service worker; cache name PREFIX + 'vNN' (bump each release, currently v29)
 src/nba-data.json  built-in data (≈4.8 MB), made by tools/build_data.py
 tools/build_data.py  turns the dataset CSVs into nba-data.json
 build.py         inlines css+engine+help+ui into shell → dist/hardwood-gm/index.html (+ copies the other 6 files)
@@ -188,6 +188,10 @@ test/            node + Playwright tests (see §8)
 - **11-10a:** in-game Help and manual (`src/help.js`); setup screen's "Import data" button became "How to play". Service worker v23.
 - **11-10b:** draft tracker (live during the draft, plus League → Drafts history). Service worker v24.
 - **11-10c:** sort by salary (this season's, highest first) on Roster, Contracts and the trade builder (`cmp('sal')`, `salNow`, `sortSeg(..., withSal)`). Before the cap, the trade builder shows salary instead of age while sorted by salary. Service worker v25.
+- **11-10d:** trade partner dropdown grouped by conference and sorted A-Z, with the team count in the label (it always held every other team; the id order made teams hard to find). Service worker v26.
+- **11-10e:** trade partner "All teams" option (`ui.tradeAll`): You receive lists every player (and pick) on every other team with its team; choosing one sets `ui.tradeTeam`, and choosing from another team clears the receive side and switches partner. Trades stay two-team. Service worker v27.
+- **11-10f:** contracts count in AI trade math (`contractW`: fair pay from `marketValue` vs salary over the years left, later years and aging discounted; care by mode win 0.6 / mid 1 / rebuild 1.4, x0.7 for big spenders, x0.5 before the cap; bargains count 60%; clamp -25..+8; `sendWeight` and `dealOk` used by `tradeVerdict`, AI-AI trades and offers). Dead money from 1984-85 (`addDead` on release and cuts, `L.dead`, counted in `payroll`; min-level deals up to 1.5x the minimum are free to cut). Three-team trades: `reviewDeal`/`proposeDeal`/`execDeal` on move lists `{t, id, from, to}`; builder via "Third team" select (`trade3View`, `ui.mv`, `ui.t3`). AI three-team offers (`makeOffer3`: team A wants one of your players, team C pays you, A pays C; each AI part must pass `dealOk` at break-even; about 1-2 a season). Service worker v28.
+- **11-11a:** expiring-contract premium (`expiringW`, `EXPIRING.k` 12): a deal ending after this season adds salary/scale x 12 x want (rebuild 1, mid 0.6, win 0.15) x room (how close the team's committed next-year payroll is to cap space, 0.2-1). Cap era only, not for minimum-level deals. Fair-paid expiring ≈ +20% value to rebuilders; an overpaid expiring goes from clearly negative to about even. Service worker v29.
 
 ## 7. Known issues and ideas not built yet
 
@@ -213,7 +217,7 @@ test/            node + Playwright tests (see §8)
 - `node test/health.js 45 real|gen out.json` + `node test/hreport.js out.json`: long-run metrics using made-up test data. `test/tune.sh` compares tuning settings.
 - `test/udfa.js`, `sat.js`, `start.js`, `shoot.js`, `feat.js`, `hist.js`: feature checks.
 - Browser tests: start `python3 -m http.server 8765 --directory dist/hardwood-gm` in the background, then run `node test/ui5.js` … `ui12.js` and `gc.js` (Playwright). They print `errors []` when clean, and most save screenshots.
-- `node test/chem.js 10 1990`: chemistry check (archetype mix, score spread, wins per chemistry point, link to talent). Browser: `test/ui13.js` (Chemistry card, roster tags, trade preview), `test/ui14.js` (Help: context sections, links, search, back, phone width), `test/ui15.js` (draft tracker: rebuilt start-year draft, live tracker, saved history, filters), `test/ui16.js` (salary sort, 1976 and 2016, phone width).
+- `node test/chem.js 10 1990`: chemistry check (archetype mix, score spread, wins per chemistry point, link to talent). Browser: `test/ui13.js` (Chemistry card, roster tags, trade preview), `test/ui14.js` (Help: context sections, links, search, back, phone width), `test/ui15.js` (draft tracker: rebuilt start-year draft, live tracker, saved history, filters), `test/ui16.js` (salary sort, 1976 and 2016, phone width), `test/ui17.js` (All teams trade browsing), `test/ui18.js` (three-team builder, iPad and phone).
 - `test/fixtures.js`: made-up 1976 rosters for tests that don't need real data.
 
 ## 9. Conversation timeline, condensed
@@ -236,3 +240,7 @@ test/            node + Playwright tests (see §8)
 9. Asked for a help menu and full manual. Built in 11-10a.
 10. Asked for a draft tracker showing who AI teams drafted. Built in 11-10b.
 11. Asked to sort by yearly salary on the Roster and trade screens. Built in 11-10c.
+12. Asked for all teams in the trade partner dropdown. It already had them in team-id order; now grouped East/West, A-Z, with a count. 11-10d.
+13. Clarified he meant an "All teams" option listing every player in the league. Built in 11-10e.
+14. Talked through three-team trades. I flagged that AI ignored salary (so dumps were free) and said to fix that first; he agreed and also asked for AI three-team offers. Built in 11-10f, with dead money so releasing a bad contract isn't free either.
+15. Asked for expiring contracts to be worth more because teams clear the salary next year. Built in 11-11a, scaled by how much each team wants cap room.
