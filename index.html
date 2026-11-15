@@ -4537,7 +4537,13 @@ function onGame(L, g, hS, aS, opts) {
   const p = L.players[c.pid]; if (!p || p.team < 0 || (g.h !== p.team && g.a !== p.team)) return;
   const home = g.h === p.team, S = home ? hS : aS, l = S && S.lines.find(x => x.p === p);
   const row = { d: L.day, o: home ? g.a : g.h, h: home ? 1 : 0, s: home ? g.hs : g.as, x: home ? g.as : g.hs, ot: g.ot || 0 };
-  if (opts && opts.playoff) row.po = 1;
+  if (opts && opts.playoff) {
+    row.po = 1;
+    // where this game will sit in the bracket, so its box score can be opened while the playoffs are on file
+    const P = L.playoffs, ri = P ? P.rounds.length - 1 : -1, rd = ri >= 0 ? P.rounds[ri] : null;
+    const si = rd ? rd.series.findIndex(x => x.winner == null && ((x.h === g.h && x.a === g.a) || (x.h === g.a && x.a === g.h))) : -1;
+    if (si >= 0) row.pk = `p:${ri}:${si}:${rd.series[si].games.length}`;
+  }
   if (l && l.min > 0) { LOG_KEYS.forEach(k => row[k] = l[k] || 0); if (l.start) row.st = 1; }
   else row.dnp = p.inj ? 'inj' : 'coach';
   const y = L.year; (c.log[y] = c.log[y] || []).push(row);
@@ -6004,7 +6010,7 @@ const HELP = [
 <li><b>Real players</b> keep their real talent: their ratings and ceiling come from the careers they really had. A player who never played in the NBA (Len Bias) is a blank slate: you pick his position and his ceiling comes from how highly he was rated on draft day.</li>
 <li><b>Declare.</b> The season before your draft plays out (a few seconds), then you see your scouting grade and combine numbers. Teams draft you where they think you belong; teams that worked you out see your real ceiling. You can go undrafted.</li>
 <li><b>Summer.</b> Pick a summer plan (shooting coach, big-man camp, strength program, rest and heal…), then go to training camp. Your growth or decline for your age happens here.</li>
-<li><b>The season.</b> Play one game at a time, a week, or straight to the playoffs. Your box score line is saved after every game (Games tab). Pick a <b>training focus</b> any time: every game you play counts toward that skill's growth next summer. Extra work speeds it up and raises the injury risk.</li>
+<li><b>The season.</b> Play one game at a time, a week, or straight to the playoffs. Your box score line is saved after every game (Games tab). Tap an opponent there for the full box score, playoff games included, until the next season starts. Pick a <b>training focus</b> any time: every game you play counts toward that skill's growth next summer. Extra work speeds it up and raises the injury risk.</li>
 </ol>
 <p><b>Skills and OVR.</b> Six skills: shooting, inside scoring, playmaking, rebounding, defense, athleticism. Each position has its own mix (★ marks the skills that count most for yours). OVR is the weighted average. Your skills also shape your stat line: a better shooter takes and makes more shots, a better passer gets more assists. Training the ★ skills raises OVR fastest.</p>
 <p><b>Contracts.</b> When your contract is up (or you hold a player option), your agent brings you offers: your team's (if it still wants you) and up to five others, each with the money, the years, the role you'd have and last season's wins. Teams need cap space, the mid-level exception (from 1999) or a minimum deal to bid. Pick one, or test the open market and take what free agency brings. Early in your career (1981-87 always, later while you have under four seasons) you are a restricted free agent: other teams' deals are offer sheets your team can match, and each offer shows the odds (the more a team pays over your team's offer, the less likely the match). Signing the one-year qualifying offer makes you an unrestricted free agent the next summer. If you go to camp without choosing, your agent takes the biggest deal. You can't be cut, and if nobody signs you, a team gives you a minimum deal before camp.</p>
@@ -6103,7 +6109,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-15d';
+const APP_VERSION = '2026-11-15e';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7353,7 +7359,8 @@ function logLine(r) {
   return `${r.h ? 'vs' : 'at'} ${esc(o ? o.abbr : '?')}: ${res}. <b>${r.pts} pts</b>, ${r.reb} reb, ${r.ast} ast, ${r.fgm}-${r.fga} FG in ${r.min} min${r.st ? '' : ' off the bench'}.`;
 }
 function boxKey(r) {
-  if (r.po || r.d == null || !L.schedule[r.d]) return null;
+  if (r.po) { const k = r.pk, g = k && L.playoffs ? findGame(k) : null; return g && g.box && (g.h === r.o || g.a === r.o) ? k : null; }
+  if (r.d == null || !L.schedule[r.d]) return null;
   const tid = HC.team(L), gi = L.schedule[r.d].findIndex(g => g.done && g.box && (g.h === r.o || g.a === r.o) && (g.h === tid || g.a === tid || true));
   return gi >= 0 ? `d:${r.d}:${gi}` : null;
 }
