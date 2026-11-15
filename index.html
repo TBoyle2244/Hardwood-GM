@@ -4634,6 +4634,7 @@ function watch(L) {
   if (c.tid === undefined) { c.tid = t; return; }
   if (t !== c.tid) {
     c.treq = null;   // any new team (or none) ends a trade request
+    c.pw = null;     // and any front-office deal in progress
     if (t >= 0 && c.tid >= 0) { const s = `TRADED: ${p.name} has been dealt to the ${teamName(L, t)}.`; feed(L, s, 'move'); alertMe(L, s, 'trade'); c.rel = 55; c.promo = null; c.lastRole = null; }
     else if (t >= 0) feed(L, `${p.name} signed with the ${teamName(L, t)}${p.con ? ` (${H.money(p.con.sal)} a year through ${H.seasonLabel(p.con.exp)})` : ''}.`, 'move');
     else feed(L, `${p.name} is a free agent.`, 'move');
@@ -4647,6 +4648,7 @@ function watch(L) {
   // once a week in season: trade request and holdout
   if (L.phase === 'regular') { const wk = Math.floor(L.day / 7); if (c.wk !== wk) { c.wk = wk; if (c.treq) tryTrade(L); holdoutWeek(L); weekly(L); } }
   if (L.phase === 'season-over' && c.goals && !c.goals.done) { judgeGoals(L); milestones(L); }
+  if (c.pw && c.pw.judge) judgePower(L);
   // new awards
   const n = (p.awards || []).length; if (c.nAw == null) c.nAw = n;
   if (n > c.nAw) { (p.awards || []).slice(c.nAw).forEach(a => feed(L, `${H.AWARD_NAMES[a.a] || a.a} (${H.seasonLabel(a.y)})${a.a === 'allstar' ? '' : '!'}`, 'award')); c.nAw = n; }
@@ -4735,6 +4737,7 @@ function nextSeason(L) {
   if (c.treq && c.treq.deals) { c.treq.deals = null; feed(L, 'You went to camp without picking a trade. The request stays open.', 'trade'); }
   if (c.buyout) c.buyout = null;
   c.alerts = [];   // last season's alerts are old news
+  if (c.pw && c.pw.open) c.pw = null;
   // roles are earned again every season
   c.promo = null; if (c.usage > 1) { c.usage = 1; const q = me(L); if (q && q.sk) recalc(c, q); }
   if (L.fa && L.fa.era === 'ufa') { let g = 0; while (!H.advanceFA(L) && g++ < 10); }
@@ -5111,6 +5114,7 @@ function weekly(L) {
       if (dest.length) { c.buyout = { y: L.year, give: R.int(8, 20), dest }; const s = `The ${teamName(L, tid)} offered to buy out your contract so you can join a contender.`; feed(L, s, 'con'); alertMe(L, s, 'buyout'); }
     }
   }
+  if (c.pw && c.pw.open && H.pastDeadline(L)) { c.pw = null; feed(L, 'The deadline passed before you picked a deal for your teammate.', 'pw'); }
   if (c.treq && c.treq.deals && H.pastDeadline(L)) { c.treq.deals = null; c.alerts = (c.alerts || []).filter(a => a.k !== 'treq'); feed(L, 'The trade deadline passed before you picked a deal. Your team will try again in the summer.', 'trade'); }
   milestones(L);
 }
@@ -5250,6 +5254,74 @@ function plain(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, 
 function realCountry(name) { return INTL[plain(H.cleanName(name))] || 'USA'; }
 function countryList() { return ['USA'].concat(COUNTRIES.map(x => x[0]).sort()); }
 
+
+/* ---------- star power: a great player the front office trusts can ask it to trade a teammate ---------- */
+// Eligible: OVR 80+ (or All-NBA last season), coach trust 75+, once a season, before the deadline or in the summer.
+function powerOk(L) {
+  const c = L.career, p = me(L), tid = team(L); if (!p || tid == null || c.done || c.pw && c.pw.open) return false;
+  const yr = ['offseason', 'season-over', 'draft'].includes(L.phase) ? L.year + 1 : L.year;
+  if (c.powerY === yr) return false;
+  if (L.phase === 'regular' && H.pastDeadline(L)) return false;
+  if (!['preseason', 'regular', 'offseason'].includes(L.phase)) return false;
+  const star = p.ovr >= 80 || (p.awards || []).some(a => a.y === L.year - 1 && /^alnba/.test(a.a));
+  return star && (c.rel == null ? 55 : c.rel) >= 75;
+}
+// You name the teammate; the front office brings back up to three deals (a player of about the same value, legal salaries).
+function askToTrade(L, pid) {
+  const c = L.career, p = me(L), tid = team(L), q = L.players[pid];
+  if (!powerOk(L)) return 'You need to be a star (OVR 80+ or All-NBA) with coach trust of 75 or more, once a season, before the deadline.';
+  if (!q || q.team !== tid || q.id === p.id) return 'Pick a teammate.';
+  c.powerY = ['offseason', 'season-over', 'draft'].includes(L.phase) ? L.year + 1 : L.year;
+  const rel = c.rel, yes = Math.random() < (rel >= 85 ? 0.9 : 0.7);
+  if (!yes) { c.rel = clamp(rel - 3, 0, 100); feed(L, `The front office won't move ${q.name}. They hear you, though.`, 'pw'); return null; }
+  const v = H.value(q), max = H.rules(L.year).rosterMax + (L.phase === 'regular' ? 0 : 3), deals = [];
+  for (const t of R.shuffle(L.teams.filter(t => t.id !== tid))) {
+    if (deals.length >= 3) break;
+    const back = H.roster(L, t.id).filter(x => !x.holdout && H.value(x) >= v - 6 && H.value(x) <= v + 3 && x.id !== p.id)
+      .sort((a, b) => H.value(b) - H.value(a)).find(x => !H.teamCapMsg(L, tid, [q.id], [x.id]) && !H.teamCapMsg(L, t.id, [x.id], [q.id]));
+    if (back) deals.push({ tid: t.id, id: back.id });
+  }
+  if (!deals.length) { feed(L, `The front office shopped ${q.name} but found no deal that works under the rules.`, 'pw'); return null; }
+  c.pw = { open: true, out: q.id, deals };
+  feed(L, `The front office agreed to shop ${q.name} for you and found ${deals.length} deal${deals.length > 1 ? 's' : ''}.`, 'pw');
+  return null;
+}
+// Whether the team gets better is now on you: judged over the next 20 games.
+function takePower(L, i) {
+  const c = L.career, p = me(L), tid = team(L), d = c.pw && c.pw.deals[+i]; if (!d) return 'That deal is gone.';
+  const q = L.players[c.pw.out], x = L.players[d.id];
+  if (!q || !x || q.team !== tid || x.team !== d.tid || H.teamCapMsg(L, tid, [q.id], [x.id]) || H.teamCapMsg(L, d.tid, [x.id], [q.id]) || (L.phase === 'regular' && H.pastDeadline(L))) { c.pw = null; return 'That deal fell apart. Rosters changed or the deadline passed.'; }
+  H.execDeal(L, [{ t: 'p', id: q.id, from: tid, to: d.tid }, { t: 'p', id: x.id, from: d.tid, to: tid }]);
+  const t = L.teams[tid], g = t.w + t.l, last = t.hist.length ? t.hist[t.hist.length - 1] : null;
+  const base = L.phase === 'regular' && g >= 15 ? t.w / g : last ? last.w / Math.max(1, last.w + last.l) : 0.5;
+  c.pw = { open: false, judge: true, tid, outName: q.name, inName: x.name, base: Math.round(base * 1000) / 1000, y: ['offseason', 'season-over', 'draft'].includes(L.phase) ? L.year + 1 : L.year, w0: L.phase === 'regular' ? t.w : 0, l0: L.phase === 'regular' ? t.l : 0 };
+  feed(L, `At ${p.name}'s request, the ${teamName(L, tid)} traded ${q.name} to the ${teamName(L, d.tid)} for ${x.name}. Now they need to win.`, 'pw');
+  alertMe(L, `You got your trade: ${q.name} out, ${x.name} in. The team was winning ${Math.round(base * 100)}% before. If it doesn't do better over the next 20 games, the coach's trust takes a hit.`, 'pw');
+  return null;
+}
+function passPower(L) { const c = L.career; if (!c.pw || !c.pw.open) return 'Nothing to turn down.'; c.pw = null; feed(L, 'You decided to keep the roster as it is.', 'pw'); return null; }
+// Called after each day: 20 team games after the trade (or the end of the season, if 8+ games), compare with before.
+function judgePower(L) {
+  const c = L.career, J = c.pw; if (!J || !J.judge) return;
+  if (L.year !== J.y || !['regular', 'season-over', 'draft', 'offseason'].includes(L.phase)) return;
+  const t = L.teams[J.tid]; if (!t) { c.pw = null; return; }
+  const ended = L.phase !== 'regular', res = ended && t.hist.length && t.hist[t.hist.length - 1].y === J.y ? t.hist[t.hist.length - 1] : null;
+  const w = (res ? res.w : t.w) - J.w0, l = (res ? res.l : t.l) - J.l0, g = w + l;
+  if (g < 20 && !(ended && g >= 8)) { if (ended) c.pw = null; return; }
+  const pct = w / g, d = pct - J.base;
+  let s, k;
+  if (d >= 0.05 || pct >= 0.6) { c.rel = clamp(c.rel + 6, 0, 100); s = `Your trade worked: ${w}-${l} since ${J.inName} arrived (${Math.round(J.base * 100)}% before). The front office trusts your eye.`; k = 'good'; }
+  else if (d > -0.05) { c.rel = clamp(c.rel - 6, 0, 100); s = `Your trade didn't change much: ${w}-${l} since the deal. The coach's trust slips.`; k = 'meh'; }
+  else { c.rel = clamp(c.rel - 14, 0, 100); s = `Your trade backfired: ${w}-${l} since ${J.outName} left (they were winning ${Math.round(J.base * 100)}% before). The coach's trust takes a big hit.`; k = 'bad'; }
+  c.pw = null; (c.pwHist = c.pwHist || []).push({ y: J.y, out: J.outName, in: J.inName, w, l, base: J.base, k });
+  feed(L, s, 'pw'); alertMe(L, s, 'pwres');
+}
+function powerStatus(L) {
+  const c = L.career, J = c.pw; if (!J || !J.judge) return null; const t = L.teams[J.tid]; if (!t) return null;
+  const w = J.y === L.year && L.phase === 'regular' ? t.w - J.w0 : 0, l = J.y === L.year && L.phase === 'regular' ? t.l - J.l0 : 0;
+  return { w, l, base: J.base, left: Math.max(0, 20 - w - l), out: J.outName, in: J.inName };
+}
+
 /* ---------- what the screens show ---------- */
 function role(L) {
   const p = me(L), t = team(L); if (!p || t == null) return null;
@@ -5271,7 +5343,7 @@ function rankAmong(L, key) {
   return better + 1;
 }
 
-const API = { alertMe, dismiss, acceptBuyout, declineBuyout, trainingSoFar, goalState, nextMilestones, takeDeal, passDeals, realCountry, countryList, contractOpen, chooseOffer, testMarket, autoSign, raiseOk, askRaise, holdOut, endHoldout, coachName, relWord, askOk, ask, TRADE_PREF, requestTrade, withdrawTrade, tryTrade,
+const API = { powerOk, askToTrade, takePower, passPower, powerStatus, judgePower, alertMe, dismiss, acceptBuyout, declineBuyout, trainingSoFar, goalState, nextMilestones, takeDeal, passDeals, realCountry, countryList, contractOpen, chooseOffer, testMarket, autoSign, raiseOk, askRaise, holdOut, endHoldout, coachName, relWord, askOk, ask, TRADE_PREF, requestTrade, withdrawTrade, tryTrade,
   legacy, aroundMe, LEGACY_NAME, legends, olympicSummers, olympicsOpen, olympics, country, NONE, SK, SK_NAME, SK_W, SK_BASE, HT, WT, htText, TIERS, questions, answerOpts, buildCreated, draftYears, realClass, careerNew, me, team, feed,
   onGame, startSeason, simDays, nextGame, simWeek, simRegular, simPlayoffs, startDraft, runDraft, mockSlot, nextSeason, retire, setFocus, setExtra, setSummer,
   FOCUS, FOCUS_TXT, SUMMER, role, seasonLine, totals, rankAmong, skills, watch, ensureTeam, ordinal, recalc, ovrFrom, devOf };
@@ -5930,6 +6002,7 @@ const HELP = [
 <p><b>Contracts.</b> When your contract is up (or you hold a player option), your agent brings you offers: your team's (if it still wants you) and up to five others, each with the money, the years, the role you'd have and last season's wins. Teams need cap space, the mid-level exception (from 1999) or a minimum deal to bid. Pick one, or test the open market and take what free agency brings. Early in your career (1981-87 always, later while you have under four seasons) you are a restricted free agent: other teams' deals are offer sheets your team can match, and each offer shows the odds (the more a team pays over your team's offer, the less likely the match). Signing the one-year qualifying offer makes you an unrestricted free agent the next summer. If you go to camp without choosing, your agent takes the biggest deal. You can't be cut, and if nobody signs you, a team gives you a minimum deal before camp.</p>
 <p><b>Raises and holdouts.</b> Clearly underpaid (and not on a rookie-scale deal)? Ask for a raise once a year. Turned down, you can hold out: you miss games until the team gives in or you report. Holding out costs trust.</p>
 <p><b>The coach.</b> The Coach and front office card shows his trust in you (0-100). It rises when you win, play well and accept your role, and falls when he turns down your demands, you hold out or ask out. With enough trust and a strong enough case you can ask to start, for more minutes or for more shots. Roles are earned again every season. A new coach starts fresh.</p>
+<p><b>Star power.</b> Once you're a star (OVR 80+, or All-NBA last season) and the coach's trust is 75 or more, the coach card lets you ask the front office to trade one teammate a season (before the deadline, or in the summer). It agrees most of the time (more often at 85+ trust) and brings up to three deals for a player of about the same value; pick one or keep the roster. Then it's on you: over the next 20 games the team has to win at a higher rate than before the trade (5 points better, or 60%+). Better: trust +6. About the same: trust −6. Worse: trust −14. A summer trade is judged on the first 20 games of the season, against last season's record. Twenty games is a short stretch, so luck plays a part.</p>
 <p><b>Asking for a trade.</b> Choose a contender, somewhere you'd start, or anywhere. Trust drops sharply. After two weeks your team starts shopping you (before the deadline, or in the summer) and brings you up to three deals to pick from; turn them down and it keeps looking. A team won't trade its best player on a long contract unless the relationship has broken down. You can take the request back. The AI can still trade you on its own.</p>
 <p><b>Alerts.</b> Big news about you shows at the top of the Career tab until you dismiss it: a trade, trade rumors, losing your starting spot, a buyout offer. Old alerts clear each new season.</p>
 <p><b>Buyouts.</b> After the trade deadline a rebuilding team may offer to buy out a veteran. You choose: give back part of your salary and sign for the minimum with a contender from the list, or stay.</p>
@@ -6022,7 +6095,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-15b';
+const APP_VERSION = '2026-11-15c';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7458,6 +7531,17 @@ function coachCard() {
   if (p.holdout) h += `<p><b>You are holding out.</b> You miss games until the team gives you a new deal or you report.</p><div class="row"><button class="btn sm" data-act="c-endhold">End the holdout</button></div>`;
   else if (c.raiseNo === y) h += `<p class="small">The team turned down your request for a raise.</p><div class="row">${confirmBtn('kHold', 'Hold out', 'danger')}</div>`;
   else if (HC.raiseOk(L)) h += `<p class="small">You're underpaid: about ${G.money(G.salFor(p, y))} a year against a market value near ${G.money(G.marketValue(L, p, y))}.</p><div class="row"><button class="btn sm" data-act="c-raise">Ask for a raise</button></div>`;
+  // star power: ask the front office to move a teammate
+  const ps = HC.powerStatus(L);
+  if (ps) h += `<p class="small"><b>Your trade:</b> ${esc(ps.out)} out, ${esc(ps.in)} in. ${ps.w + ps.l ? `The team is ${ps.w}-${ps.l} since` : 'No games since yet'} (was winning ${Math.round(ps.base * 100)}%). Judged after ${ps.left} more game${ps.left === 1 ? '' : 's'}.</p>`;
+  else if (HC.powerOk(L)) {
+    const mates = G.roster(L, tid).filter(q => q.id !== p.id).sort((a, b) => b.ovr - a.ovr);
+    if (!mates.some(q => String(q.id) === String(ui.pwSel))) ui.pwSel = mates.length ? mates[mates.length - 1].id : null;
+    h += `<details class="more"${ui.pwOpen ? ' open' : ''}><summary>Star power: trade a teammate</summary>
+      <p class="small">You're a star and the front office trusts you, so you can ask it to move one teammate a season. It brings back up to three deals for a player of about the same value. Then it's on you: if the team doesn't win more over the next 20 games, the coach's trust drops (a lot, if it gets worse).</p>
+      <label class="fld">Teammate<select id="cr-pw">${mates.map(q => `<option value="${q.id}"${String(q.id) === String(ui.pwSel) ? ' selected' : ''}>${esc(q.pos)} ${esc(q.name)} (${q.ovr}, age ${q.age})</option>`).join('')}</select></label>
+      <div class="row"><button class="btn sm" data-act="c-pw">Ask the front office to trade him</button></div></details>`;
+  }
   // trade request
   if (c.treq) h += `<p class="small"><b>You asked for a trade</b> (${esc(HC.TRADE_PREF[c.treq.pref].toLowerCase())}). The team is shopping you${L.phase === 'regular' && G.pastDeadline(L) ? ', but the deadline has passed: it will try again in the summer' : ''}.</p><div class="row"><button class="btn sm" data-act="c-untreq">Take it back</button></div>`;
   else h += `<details class="more"${String(ui.confirm || '').startsWith('kTr-') ? ' open' : ''}><summary>Ask for a trade</summary><p class="small">Trust drops sharply. The team looks for a deal each week before the deadline, or in the summer.</p><div class="row">${Object.keys(HC.TRADE_PREF).map(k => confirmBtn('kTr-' + k, HC.TRADE_PREF[k], 'danger')).join('')}</div></details>`;
@@ -7488,6 +7572,12 @@ function alertsCard() {
     h += `<section class="card hero"><div class="eyebrow">Your trade request</div><h2>Pick a trade</h2><p class="small">Your team will make any one of these. Turn them all down and it keeps looking${L.phase === 'regular' ? ' until the deadline' : ''}.</p>
       <div class="list">${c.treq.deals.map((d, i) => `<button class="pick" data-act="c-deal" data-id="${i}"><b>${esc(tname(L.teams[d.tid]))}</b><span class="small">For ${d.ids.map(id => { const q = L.players[id]; return q ? `${esc(q.pos)} ${esc(q.name)} (${q.ovr})` : '?'; }).join(' and ')} · you'd be: ${esc(d.role)} · ${d.win} wins last season</span></button>`).join('')}</div>
       <div class="row"><button class="btn" data-act="c-pass">Turn them all down</button></div></section>`;
+  }
+  if (c.pw && c.pw.open) {
+    const q = L.players[c.pw.out];
+    h += `<section class="card hero"><div class="eyebrow">Star power</div><h2>Trade ${esc(q ? q.name : 'your teammate')}?</h2><p class="small">Pick a deal, or keep the roster. If you make a deal and the team doesn't win more over the next 20 games, the coach's trust drops.</p>
+      <div class="list">${c.pw.deals.map((d, i) => { const x = L.players[d.id]; return `<button class="pick" data-act="c-pwdeal" data-id="${i}"><b>${esc(x ? `${x.pos} ${x.name}` : '?')} from the ${esc(tname(L.teams[d.tid]))}</b><span class="small">${x ? `OVR ${x.ovr}, age ${x.age}${statLine(x) ? ' · ' + esc(statLine(x)) : ''}` : ''}</span></button>`; }).join('')}</div>
+      <div class="row"><button class="btn" data-act="c-pwpass">Keep the roster</button></div></section>`;
   }
   if (c.buyout) {
     h += `<section class="card hero"><div class="eyebrow">Buyout offer</div><h2>Join a contender?</h2><p class="small">You give back ${c.buyout.give}% of what you're owed and sign for the minimum with one of these teams for the rest of the season. Or stay put.</p>
@@ -7568,6 +7658,9 @@ function careerAct(a, el) {
     case 'c-untreq': { const e = HC.withdrawTrade(L); if (e) flash(e); break; }
     case 'c-leg': ui.legOpen = !ui.legOpen; break;
     case 'c-dismiss': HC.dismiss(L, id); break;
+    case 'c-pw': { const e = HC.askToTrade(L, +(ui.pwSel != null ? ui.pwSel : id)); flash(e || (L.career.feed[0] && L.career.feed[0].s)); ui.pwOpen = false; window.scrollTo(0, 0); break; }
+    case 'c-pwdeal': { const e = HC.takePower(L, +id); flash(e || (L.career.feed[0] && L.career.feed[0].s)); window.scrollTo(0, 0); break; }
+    case 'c-pwpass': { const e = HC.passPower(L); if (e) flash(e); break; }
     case 'c-deal': { const e = HC.takeDeal(L, +id); flash(e || (L.career.feed[0] && L.career.feed[0].s)); window.scrollTo(0, 0); break; }
     case 'c-pass': { const e = HC.passDeals(L); if (e) flash(e); break; }
     case 'c-bo': { const e = HC.acceptBuyout(L, +id); flash(e || (L.career.feed[0] && L.career.feed[0].s)); window.scrollTo(0, 0); break; }
@@ -7584,6 +7677,7 @@ function careerConfirm(id) {
   return false;
 }
 function careerChange(t) {
+  if (t.id === 'cr-pw') { ui.pwSel = t.value; ui.pwOpen = true; return true; }
   const cr = ui.cr; if (!cr) return false;
   const v = t.value;
   if (t.id === 'cr-year') { cr.year = +v; cr.real = null; cr.nat = null; render(); }
