@@ -3011,7 +3011,7 @@ function playGame(L, g, opts) {
   const H = L.teams[g.h], A = L.teams[g.a];
   if (!opts.playoff) { H.pf += hp; H.pa += ap; A.pf += ap; A.pa += hp; if (hp > ap) { H.w++; A.l++; } else { A.w++; H.l++; } }
   if (hS) injuries(L, hS); if (aS) injuries(L, aS);
-  if (HOOKS.game && !opts.noStats) HOOKS.game(L, g, hS, aS, opts);
+  if (HOOKS.game) HOOKS.game(L, g, hS, aS, opts);   // playoff games too (they skip season stats, not the career log)
   return g;
 }
 function quarters(total, ot) {
@@ -4682,11 +4682,19 @@ function nextGame(L) {
       if (plays || c.done) break;
     }
   } else if (L.phase === 'playoffs') {
-    const t = team(L), inIt = t != null && H.curRound(L) && H.curRound(L).series.some(s => s.winner == null && (s.h === t || s.a === t));
-    if (!inIt) { while (L.phase === 'playoffs') H.simPlayoffDay(L); }
-    else { const n0 = (c.log[L.year] || []).length; let guard = 0; while (L.phase === 'playoffs' && (c.log[L.year] || []).length === n0 && guard++ < 30) H.simPlayoffDay(L); }
+    // your team still alive: play to its next game (through byes and other series); out: finish the playoffs
+    if (!alive(L)) { while (L.phase === 'playoffs') H.simPlayoffDay(L); }
+    else { const n0 = (c.log[L.year] || []).length; let guard = 0; while (L.phase === 'playoffs' && (c.log[L.year] || []).length === n0 && alive(L) && guard++ < 80) H.simPlayoffDay(L); }
     watch(L);
   }
+}
+// Is your team still in the playoffs (seeded, and not knocked out)?
+function alive(L) {
+  const P = L.playoffs, t = team(L); if (L.phase !== 'playoffs' || !P || t == null) return false;
+  if (!Object.values(P.seeds || {}).some(a => a.includes(t))) return false;
+  const rd = H.curRound(L), playing = rd && rd.series.some(s => s.winner == null && (s.h === t || s.a === t));
+  if (playing) return true;
+  return !P.rounds.some(r => r.series.some(s => s.loser === t));
 }
 function simWeek(L) { if (L.phase === 'regular') { const end = Math.min((Math.floor(L.day / 7) + 1) * 7, L.schedule.length); while (L.phase === 'regular' && L.day < end) { H.simDay(L); watch(L); } } }
 function simRegular(L) { while (L.phase === 'regular') { H.simDay(L); watch(L); } }
@@ -5343,7 +5351,7 @@ function rankAmong(L, key) {
   return better + 1;
 }
 
-const API = { powerOk, askToTrade, takePower, passPower, powerStatus, judgePower, alertMe, dismiss, acceptBuyout, declineBuyout, trainingSoFar, goalState, nextMilestones, takeDeal, passDeals, realCountry, countryList, contractOpen, chooseOffer, testMarket, autoSign, raiseOk, askRaise, holdOut, endHoldout, coachName, relWord, askOk, ask, TRADE_PREF, requestTrade, withdrawTrade, tryTrade,
+const API = { alive, powerOk, askToTrade, takePower, passPower, powerStatus, judgePower, alertMe, dismiss, acceptBuyout, declineBuyout, trainingSoFar, goalState, nextMilestones, takeDeal, passDeals, realCountry, countryList, contractOpen, chooseOffer, testMarket, autoSign, raiseOk, askRaise, holdOut, endHoldout, coachName, relWord, askOk, ask, TRADE_PREF, requestTrade, withdrawTrade, tryTrade,
   legacy, aroundMe, LEGACY_NAME, legends, olympicSummers, olympicsOpen, olympics, country, NONE, SK, SK_NAME, SK_W, SK_BASE, HT, WT, htText, TIERS, questions, answerOpts, buildCreated, draftYears, realClass, careerNew, me, team, feed,
   onGame, startSeason, simDays, nextGame, simWeek, simRegular, simPlayoffs, startDraft, runDraft, mockSlot, nextSeason, retire, setFocus, setExtra, setSummer,
   FOCUS, FOCUS_TXT, SUMMER, role, seasonLine, totals, rankAmong, skills, watch, ensureTeam, ordinal, recalc, ovrFrom, devOf };
@@ -6095,7 +6103,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-15c';
+const APP_VERSION = '2026-11-15d';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7394,7 +7402,7 @@ function seasonCard(p) {
   return `<section class="card hero"><div class="eyebrow">${esc(cPhase())}</div><h2>${t ? esc(tname(t)) + ' · ' + rec(t) : 'Free agent'}</h2>
     ${series}<p>${esc(perGameTxt(h))}</p>${r ? `<p class="small">Role: ${esc(r.txt)}${r.min ? `, about ${r.min} minutes a night` : ''}${r.slot ? ` (#${r.slot} on the depth chart)` : ''}.</p>` : ''}
     ${last ? `<p class="small">Last game ${logLine(last)}${k ? ` <button class="lnk" data-act="box" data-id="${k}">Box score ›</button>` : ''}</p>` : ''}
-    <div class="row">${po ? `<button class="btn primary" data-act="c-game">Next playoff game</button><button class="btn" data-act="c-po">Sim the playoffs</button>`
+    <div class="row">${po ? (HC.alive(L) ? `<button class="btn primary" data-act="c-game">Next playoff game</button><button class="btn" data-act="c-po">Sim the playoffs</button>` : `<button class="btn primary" data-act="c-po">Sim the rest of the playoffs</button>`)
       : `<button class="btn primary" data-act="c-game">Play next game</button><button class="btn" data-act="c-week">Sim a week</button><button class="btn" data-act="c-reg">Sim to the playoffs</button>`}</div></section>`;
 }
 function seasonOverCard(p) {
