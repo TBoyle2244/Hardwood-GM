@@ -351,6 +351,11 @@ input[type=range] { width: 100%; accent-color: var(--field); }
 .cname { margin: 2px 0 4px; }
 details.more { margin-top: 8px; }
 details.more summary { cursor: pointer; font-family: var(--cond); font-weight: 600; letter-spacing: .04em; color: var(--field); }
+.alert-card { border-left: 4px solid var(--field); }
+.alert-row { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 4px 0; }
+.alert-row + .alert-row { border-top: 1px solid var(--line); }
+.goal { padding: 3px 0; }
+.goal.ok { color: var(--good); font-weight: 600; }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -1538,7 +1543,7 @@ function aiBuyouts(L) {
   const M = teamModes(L), y = capYear(L);
   for (const t of L.teams) {
     if (t.id === L.user || M[t.id] !== 'rebuild' || Math.random() > 0.03) continue;
-    const p = roster(L, t.id).filter(x => x.age >= 29 && value(x) >= 55 && x.con && salFor(x, y) > minSalary(y) * 1.5 && !salFor(x, y + 2)).sort((a, b) => value(b) - value(a))[0];
+    const p = roster(L, t.id).filter(x => !isMine(L, x) && x.age >= 29 && value(x) >= 55 && x.con && salFor(x, y) > minSalary(y) * 1.5 && !salFor(x, y + 2)).sort((a, b) => value(b) - value(a))[0];
     if (!p) continue;
     addDead(L, t.id, p, { mult: 0.85, buyout: true }); if (t.dc) t.dc = t.dc.filter(x => x !== p.id);
     p.team = -1; delete p.con; p.bought = L.year;
@@ -3366,6 +3371,29 @@ function seasonAwards(L) {
   const mine = cand.filter(c => c.h.tm === L.user && (c.p.awards || []).some(a => a.y === y && /^al/.test(a.a))).map(c => `${c.p.name} (${c.p.awards.filter(a => a.y === y && /^al/.test(a.a)).map(a => AWARD_NAMES[a.a]).join(', ')})`);
   if (mine.length) addNews(L, `Your honorees: ${mine.join('; ')}.`);
 }
+// Where one player stands in this season's award races so far (career mode). Same scoring as seasonAwards.
+function raceFor(L, pid) {
+  const y = L.year, ru = rules(y), cand = [];
+  for (const id in L.players) {
+    const p = L.players[id], h = p.hist[y]; if (!h || !h.g || h.tm == null) continue;
+    const t = L.teams[h.tm], gp = t.w + t.l; if (h.g < gp * 0.58) continue;
+    const x = perGame(h), wp = pct(L, t);
+    cand.push({ p, x, wp, conf: t.conf, prod: prodScore(h), def: x.reb * 0.35 + x.stl * 2.2 + x.blk * 2.2 + (p.ovr - 60) * 0.12, rookie: (p.yrs || 0) === 0, sixth: (h.gs || 0) < h.g * 0.4 && x.min >= 15, pts: x.pts });
+  }
+  const me = cand.find(c => c.p.id === pid); if (!me) return null;
+  const rank = (f, pool) => (pool || cand).slice().sort((a, b) => f(b) - f(a)).indexOf(me) + 1;
+  const out = { mvp: rank(c => c.prod + c.wp * 22), n: cand.length };
+  if (ru.awards.dpoy) out.dpoy = rank(c => c.def + c.wp * 3 + c.x.min * 0.05);
+  if (me.rookie) out.roy = rank(c => c.prod, cand.filter(c => c.rookie));
+  if (me.sixth && ru.awards.smoy) out.smoy = rank(c => c.prod, cand.filter(c => c.sixth));
+  // All-NBA: rank within his position group (2 guards, 2 forwards, 1 center per team)
+  const grp = q => isGuard(q) ? 'g' : q.pos === 'C' ? 'c' : 'f', per = { g: 2, f: 2, c: 1 }[grp(me.p)];
+  const r = rank(c => c.prod + c.wp * 6, cand.filter(c => grp(c.p) === grp(me.p)));
+  out.allnba = r <= per ? 1 : r <= per * 2 ? 2 : r <= per * 3 && y >= 1988 ? 3 : 0; out.allnbaRank = r;
+  // All-Star: rank in his conference
+  out.allstar = rank(c => c.prod + c.wp * 6 + c.pts * 0.3, cand.filter(c => c.conf === me.conf));
+  return out;
+}
 function finalsMVP(L, s, w) {
   const tot = {};
   for (const g of s.games) for (const l of (g.box && g.box.lines) || []) if (l.tm === w) { const t = tot[l.id] = tot[l.id] || { id: l.id, g: 0, pts: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0 }; t.g++; for (const k of ['pts', 'reb', 'ast', 'stl', 'blk', 'tov']) t[k] += l[k]; }
@@ -4265,7 +4293,7 @@ const API = { resignQuote, signQuote, OPT_MULT, optOn, optText, teamOption, auto
   askPrice, tenderPrice, isRestricted, compPicks, resign, letGo, matchSheet, declineSheet, sheetTargets, sendSheet, signFA, onBooks, ensureFA, marketValue, salFor, fitFor, priceFor,
   resignPrice, offerScore, baseAsk, placeBid, withdrawBid, bidOutlook, advanceFA, interestedTeams, extInfo, extend, FA_ROUNDS, canSignOutside,
   leaders, LEAD, potKnown, shownPot, LOTTERY_TXT, poDepth,
-  HOOKS, hasUser, cuttable, aiStyles, logInjury, endContractAt, contractYears, isMine, mor, addMor, mkPlayer, PROF, finishProfile, slotGrade, COLLEGES, BIG_SCHOOLS, cleanName, rookieDeal, progress, classBoard, injuries, allStarDay, finishSeason };
+  HOOKS, hasUser, cuttable, aiStyles, logInjury, endContractAt, contractYears, isMine, mor, addMor, raceFor, teamModes, prodScore, careerScore, retireJerseys, franchiseScore, HOFG, isGuard, mkPlayer, PROF, finishProfile, slotGrade, COLLEGES, BIG_SCHOOLS, cleanName, rookieDeal, progress, classBoard, injuries, allStarDay, finishSeason };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.HW = API;
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -4484,6 +4512,7 @@ function careerNew(imp, o) {
     c.ans = Object.assign({}, o.ans); c.priv = b.priv; c.scoutMid = b.scoutMid;
     L.cls.pool.push(p.id);
   }
+  if (o.nat && (o.nat === 'USA' || COUNTRIES.some(x => x[0] === o.nat))) p.nat = o.nat; else if (c.type === 'real') p.nat = realCountry(p.name);
   c.pid = p.id; p.mine = true;
   L.shoot4 = true; L.cls.h2 = true;   // the class is final: a later data refresh must not reroll your player
   recalc(c, p);
@@ -4604,7 +4633,8 @@ function watch(L) {
   const t = p.team >= 0 ? p.team : -1;
   if (c.tid === undefined) { c.tid = t; return; }
   if (t !== c.tid) {
-    if (t >= 0 && c.tid >= 0) feed(L, `TRADED: ${p.name} has been dealt to the ${teamName(L, t)}.`, 'move');
+    c.treq = null;   // any new team (or none) ends a trade request
+    if (t >= 0 && c.tid >= 0) { const s = `TRADED: ${p.name} has been dealt to the ${teamName(L, t)}.`; feed(L, s, 'move'); alertMe(L, s, 'trade'); c.rel = 55; c.promo = null; c.lastRole = null; }
     else if (t >= 0) feed(L, `${p.name} signed with the ${teamName(L, t)}${p.con ? ` (${H.money(p.con.sal)} a year through ${H.seasonLabel(p.con.exp)})` : ''}.`, 'move');
     else feed(L, `${p.name} is a free agent.`, 'move');
     c.tid = t;
@@ -4615,7 +4645,8 @@ function watch(L) {
   // a new head coach starts fresh with you
   if (t >= 0) { const hc = coachName(L, t); if (c.hc && c.hc !== hc && c.hcT === t) { c.rel = 50; feed(L, `New head coach: ${hc}. Your relationship starts over.`, 'coach'); } c.hc = hc; c.hcT = t; }
   // once a week in season: trade request and holdout
-  if (L.phase === 'regular') { const wk = Math.floor(L.day / 7); if (c.wk !== wk) { c.wk = wk; if (c.treq) tryTrade(L); holdoutWeek(L); } }
+  if (L.phase === 'regular') { const wk = Math.floor(L.day / 7); if (c.wk !== wk) { c.wk = wk; if (c.treq) tryTrade(L); holdoutWeek(L); weekly(L); } }
+  if (L.phase === 'season-over' && c.goals && !c.goals.done) { judgeGoals(L); milestones(L); }
   // new awards
   const n = (p.awards || []).length; if (c.nAw == null) c.nAw = n;
   if (n > c.nAw) { (p.awards || []).slice(c.nAw).forEach(a => feed(L, `${H.AWARD_NAMES[a.a] || a.a} (${H.seasonLabel(a.y)})${a.a === 'allstar' ? '' : '!'}`, 'award')); c.nAw = n; }
@@ -4635,7 +4666,7 @@ function startSeason(L, imp) {
   const c = L.career; if (L.phase !== 'preseason') return 'The season is already under way.';
   ensureTeam(L);
   const e = H.startRegular(L, imp); if (e) return e;
-  c.focusSeason = c.focus; watch(L);
+  c.focusSeason = c.focus; c.lastRole = null; watch(L); setGoals(L);
   return null;
 }
 function simDays(L, n) { for (let i = 0; i < n && L.phase === 'regular'; i++) { H.simDay(L); watch(L); if (L.career.done) break; } }
@@ -4701,7 +4732,9 @@ function nextSeason(L) {
   const c = L.career; if (L.phase !== 'offseason') return 'Finish the draft first.';
   if (c.offers) autoSign(L);
   if (c.oly && c.oly.invited && !c.oly.done) olympics(L, true);
-  for (let i = 0; i < 3 && c.treq; i++) tryTrade(L);
+  if (c.treq && c.treq.deals) { c.treq.deals = null; feed(L, 'You went to camp without picking a trade. The request stays open.', 'trade'); }
+  if (c.buyout) c.buyout = null;
+  c.alerts = [];   // last season's alerts are old news
   // roles are earned again every season
   c.promo = null; if (c.usage > 1) { c.usage = 1; const q = me(L); if (q && q.sk) recalc(c, q); }
   if (L.fa && L.fa.era === 'ufa') { let g = 0; while (!H.advanceFA(L) && g++ < 10); }
@@ -4725,7 +4758,9 @@ function retire(L) {
 function finish(L) {
   const c = L.career; if (c.done) return;
   const p = me(L); c.done = { y: L.year, age: p ? p.age : null, why: p ? p.retWhy : null };
+  if (p && !p.retiredYear) p.retiredYear = L.year + 1;
   feed(L, `${p ? p.name : 'Your player'} has retired${p && p.retWhy && p.retWhy !== 'chosen' ? (p.retWhy === 'injury' ? ' after a serious injury' : p.retWhy === 'decline' ? ' after a steep decline' : p.retWhy === 'unsigned' ? ' after going unsigned' : '') : ''}. Career over.`, 'end');
+  if (p) hofVerdict(L);
 }
 function setFocus(L, k) { if (FOCUS[k]) { L.career.focus = k; if (SK.includes(k)) L.career.xfocus = k; } }
 function setExtra(L, on) { L.career.extra = !!on; }
@@ -4745,7 +4780,7 @@ function contractOpen(L) {
   const c = L.career, p = me(L); if (!p || c.done || p.team < 0) { c.offers = null; return; }
   const y = H.capYear(L), opt = p.con && H.optOn(p, y), ended = !p.con || !H.onBooks(p, y);
   if (!ended && !(opt && opt.t === 'P')) { c.offers = null; return; }
-  const cur = L.teams[p.team], era = H.faEra(y), value = mv(L, p), list = [];
+  const cur = L.teams[p.team], era = H.faEra(y), value = mv(L, p) * goalBoost(L), list = [];
   const rfa = !opt && (era === 'rfr' || H.isRestricted(L, p));
   // your team
   const ranked = H.roster(L, cur.id).slice().sort((a, b) => H.value(b) - H.value(a)), rank = ranked.indexOf(p);
@@ -4831,6 +4866,7 @@ function raiseOk(L) {
   const c = L.career, p = me(L), y = H.capYear(L); if (!p || p.team < 0 || !p.con || c.offers || c.done) return false;
   // rookie-scale deals (from 1995) can't be renegotiated
   if (p.draft && p.con.signed === p.draft.year && H.rules(p.draft.year).rookieScale) return false;
+  if (p.con.signed != null && p.con.signed >= y) return false;   // not on a deal you just signed
   const left = (p.con.exp || 0) - y; return left >= 1 && H.salFor(p, y) < mv(L, p) * 0.75 && p.ovr >= 66 && c.raiseY !== y && !p.holdout;
 }
 function askRaise(L) {
@@ -4905,41 +4941,60 @@ const TRADE_PREF = { win: 'A contender', role: 'Somewhere I start', any: 'Anywhe
 function requestTrade(L, pref) {
   const c = L.career, p = me(L); if (!p || team(L) == null || c.done) return 'You have no team to leave.';
   if (c.treq) return 'You already asked for a trade.';
-  c.treq = { pref: TRADE_PREF[pref] ? pref : 'any', y: L.year, day: L.day, tries: 0 };
+  c.treq = { pref: TRADE_PREF[pref] ? pref : 'any', y: L.year, day: L.phase === 'regular' ? L.day : -99, tries: 0 };
   c.rel = clamp((c.rel || 55) - 15, 0, 100); H.addMor(p, -5);
   feed(L, `${p.name} asked the ${teamName(L, team(L))} to trade him (${TRADE_PREF[c.treq.pref].toLowerCase()}).`, 'trade');
   return null;
 }
 function withdrawTrade(L) { const c = L.career; if (!c.treq) return 'You have not asked for a trade.'; c.treq = null; c.rel = clamp((c.rel || 55) + 5, 0, 100); feed(L, 'You took back your trade request.', 'trade'); return null; }
-// The team tries to find a deal: you for one or two players with matching salaries (cap rules) who are worth a bit less.
-function tryTrade(L) {
-  const c = L.career, p = me(L), cur = team(L); if (!c.treq || cur == null) return false;
-  if (L.phase === 'regular' && H.pastDeadline(L)) return false;
-  c.treq.tries++;
-  if (Math.random() > Math.min(0.85, 0.3 + c.treq.tries * 0.15)) return false;
-  const v = H.value(p), max = H.rules(L.year).rosterMax + (L.phase === 'regular' || L.phase === 'playoffs' ? 0 : 3);
+// The team shops you: up to three deals (you for one or two players with legal salaries, worth a bit less).
+// You pick one or turn them down. A team won't move its best player on a long deal unless the relationship is broken.
+function findDeals(L) {
+  const p = me(L), cur = team(L), v = H.value(p), max = H.rules(L.year).rosterMax + (L.phase === 'regular' || L.phase === 'playoffs' ? 0 : 3), c = L.career;
   let teams = L.teams.filter(t => t.id !== cur);
   if (c.treq.pref === 'win') teams = teams.sort((a, b) => winPct(L, b) - winPct(L, a)).slice(0, 10);
   else if (c.treq.pref === 'role') teams = teams.filter(t => wouldRole(L, t.id, p) === 'Starter');
   R.shuffle(teams);
+  const deals = [];
   for (const t of teams) {
+    if (deals.length >= 3) break;
     const r = H.roster(L, t.id).filter(q => !H.isMine(L, q) && !q.holdout);
-    const fits = (out, inc) => !H.teamCapMsg(L, cur, [p.id], out.map(q => q.id)) && !H.teamCapMsg(L, t.id, out.map(q => q.id), [p.id]) && H.roster(L, cur).length - 1 + out.length <= max;
-    const singles = r.filter(q => H.value(q) <= v + 1 && H.value(q) >= v * 0.55).sort((a, b) => H.value(b) - H.value(a));
-    let back = singles.find(q => fits([q]));
-    if (!back) { const cheap = r.filter(q => H.value(q) < v).sort((a, b) => H.value(b) - H.value(a)).slice(0, 6); for (let i = 0; i < cheap.length && !back; i++) for (let j = i + 1; j < cheap.length && !back; j++) if (fits([cheap[i], cheap[j]])) back = [cheap[i], cheap[j]]; }
-    if (!back) continue;
-    const out = Array.isArray(back) ? back : [back];
-    const moves = [{ t: 'p', id: p.id, from: cur, to: t.id }].concat(out.map(q => ({ t: 'p', id: q.id, from: t.id, to: cur })));
-    H.execDeal(L, moves);
-    c.treq = null; c.rel = 60; c.promo = null; if (c.usage > 1) { c.usage = 1; recalc(c, p); }
-    feed(L, `Trade request granted: the ${teamName(L, cur)} sent ${p.name} to the ${teamName(L, t.id)} for ${out.map(q => q.name).join(' and ')}.`, 'trade');
-    c.tid = t.id;
-    return true;
+    const fits = out => !H.teamCapMsg(L, cur, [p.id], out.map(q => q.id)) && !H.teamCapMsg(L, t.id, out.map(q => q.id), [p.id]) && H.roster(L, cur).length - 1 + out.length <= max;
+    let back = r.filter(q => H.value(q) <= v + 1 && H.value(q) >= v * 0.55).sort((a, b) => H.value(b) - H.value(a)).find(q => fits([q]));
+    let out = back ? [back] : null;
+    if (!out) { const cheap = r.filter(q => H.value(q) < v).sort((a, b) => H.value(b) - H.value(a)).slice(0, 6); for (let i = 0; i < cheap.length && !out; i++) for (let j = i + 1; j < cheap.length && !out; j++) if (fits([cheap[i], cheap[j]])) out = [cheap[i], cheap[j]]; }
+    if (out) deals.push({ tid: t.id, ids: out.map(q => q.id), role: wouldRole(L, t.id, p), win: Math.round(winPct(L, t) * 82) });
   }
-  if (c.treq.tries >= 6 && c.treq.tries % 3 === 0) feed(L, 'No team has met the asking price for you yet.', 'trade');
-  return false;
+  return deals;
 }
+function tryTrade(L) {
+  const c = L.career, p = me(L), cur = team(L); if (!c.treq || cur == null || (c.treq.deals && c.treq.deals.length)) return false;
+  if (L.phase === 'regular' && H.pastDeadline(L)) return false;
+  if (L.phase === 'regular' && L.day - (c.treq.day || 0) < 14 && c.treq.y === L.year) return false;   // two weeks before the first calls
+  c.treq.tries++;
+  const best = H.roster(L, cur).every(q => q.id === p.id || H.value(q) <= H.value(p)), long = p.con && p.con.exp - H.capYear(L) >= 2;
+  if (best && long && (c.rel || 55) >= 30) { if (!c.treq.refused) { c.treq.refused = true; const s = `The ${teamName(L, cur)} say they won't trade their best player. Only a broken relationship would change that.`; feed(L, s, 'trade'); alertMe(L, s, 'treq'); } return false; }
+  if (Math.random() > Math.min(0.7, 0.2 + c.treq.tries * 0.1)) return false;
+  const deals = findDeals(L);
+  if (!deals.length) { if (c.treq.tries % 3 === 0) feed(L, 'No team has met the asking price for you yet.', 'trade'); return false; }
+  c.treq.deals = deals;
+  const s = `Your team found ${deals.length} possible trade${deals.length > 1 ? 's' : ''}. Pick one, or turn them down and wait.`;
+  feed(L, s, 'trade'); alertMe(L, s, 'treq');
+  return true;
+}
+function takeDeal(L, i) {
+  const c = L.career, p = me(L), cur = team(L), d = c.treq && c.treq.deals && c.treq.deals[+i]; if (!d) return 'That deal is gone.';
+  const ok = d.ids.every(id => L.players[id] && L.players[id].team === d.tid) && !H.teamCapMsg(L, cur, [p.id], d.ids) && !H.teamCapMsg(L, d.tid, d.ids, [p.id]) && !(L.phase === 'regular' && H.pastDeadline(L));
+  if (!ok) { c.treq.deals = null; return 'That deal fell apart (rosters changed or the deadline passed). Your team will keep looking.'; }
+  const moves = [{ t: 'p', id: p.id, from: cur, to: d.tid }].concat(d.ids.map(id => ({ t: 'p', id, from: d.tid, to: cur })));
+  H.execDeal(L, moves);
+  c.treq = null; c.rel = 60; c.promo = null; c.lastRole = null; if (c.usage > 1) { c.usage = 1; recalc(c, p); }
+  c.alerts = (c.alerts || []).filter(a => a.k !== 'treq');
+  feed(L, `Trade request granted: the ${teamName(L, cur)} sent ${p.name} to the ${teamName(L, d.tid)} for ${d.ids.map(id => L.players[id].name).join(' and ')}.`, 'trade');
+  c.tid = d.tid;
+  return null;
+}
+function passDeals(L) { const c = L.career; if (!c.treq || !c.treq.deals) return 'There are no deals to turn down.'; c.treq.deals = null; c.alerts = (c.alerts || []).filter(a => a.k !== 'treq'); feed(L, 'You turned down the trades. Your team will keep looking.', 'trade'); return null; }
 
 /* ---------- legacy: your career against the real all-time greats ---------- */
 // Keep in step with LEGACY_W in tools/build_legends.py.
@@ -4987,7 +5042,7 @@ const COUNTRIES = [
   ['Mexico', 0.03, /mexico|guadalajara|monterrey/i], ['Bahamas', 0.04, /bahamas|nassau/i], ['Georgia (country)', 0.03, /tbilisi/i], ['Israel', 0.03, /israel|tel aviv|jerusalem/i],
   ['Czech Republic', 0.05, /czech|prague/i], ['Finland', 0.03, /finland|helsinki/i], ['South Sudan', 0.05, /south sudan|juba/i], ['New Zealand', 0.03, /new zealand|auckland/i],
   ['United Kingdom', 0.02, /england|london|scotland|wales|united kingdom|great britain|manchester/i]];
-function country(p) { const h = (p.home || '').trim(); if (!h) return 'USA'; for (const c of COUNTRIES) if (c[2].test(h)) return c[0]; return 'USA'; }
+function country(p) { if (p.nat) return p.nat; const h = (p.home || '').trim(); if (!h) return 'USA'; for (const c of COUNTRIES) if (c[2].test(h)) return c[0]; return 'USA'; }
 function teamName2(cn, S) { if (cn === 'Serbia') return S <= 2000 ? 'Yugoslavia' : S === 2004 ? 'Serbia and Montenegro' : 'Serbia'; return cn; }
 function usaGold(S) { return ({ 1992: 0.99, 1996: 0.97, 2000: 0.93, 2004: 0.45, 2008: 0.9, 2012: 0.92, 2016: 0.92, 2021: 0.82 })[S] || 0.84; }
 function usaShare(S) { return S < 2000 ? 0.95 : S < 2008 ? 0.88 : S < 2016 ? 0.82 : S < 2024 ? 0.76 : 0.7; }
@@ -5027,6 +5082,174 @@ function olympics(L, play) {
   return null;
 }
 
+
+/* ---------- round three: alerts, buyouts, goals, milestones, the Hall of Fame ---------- */
+// A card at the top of the Career screen until you dismiss it.
+function alertMe(L, s, k) { const c = L.career; c.alerts = (c.alerts || []).filter(a => a.k !== k || k === 'note'); c.alerts.unshift({ s, k: k || 'note', y: L.year }); c.alerts.length = Math.min(c.alerts.length, 4); }
+function dismiss(L, i) { const c = L.career; if (c.alerts) c.alerts.splice(+i || 0, 1); }
+// Weekly in season: rumors, your role, a buyout offer, milestones.
+function weekly(L) {
+  const c = L.career, p = me(L), tid = team(L); if (!p || c.done) return;
+  if (tid != null) {
+    const M = H.teamModes(L), mode = M[tid], y = H.capYear(L);
+    // trade rumors: rebuilding teams shop veterans, and a broken relationship gets around
+    if (c.rumorY !== L.year && !H.pastDeadline(L) && ((mode === 'rebuild' && p.age >= 28 && Math.random() < 0.12) || ((c.rel || 55) < 35 && Math.random() < 0.1))) {
+      c.rumorY = L.year; const s = `Trade rumors: the ${teamName(L, tid)} are listening to offers for ${p.name}.`; feed(L, s, 'trade'); alertMe(L, s + ' Nothing is certain, but you could be moved before the deadline.', 'rumor');
+    }
+    // your role: starting lineup and minutes
+    const r = role(L);
+    if (r && c.lastRole && c.lastRole.tid === tid) {
+      if (c.lastRole.start && !r.start && !p.inj) { const s = `${coachName(L, tid)} moved ${p.name} to the bench.`; feed(L, s, 'coach'); alertMe(L, s + ' Win your spot back by playing well, or ask to start.', 'role'); }
+      else if (!c.lastRole.start && r.start) feed(L, `${p.name} is in the starting lineup.`, 'coach');
+      else if (!p.inj && c.lastRole.min - r.min >= 8) feed(L, `${p.name}'s minutes are down to about ${r.min} a night.`, 'coach');
+    }
+    if (r) c.lastRole = { tid, start: !!r.start, min: r.min };
+    // a rebuilding team after the deadline offers to buy out a veteran: your call
+    if (H.pastDeadline(L) && !c.buyout && c.boY !== L.year && mode === 'rebuild' && p.age >= 29 && p.con && H.salFor(p, y) > H.minSalary(y) * 1.5 && !H.salFor(p, y + 2) && Math.random() < 0.25) {
+      c.boY = L.year;
+      const max = H.rules(L.year).rosterMax, dest = L.teams.filter(t => t.id !== tid && M[t.id] === 'win' && H.roster(L, t.id).length < max).sort((a, b) => winPct(L, b) - winPct(L, a)).slice(0, 4).map(t => t.id);
+      if (dest.length) { c.buyout = { y: L.year, give: R.int(8, 20), dest }; const s = `The ${teamName(L, tid)} offered to buy out your contract so you can join a contender.`; feed(L, s, 'con'); alertMe(L, s, 'buyout'); }
+    }
+  }
+  if (c.treq && c.treq.deals && H.pastDeadline(L)) { c.treq.deals = null; c.alerts = (c.alerts || []).filter(a => a.k !== 'treq'); feed(L, 'The trade deadline passed before you picked a deal. Your team will try again in the summer.', 'trade'); }
+  milestones(L);
+}
+function acceptBuyout(L, i) {
+  const c = L.career, p = me(L), b = c.buyout; if (!b) return 'There is no buyout offer.';
+  const to = b.dest[+i]; if (to == null) return 'Pick a team.';
+  const from = p.team, y = H.capYear(L), T = L.teams[from];
+  H.addDead(L, from, p, { mult: 1 - b.give / 100, buyout: true }); if (T.dc) T.dc = T.dc.filter(x => x !== p.id);
+  p.team = to; H.setContract(p, H.minSalary(y), y, 1, 'none'); p.bought = L.year;
+  c.buyout = null; c.tid = to; c.rel = 60; c.promo = null; c.alerts = (c.alerts || []).filter(a => a.k !== 'buyout');
+  feed(L, `${p.name} accepted a buyout from the ${teamName(L, from)} and signed with the contending ${teamName(L, to)}.`, 'move');
+  return null;
+}
+function declineBuyout(L) { const c = L.career; if (!c.buyout) return 'There is no buyout offer.'; c.buyout = null; c.alerts = (c.alerts || []).filter(a => a.k !== 'buyout'); feed(L, 'You turned down the buyout and stayed.', 'con'); return null; }
+
+// Training so far this season, and roughly what it means this summer.
+function ageGrowth(age) { return age <= 20 ? 4 : age <= 22 ? 3 : age <= 24 ? 2 : age <= 26 ? 1 : age <= 29 ? 0 : age <= 31 ? -1 : age <= 33 ? -2 : -3; }
+function trainingSoFar(L) {
+  const c = L.career, p = me(L), e = c.emph || {}, tot = SK.reduce((s, k) => s + (e[k] || 0), 0) + (e.bal || 0), d = ageGrowth(p.age), est = {};
+  SK.forEach(k => { const share = tot ? ((e[k] || 0) + (e.bal || 0) / 6) / tot : 1 / 6; est[k] = d > 0 ? d * 6 * (0.6 / 6 + 0.4 * share) : d * 6 * DECLINE[k]; });
+  return { games: Math.round(tot + (e.rest || 0)), work: e, est, d };
+}
+
+/* season goals: three targets, set at opening night */
+function setGoals(L) {
+  const c = L.career, p = me(L), tid = team(L); if (!p || tid == null) { c.goals = null; return; }
+  const ru = H.rules(L.year), last = p.hist[L.year - 1], r = role(L) || { min: 15, start: false };
+  const ppg = last && last.g >= 20 ? last.pts / last.g : (r.min || 12) * (p.prof.pts || 12) / 36 * 0.85;
+  const tgtPts = Math.max(4, Math.round(ppg + (p.age <= 26 ? 2 : 0.5)));
+  const teams = L.teams.slice().sort((a, b) => H.teamOverall(L, b.id) - H.teamOverall(L, a.id)), tr = teams.findIndex(t => t.id === tid) + 1;
+  const wins = Math.round(ru.games * (tr <= 6 ? 0.62 : tr <= Math.round(L.teams.length / 2) ? 0.5 : 0.37));
+  const list = [{ k: 'pts', txt: `Average ${tgtPts} points`, t: tgtPts }, tr <= Math.round(L.teams.length / 2) + 2 ? { k: 'po', txt: 'Make the playoffs' } : { k: 'w', txt: `Win ${wins} games`, t: wins }];
+  if (p.ovr >= 80) list.push({ k: 'nba', txt: 'Make an All-NBA team' });
+  else if (p.ovr >= 73 && L.year !== 1998) list.push({ k: 'as', txt: 'Make the All-Star team' });
+  else if (!r.start) list.push({ k: 'gs', txt: `Start ${Math.round(ru.games * 0.25)} games`, t: Math.round(ru.games * 0.25) });
+  else list.push({ k: 'g', txt: `Play ${Math.round(ru.games * 0.85)} games`, t: Math.round(ru.games * 0.85) });
+  c.goals = { y: L.year, tid, list, done: false };
+}
+function goalState(L, gl) {
+  const c = L.career, p = me(L), y = c.goals.y, h = p.hist[y] || {}, g = h.g || 0, t = L.teams[c.goals.tid], aw = (p.awards || []).filter(a => a.y === y);
+  switch (gl.k) {
+    case 'pts': return { v: g ? Math.round(h.pts / g * 10) / 10 : 0, ok: g >= 20 && h.pts / g >= gl.t };
+    case 'w': { const res = t.hist.length && t.hist[t.hist.length - 1].y === y ? t.hist[t.hist.length - 1] : null, w = res ? res.w : t.w; return { v: w, ok: w >= gl.t }; }
+    case 'po': { const inPO = L.playoffs && L.playoffs.y === y ? true : (t.hist.length && t.hist[t.hist.length - 1].y === y && !/missed/i.test(t.hist[t.hist.length - 1].res || '')); return { v: null, ok: !!inPO && ['playoffs', 'season-over', 'draft', 'offseason'].includes(L.phase) }; }
+    case 'nba': return { v: null, ok: aw.some(a => /^alnba/.test(a.a)) };
+    case 'as': return { v: null, ok: aw.some(a => a.a === 'allstar') };
+    case 'gs': return { v: h.gs || 0, ok: (h.gs || 0) >= gl.t };
+    case 'g': return { v: g, ok: g >= gl.t };
+  }
+  return { v: null, ok: false };
+}
+function judgeGoals(L) {
+  const c = L.career; if (!c.goals || c.goals.done) return;
+  const met = c.goals.list.filter(gl => goalState(L, gl).ok).length, n = c.goals.list.length;
+  c.goals.done = true; c.goals.met = met;
+  c.rel = clamp((c.rel || 55) + met * 4 - (n - met) * 2, 0, 100);
+  (c.goalHist = c.goalHist || []).push({ y: c.goals.y, met, n });
+  feed(L, `Season goals: ${met} of ${n} met.${met === n ? ' The front office noticed.' : ''}`, 'goal');
+}
+// Goals met over the last two seasons raise what teams will pay you.
+function goalBoost(L) { const h = (L.career.goalHist || []).filter(x => x.y >= L.year - 1); return 1 + 0.03 * h.reduce((s, x) => s + x.met, 0); }
+
+/* milestones: round numbers, and real legends you pass on the all-time points list */
+const MS = { pts: [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 12500, 15000, 17500, 20000, 22500, 25000, 27500, 30000, 32500, 35000, 37500, 40000, 42500],
+  reb: [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 12500, 15000, 17500, 20000, 22500], ast: [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 12000, 14000, 16000] };
+const MS_W = { pts: 'points', reb: 'rebounds', ast: 'assists' };
+function milestones(L) {
+  const c = L.career, p = me(L), T = totals(p); c.ms = c.ms || {};
+  for (const k in MS) { const v = T[k] || 0, hit = MS[k].filter(x => x <= v).pop(); if (hit && hit > (c.ms[k] || 0)) { c.ms[k] = hit; feed(L, `MILESTONE: ${p.name} reaches ${hit.toLocaleString('en-US')} career ${MS_W[k]}.`, 'ms'); } }
+  // passing real legends on the all-time points list (their real careers)
+  const pts = T.pts || 0, own = c.type === 'real' ? H.cleanName(p.name).toLowerCase() : null;
+  const list = ptsList().filter(r => r[0] !== own);
+  const passed = list.filter(r => r[1] < pts && r[1] >= 12000 && r[1] > (c.passed || 0));
+  if (passed.length) { const top = passed[0], rank = list.filter(r => r[1] > pts).length + 1; c.passed = top[1]; feed(L, `${p.name} passed ${top[2]} (${top[1].toLocaleString('en-US')}) and is #${rank} on the all-time points list.`, 'ms'); }
+}
+let _pts = null;
+function ptsList() { if (!_pts) _pts = legends().map(r => [H.cleanName(r[0]).toLowerCase(), r[9], r[0]]).sort((a, b) => b[1] - a[1]); return _pts; }
+function nextMilestones(L) {
+  const p = me(L), T = totals(p), out = [];
+  for (const k in MS) { const v = T[k] || 0, nx = MS[k].find(x => x > v); if (nx && nx - v <= (k === 'pts' ? 2500 : 1000)) out.push(`${(nx - v).toLocaleString('en-US')} ${MS_W[k]} from ${nx.toLocaleString('en-US')}`); }
+  const own = L.career.type === 'real' ? H.cleanName(p.name).toLowerCase() : null, list = ptsList().filter(r => r[0] !== own), pts = T.pts || 0;
+  const ahead = list.filter(r => r[1] > pts), next = ahead[ahead.length - 1];
+  if (next && pts >= 5000) out.push(`#${ahead.length + 1} all-time in points; next is ${next[2]} (${next[1].toLocaleString('en-US')})`);
+  return out;
+}
+
+/* the Hall of Fame: decided when you retire (the voters look at you four years later) */
+function hofVerdict(L) {
+  const c = L.career, p = me(L); if (!p || c.hofDone) return;
+  const s = H.careerScore(p), g = H.HOFG(p), pool = [];
+  for (const q of Object.values(L.retired || {})) if (q.id !== p.id && Object.keys(q.hist).length >= 5 && H.HOFG(q) === g) pool.push(H.careerScore(q));
+  pool.sort((a, b) => b - a);
+  // a young league has few retirees: fall back to a fixed bar near what long leagues settle on
+  const line = pool.length >= 15 ? Math.max(pool[Math.floor(pool.length * 0.04)], 400) : 600;
+  const yr = (p.retiredYear || L.year + 1) + 4;
+  let v;
+  if (s >= line * 1.25) v = { in: true, y: yr, first: true };
+  else if (s >= line) v = { in: true, y: yr + (Math.random() < 0.5 ? 0 : R.int(1, 3)), first: false };
+  else if (s >= line * 0.85 && Math.random() < 0.4) v = { in: true, y: yr + R.int(2, 8), first: false };
+  else v = { in: false };
+  v.score = Math.round(s); v.line = Math.round(line);
+  if (v.in) { p.hof = v.y; L.hof = L.hof || []; const teams = [...new Set(Object.values(p.hist).map(h => h.tm).filter(x => x != null))]; L.hof.push({ y: v.y, id: p.id, name: p.name, pos: p.pos, teams, score: v.score }); }
+  H.retireJerseys(L, p, v.in, true);
+  v.jerseys = Object.keys(L.jerseys || {}).filter(tid => (L.jerseys[tid] || []).some(j => j.pid === p.id)).map(Number);
+  c.hofV = v; c.hofDone = true;
+  feed(L, v.in ? `HALL OF FAME: ${p.name} is elected${v.first ? ' on the first ballot' : ''}, class of ${v.y}.` : `${p.name} falls short of the Hall of Fame.`, 'hof');
+  v.jerseys.forEach(tid => feed(L, `The ${teamName(L, tid)} retire ${p.name}'s jersey.`, 'hof'));
+}
+
+/* real international players: the country they played for (you can change it at setup) */
+const INTL = { 'dirk nowitzki': 'Germany', 'detlef schrempf': 'Germany', 'dennis schroder': 'Germany', 'franz wagner': 'Germany', 'moritz wagner': 'Germany', 'daniel theis': 'Germany', 'chris kaman': 'Germany',
+  'arvydas sabonis': 'Lithuania', 'sarunas marciulionis': 'Lithuania', 'zydrunas ilgauskas': 'Lithuania', 'jonas valanciunas': 'Lithuania', 'domantas sabonis': 'Lithuania', 'linas kleiza': 'Lithuania', 'darius songaila': 'Lithuania',
+  'drazen petrovic': 'Croatia', 'toni kukoc': 'Croatia', 'dino radja': 'Croatia', 'bojan bogdanovic': 'Croatia', 'dario saric': 'Croatia', 'ivica zubac': 'Croatia', 'mario hezonja': 'Croatia',
+  'vlade divac': 'Serbia', 'peja stojakovic': 'Serbia', 'predrag stojakovic': 'Serbia', 'nikola jokic': 'Serbia', 'bogdan bogdanovic': 'Serbia', 'nemanja bjelica': 'Serbia', 'darko milicic': 'Serbia', 'vladimir radmanovic': 'Serbia', 'zarko cabarkapa': 'Serbia',
+  'pau gasol': 'Spain', 'marc gasol': 'Spain', 'ricky rubio': 'Spain', 'juan carlos navarro': 'Spain', 'rudy fernandez': 'Spain', 'jose calderon': 'Spain', 'serge ibaka': 'Spain', 'willy hernangomez': 'Spain', 'juancho hernangomez': 'Spain',
+  'manu ginobili': 'Argentina', 'luis scola': 'Argentina', 'andres nocioni': 'Argentina', 'carlos delfino': 'Argentina', 'fabricio oberto': 'Argentina', 'facundo campazzo': 'Argentina',
+  'tony parker': 'France', 'boris diaw': 'France', 'rudy gobert': 'France', 'nicolas batum': 'France', 'evan fournier': 'France', 'victor wembanyama': 'France', 'joakim noah': 'France', 'ronny turiaf': 'France', 'mickael pietrus': 'France', 'frank ntilikina': 'France', 'zaccharie risacher': 'France', 'alex sarr': 'France', 'bilal coulibaly': 'France',
+  'andrew bogut': 'Australia', 'luc longley': 'Australia', 'patty mills': 'Australia', 'ben simmons': 'Australia', 'josh giddey': 'Australia', 'dante exum': 'Australia', 'aron baynes': 'Australia', 'thon maker': 'Australia', 'jock landale': 'Australia',
+  'steve nash': 'Canada', 'andrew wiggins': 'Canada', 'jamal murray': 'Canada', 'shai gilgeous-alexander': 'Canada', 'rj barrett': 'Canada', 'rick fox': 'Canada', 'tristan thompson': 'Canada', 'kelly olynyk': 'Canada', 'dwight powell': 'Canada', 'anthony bennett': 'Canada', 'cory joseph': 'Canada', 'bill wennington': 'Canada', 'jamaal magloire': 'Canada', 'dillon brooks': 'Canada', 'lu dort': 'Canada', 'bennedict mathurin': 'Canada', 'andrew nembhard': 'Canada', 'zach edey': 'Canada',
+  'luka doncic': 'Slovenia', 'goran dragic': 'Slovenia', 'beno udrih': 'Slovenia', 'sasha vujacic': 'Slovenia',
+  'yao ming': 'China', 'yi jianlian': 'China', 'wang zhizhi': 'China',
+  'giannis antetokounmpo': 'Greece', 'kostas antetokounmpo': 'Greece',
+  'andrea bargnani': 'Italy', 'danilo gallinari': 'Italy', 'marco belinelli': 'Italy',
+  'hedo turkoglu': 'Turkey', 'mehmet okur': 'Turkey', 'enes kanter': 'Turkey', 'enes freedom': 'Turkey', 'cedi osman': 'Turkey', 'ersan ilyasova': 'Turkey', 'alperen sengun': 'Turkey',
+  'al horford': 'Dominican Republic', 'karl-anthony towns': 'Dominican Republic', 'francisco garcia': 'Dominican Republic',
+  'nene': 'Brazil', 'nene hilario': 'Brazil', 'leandro barbosa': 'Brazil', 'anderson varejao': 'Brazil', 'tiago splitter': 'Brazil',
+  'kristaps porzingis': 'Latvia', 'andris biedrins': 'Latvia', 'davis bertans': 'Latvia',
+  'andrei kirilenko': 'Russia', 'timofey mozgov': 'Russia',
+  'nikola vucevic': 'Montenegro', 'nikola pekovic': 'Montenegro',
+  'lauri markkanen': 'Finland', 'deni avdija': 'Israel', 'omri casspi': 'Israel', 'rui hachimura': 'Japan',
+  'pascal siakam': 'Cameroon', 'joel embiid': 'Cameroon', 'luc mbah a moute': 'Cameroon', 'gorgui dieng': 'Senegal',
+  'hakeem olajuwon': 'Nigeria', 'michael olowokandi': 'Nigeria', 'al-farouq aminu': 'Nigeria', 'festus ezeli': 'Nigeria', 'josh okogie': 'Nigeria',
+  'jose juan barea': 'Puerto Rico', 'carlos arroyo': 'Puerto Rico', 'jose ortiz': 'Puerto Rico',
+  'tomas satoransky': 'Czech Republic', 'jan vesely': 'Czech Republic', 'steven adams': 'New Zealand', 'buddy hield': 'Bahamas', 'deandre ayton': 'Bahamas', 'mychal thompson': 'Bahamas',
+  'zaza pachulia': 'Georgia (country)', 'luol deng': 'United Kingdom', 'ben gordon': 'United Kingdom', 'og anunoby': 'United Kingdom' };
+function plain(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
+function realCountry(name) { return INTL[plain(H.cleanName(name))] || 'USA'; }
+function countryList() { return ['USA'].concat(COUNTRIES.map(x => x[0]).sort()); }
+
 /* ---------- what the screens show ---------- */
 function role(L) {
   const p = me(L), t = team(L); if (!p || t == null) return null;
@@ -5048,7 +5271,7 @@ function rankAmong(L, key) {
   return better + 1;
 }
 
-const API = { contractOpen, chooseOffer, testMarket, autoSign, raiseOk, askRaise, holdOut, endHoldout, coachName, relWord, askOk, ask, TRADE_PREF, requestTrade, withdrawTrade, tryTrade,
+const API = { alertMe, dismiss, acceptBuyout, declineBuyout, trainingSoFar, goalState, nextMilestones, takeDeal, passDeals, realCountry, countryList, contractOpen, chooseOffer, testMarket, autoSign, raiseOk, askRaise, holdOut, endHoldout, coachName, relWord, askOk, ask, TRADE_PREF, requestTrade, withdrawTrade, tryTrade,
   legacy, aroundMe, LEGACY_NAME, legends, olympicSummers, olympicsOpen, olympics, country, NONE, SK, SK_NAME, SK_W, SK_BASE, HT, WT, htText, TIERS, questions, answerOpts, buildCreated, draftYears, realClass, careerNew, me, team, feed,
   onGame, startSeason, simDays, nextGame, simWeek, simRegular, simPlayoffs, startDraft, runDraft, mockSlot, nextSeason, retire, setFocus, setExtra, setSummer,
   FOCUS, FOCUS_TXT, SUMMER, role, seasonLine, totals, rankAmong, skills, watch, ensureTeam, ordinal, recalc, ovrFrom, devOf };
@@ -5707,9 +5930,16 @@ const HELP = [
 <p><b>Contracts.</b> When your contract is up (or you hold a player option), your agent brings you offers: your team's (if it still wants you) and up to five others, each with the money, the years, the role you'd have and last season's wins. Teams need cap space, the mid-level exception (from 1999) or a minimum deal to bid. Pick one, or test the open market and take what free agency brings. Early in your career (1981-87 always, later while you have under four seasons) you are a restricted free agent: other teams' deals are offer sheets your team can match, and each offer shows the odds (the more a team pays over your team's offer, the less likely the match). Signing the one-year qualifying offer makes you an unrestricted free agent the next summer. If you go to camp without choosing, your agent takes the biggest deal. You can't be cut, and if nobody signs you, a team gives you a minimum deal before camp.</p>
 <p><b>Raises and holdouts.</b> Clearly underpaid (and not on a rookie-scale deal)? Ask for a raise once a year. Turned down, you can hold out: you miss games until the team gives in or you report. Holding out costs trust.</p>
 <p><b>The coach.</b> The Coach and front office card shows his trust in you (0-100). It rises when you win, play well and accept your role, and falls when he turns down your demands, you hold out or ask out. With enough trust and a strong enough case you can ask to start, for more minutes or for more shots. Roles are earned again every season. A new coach starts fresh.</p>
-<p><b>Asking for a trade.</b> Choose a contender, somewhere you'd start, or anywhere. Trust drops sharply. Your team shops you each week before the deadline, or in the summer, and trades you for players with matching salaries. You can take the request back. The AI can also trade you on its own.</p>
+<p><b>Asking for a trade.</b> Choose a contender, somewhere you'd start, or anywhere. Trust drops sharply. After two weeks your team starts shopping you (before the deadline, or in the summer) and brings you up to three deals to pick from; turn them down and it keeps looking. A team won't trade its best player on a long contract unless the relationship has broken down. You can take the request back. The AI can still trade you on its own.</p>
+<p><b>Alerts.</b> Big news about you shows at the top of the Career tab until you dismiss it: a trade, trade rumors, losing your starting spot, a buyout offer. Old alerts clear each new season.</p>
+<p><b>Buyouts.</b> After the trade deadline a rebuilding team may offer to buy out a veteran. You choose: give back part of your salary and sign for the minimum with a contender from the list, or stay.</p>
+<p><b>Season goals.</b> Three targets set on opening night (points, a team result, and an honor or a role goal). Each one you meet builds the coach's trust and raises what teams will pay you in your next free agency; misses cost a little trust.</p>
+<p><b>Awards race.</b> After ten games, the Career tab shows where you'd finish if the season ended today: MVP, All-Star (rank in your conference), All-NBA, and Rookie of the Year, Sixth Man or Defensive Player when you're in the running.</p>
+<p><b>Training so far.</b> During the season the training card shows how many games of work you've put into each skill and roughly what this summer's growth looks like at your age.</p>
+<p><b>Milestones.</b> Round numbers (10,000 points and so on) and the real legends you pass on the all-time points list show in your story, and the Career tab shows the next ones.</p>
+<p><b>The Hall of Fame.</b> When you retire, the voters' verdict comes right away (as of four years later), along with any team that retires your jersey. The bar is set like the league's own Hall of Fame: about the top 4% of long careers at your position.</p>
 <p><b>Legacy.</b> A score built from your honors, titles and career totals, ranked against the real all-time top 500, scored the same way on their real careers (MVP 12, All-NBA 5/3/2, DPOY 4, title 4, All-Star 1.5 and so on; ABA honors 75%). Tap "How the score adds up" for the breakdown and the legends around you.</p>
-<p><b>Olympics.</b> From 1992, every four years (Tokyo in 2021). Your hometown decides your country: Team USA takes about the best twelve Americans; other countries have to qualify first, then want any NBA player. Play for a shot at a medal (with a small injury risk) or rest. Medals show on your record but don't count toward legacy. Real players play for the USA.</p>
+<p><b>Olympics.</b> From 1992, every four years (Tokyo in 2021). Your hometown decides your country: Team USA takes about the best twelve Americans; other countries have to qualify first, then want any NBA player. Play for a shot at a medal (with a small injury risk) or rest. Medals show on your record but don't count toward legacy. A real player plays for his own country if he's on the international list (Dirk for Germany, Luka for Slovenia); you can change it on the setup screen.</p>
 <p><b>Retiring.</b> After any season you can retire from the Career tab. A serious injury, old age (34 and up) or falling below a playable level can also end your career for you. Retired players go into the Hall of Fame race four years later.</p>
 <p><b>Coming later:</b> playing your games in arcade mode.</p>`},
 { id: 'eras', t: 'Rules by era', tabs: [], b: `
@@ -5792,7 +6022,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-15a';
+const APP_VERSION = '2026-11-15b';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -6989,6 +7219,7 @@ function cSetup() {
     const sel = list.find(x => x.name === cr.real);
     h += `<section class="card"><h3>The real ${cr.year} class</h3>
       <label class="fld">Player<select id="cr-real">${list.map(x => `<option value="${esc(x.name)}"${x.name === cr.real ? ' selected' : ''}>#${x.pk} ${esc(x.name)} · ${esc(x.tm)}${x.college ? ' · ' + esc(x.college) : ''}</option>`).join('')}</select></label>
+      <label class="fld">Olympic country<select id="cr-nat">${HC.countryList().map(n => `<option${n === (cr.nat || HC.realCountry(sel.name)) ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
       ${sel.played ? `<p class="small">You take over his career at the ${cr.year} draft. His talent is his real talent: his ratings and ceiling come from the career he really had. You get drafted wherever the teams in your league take him, and history changes from there.</p>`
         : `<p class="small"><b>${esc(sel.name)} never played in the NBA,</b> so his career is a blank slate. His ceiling comes from how highly he was rated on draft day. Pick his position:</p>
            <div class="seg">${G.POS.map(k => `<button class="${cr.pos === k ? 'on' : ''}" data-act="c-pos" data-id="${k}">${k}</button>`).join('')}</div>`}
@@ -7049,6 +7280,7 @@ function trainingCard() {
   const c = L.career;
   return `<section class="card"><h3>Training focus</h3><p class="small">${esc(HC.FOCUS_TXT[c.focus])} Every game you play counts toward this summer's growth: skills you work on grow faster, and the ones that matter most for your position (★) raise your OVR most.</p>
     <div class="chips wrap">${Object.keys(HC.FOCUS).map(k => `<button class="chip ${c.focus === k ? 'on' : ''}" data-act="c-focus" data-id="${k}">${esc(HC.FOCUS[k])}</button>`).join('')}</div>
+    ${['regular', 'playoffs'].includes(L.phase) ? trainingSoFarTxt() : ''}
     <div class="row"><button class="btn sm ${c.extra ? 'primary' : ''}" data-act="c-extra">${c.extra ? '✓ Extra work on' : 'Extra work off'}</button></div>
     <p class="small">Extra work: 50% more practice and a summer bonus to your focus skill, with a higher injury risk. It helps young players most.</p></section>`;
 }
@@ -7106,7 +7338,7 @@ function offseasonCard(p) {
   const con = p.con ? `${G.money(p.con.sal)} a year through ${SL(p.con.exp)}` : '';
   const head = rookie ? (dr.n ? `Drafted ${HC.ordinal(dr.n)} overall` : 'Undrafted') : `Summer ${L.year + 1}`;
   const txt = rookie ? (dr.n ? `The ${esc(tname(L.teams[dr.tid]))} took you with the ${HC.ordinal(dr.n)} pick${dr.r > 1 ? ` (round ${dr.r})` : ''}.${con ? ` Rookie deal: ${esc(con)}.` : ''}` : 'No team called your name. You will find a team before the season, on a minimum deal if nobody bids.')
-    : c.offers ? 'Your contract is up. Pick a deal above, or test the open market.'
+    : c.offers ? 'Your contract is up. Pick a deal above, or test the open market. If you go to camp without choosing, your agent signs the biggest deal.'
     : t ? `You're with the ${esc(tname(t))}${con ? ` (${esc(con)})` : ''}.` : 'You are a free agent. Teams bid during free agency; if nobody signs you, someone gives you a minimum deal before camp.';
   return `<section class="card hero"><div class="eyebrow">${L.year + 1} offseason</div><h2>${esc(head)}</h2><p>${txt}</p>
     <div class="row"><button class="btn primary" data-act="c-camp">Go to training camp</button>${rookie ? '' : confirmBtn('kRetire', 'Retire', 'danger')}</div></section>`;
@@ -7122,24 +7354,25 @@ function careerSoFar(p) {
   const T = HC.totals(p); if (!T.g) return '';
   const rg = HC.totals(p, true), aw = (p.awards || []).length;
   return `<section class="card"><h3>Career so far</h3><p>${T.seasons} season${T.seasons > 1 ? 's' : ''} · ${num(T.pts)} points (${f1(T.pts / T.g)} a game), ${num(T.reb)} rebounds, ${num(T.ast)} assists${p.rings ? ` · <b>${p.rings} ring${p.rings > 1 ? 's' : ''}</b>` : ''}${aw ? ` · ${aw} honor${aw > 1 ? 's' : ''}` : ''}${medalsTxt() ? ' · Olympics ' + medalsTxt() : ''}</p>
+    ${HC.nextMilestones(L).length ? `<p class="small">Next: ${esc(HC.nextMilestones(L).join(' · '))}.</p>` : ''}
     <p class="small">#${HC.rankAmong(L, 'pts')} in career points among everyone who has played in your league${rg.g ? ` · ${rg.g} playoff games` : ''}. <button class="lnk" data-act="statPlayer" data-id="${p.id}">Full career stats ›</button></p></section>`;
 }
 function cDone() {
   const p = cMe(), c = L.career;
   return `<section class="card hero"><div class="eyebrow">Career over · ${SL(c.done.y)}</div><h2>${esc(p.name)} has retired</h2>
     <p>${esc(perGameTxt(HC.totals(p)))} over ${HC.totals(p).seasons} seasons${p.rings ? `, with ${p.rings} championship${p.rings > 1 ? 's' : ''}` : ''}.</p>
-    <p class="small">The Hall of Fame looks at players four years after they retire.</p>
-    <div class="row">${confirmBtn('reset', 'Start a new career', 'danger')}</div></section>` + legacyCard() + playerCard(p) + feedCard(12);
+
+    <div class="row">${confirmBtn('reset', 'Start a new career', 'danger')}</div></section>` + hofCard() + legacyCard() + playerCard(p) + feedCard(12);
 }
 function cHome() {
   if (!L) return cSetup();
   const p = cMe(), c = L.career; if (!p) return `<section class="card"><p>Your player could not be found in this save.</p><div class="row">${confirmBtn('reset', 'Start a new career', 'danger')}</div></section>`;
   if (c.done) return cDone();
-  let h = '';
+  let h = alertsCard();
   if (ui.box) h += boxCard(ui.box);
   if (c.stage === 'predraft') return h + predraftCard(p) + playerHero(p) + feedCard(4);
-  if (L.phase === 'regular' || L.phase === 'playoffs') h += seasonCard(p) + trainingCard() + (L.phase === 'regular' ? coachCard() : '') + playerHero(p);
-  else if (L.phase === 'season-over') h += seasonOverCard(p) + playerHero(p);
+  if (L.phase === 'regular' || L.phase === 'playoffs') h += seasonCard(p) + goalsCard() + raceCard() + trainingCard() + (L.phase === 'regular' ? coachCard() : '') + playerHero(p);
+  else if (L.phase === 'season-over') h += seasonOverCard(p) + goalsCard() + playerHero(p);
   else if (L.phase === 'offseason') h += cOffersCard() + olyCard() + offseasonCard(p) + summerCard() + (c.drafted && c.drafted.y === L.year + 1 ? draftBoard() : '') + coachCard() + playerHero(p);
   else if (L.phase === 'preseason') h += preseasonCard(p) + devCard() + coachCard() + trainingCard() + playerHero(p);
   return h + legacyCard() + careerSoFar(p) + feedCard(8);
@@ -7246,6 +7479,54 @@ function legacyCard() {
 }
 function medalsTxt() { const M = (L.career.olyLog || []).filter(x => x.medal); return M.length ? M.map(x => `${x.medal === 'gold' ? '🥇' : x.medal === 'silver' ? '🥈' : '🥉'} ${x.S}`).join(' ') : ''; }
 
+
+/* ---------- round three: alerts, deals, buyouts, goals, awards race, milestones, Hall of Fame ---------- */
+function alertsCard() {
+  const c = L.career, A = c.alerts || [];
+  let h = A.length ? `<section class="card alert-card">${A.map((a, i) => `<div class="alert-row"><span>${esc(a.s)}</span><button class="lnk" data-act="c-dismiss" data-id="${i}" aria-label="Dismiss">✕</button></div>`).join('')}</section>` : '';
+  if (c.treq && c.treq.deals && c.treq.deals.length) {
+    h += `<section class="card hero"><div class="eyebrow">Your trade request</div><h2>Pick a trade</h2><p class="small">Your team will make any one of these. Turn them all down and it keeps looking${L.phase === 'regular' ? ' until the deadline' : ''}.</p>
+      <div class="list">${c.treq.deals.map((d, i) => `<button class="pick" data-act="c-deal" data-id="${i}"><b>${esc(tname(L.teams[d.tid]))}</b><span class="small">For ${d.ids.map(id => { const q = L.players[id]; return q ? `${esc(q.pos)} ${esc(q.name)} (${q.ovr})` : '?'; }).join(' and ')} · you'd be: ${esc(d.role)} · ${d.win} wins last season</span></button>`).join('')}</div>
+      <div class="row"><button class="btn" data-act="c-pass">Turn them all down</button></div></section>`;
+  }
+  if (c.buyout) {
+    h += `<section class="card hero"><div class="eyebrow">Buyout offer</div><h2>Join a contender?</h2><p class="small">You give back ${c.buyout.give}% of what you're owed and sign for the minimum with one of these teams for the rest of the season. Or stay put.</p>
+      <div class="list">${c.buyout.dest.map((tid, i) => { const t = L.teams[tid]; return `<button class="pick" data-act="c-bo" data-id="${i}"><b>${esc(tname(t))}</b><span class="small">${rec(t)} · you'd be: ${esc(wouldRoleTxt(tid))}</span></button>`; }).join('')}</div>
+      <div class="row"><button class="btn" data-act="c-nobo">Stay with my team</button></div></section>`;
+  }
+  return h;
+}
+function wouldRoleTxt(tid) { const p = cMe(), r = G.roster(L, tid).filter(q => q.id !== p.id).filter(q => G.eff(q) > G.eff(p)).length; return r < 5 ? 'Starter' : r < 8 ? 'Rotation' : 'Bench'; }
+function goalsCard() {
+  const c = L.career; if (!c.goals || c.goals.y !== L.year) return '';
+  const rows = c.goals.list.map(gl => { const s = HC.goalState(L, gl); return `<div class="goal ${s.ok ? 'ok' : ''}"><span>${s.ok ? '✓' : '○'}</span> ${esc(gl.txt)}${s.v != null ? ` <span class="small">(now ${s.v})</span>` : ''}</div>`; }).join('');
+  return `<section class="card"><h3>Season goals</h3>${rows}<p class="small">Each goal you meet builds trust with the coach and raises what teams will pay you next time you're a free agent.</p></section>`;
+}
+function raceCard() {
+  const p = cMe(), h = p.hist[L.year]; if (!h || (h.g || 0) < 10 || L.phase !== 'regular') return '';
+  const r = G.raceFor(L, p.id); if (!r) return `<section class="card"><h3>Awards race</h3><p class="small">You haven't played enough games to qualify yet.</p></section>`;
+  const t = L.teams[HC.team(L)], ord = HC.ordinal;
+  const lines = [`MVP: ${ord(r.mvp)}`, `All-Star: ${ord(r.allstar)} in the ${t ? t.conf : ''}${r.allstar <= 12 ? ' (on pace to make it)' : r.allstar <= 16 ? ' (on the bubble)' : ''}`,
+    `All-NBA: ${r.allnba ? `on pace for the ${r.allnba === 1 ? 'first' : r.allnba === 2 ? 'second' : 'third'} team` : `outside the teams (${ord(r.allnbaRank)} at your position)`}`];
+  if (r.roy) lines.push(`Rookie of the Year: ${ord(r.roy)}`);
+  if (r.smoy) lines.push(`Sixth Man: ${ord(r.smoy)}`);
+  if (r.dpoy && r.dpoy <= 15) lines.push(`Defensive Player of the Year: ${ord(r.dpoy)}`);
+  return `<section class="card"><h3>Awards race</h3>${lines.map(x => `<div class="small">${esc(x)}</div>`).join('')}<p class="small">If the season ended today, using the same voting the league uses at the end of the year.</p></section>`;
+}
+function trainingSoFarTxt() {
+  const T = HC.trainingSoFar(L); if (!T.games) return '';
+  const work = HC.SK.filter(k => T.work[k]).map(k => `${HC.SK_NAME[k]} ${Math.round(T.work[k])}`).join(', ');
+  const est = HC.SK.map(k => ({ k, v: Math.round(T.est[k] * 10) / 10 })).filter(x => Math.abs(x.v) >= 0.5).sort((a, b) => Math.abs(b.v) - Math.abs(a.v)).slice(0, 4).map(x => `${HC.SK_NAME[x.k]} ${x.v > 0 ? '+' : ''}${x.v}`).join(', ');
+  return `<p class="small"><b>So far:</b> ${T.games} games of work${work ? ` (${esc(work)})` : ''}. ${T.d > 0 ? 'At your age, this summer looks like about' : T.d < 0 ? 'At your age you start to slip: about' : 'At your age, expect little change:'} ${esc(est || 'no change')}${T.d !== 0 ? ', before your summer plan' : ''}.</p>`;
+}
+function hofCard() {
+  const v = L.career.hofV; if (!v) return '';
+  const J = (v.jerseys || []).map(tid => tname(L.teams[tid]));
+  return `<section class="card hero"><div class="eyebrow">Four years later</div><h2>${v.in ? `Hall of Fame, class of ${v.y}${v.first ? ' (first ballot)' : ''}` : 'Not in the Hall of Fame'}</h2>
+    <p class="small">Career score ${v.score} against a bar of about ${v.line} for your position${v.in ? '' : `: ${v.score >= v.line * 0.85 ? 'close, but the voters passed' : 'a good career, short of the bar'}`}.</p>
+    <p>${J.length ? `Jersey retired by the ${esc(J.join(' and the '))}.` : 'No team retired your jersey.'}</p></section>`;
+}
+
 /* ---------- career actions ---------- */
 function careerBusy(msg, f) {
   ui.busy = msg; render();
@@ -7262,7 +7543,7 @@ function careerAct(a, el) {
       const nm = cr.type === 'real' ? cr.real : (cr.name || '').trim();
       if (!nm) { flash('Give your player a name first.'); return; }
       careerBusy(`Playing out the ${cr.year - 1}-${String(cr.year).slice(2)} season before your draft…`, () => {
-        L = HC.careerNew(imp, { type: cr.type, year: cr.year, name: nm, pos: cr.pos, ht: cr.ht, wt: cr.wt, college: cr.college, home: cr.home, ans: cr.ans });
+        L = HC.careerNew(imp, { type: cr.type, year: cr.year, name: nm, pos: cr.pos, ht: cr.ht, wt: cr.wt, college: cr.college, home: cr.home, ans: cr.ans, nat: cr.type === 'real' ? (cr.nat || HC.realCountry(nm)) : null });
         ui.tab = 'home'; ui.box = null; track('career-new-' + cr.year); track('career-' + cr.type);
       });
       return 'async';
@@ -7286,6 +7567,11 @@ function careerAct(a, el) {
     case 'c-endhold': { const e = HC.endHoldout(L); if (e) flash(e); break; }
     case 'c-untreq': { const e = HC.withdrawTrade(L); if (e) flash(e); break; }
     case 'c-leg': ui.legOpen = !ui.legOpen; break;
+    case 'c-dismiss': HC.dismiss(L, id); break;
+    case 'c-deal': { const e = HC.takeDeal(L, +id); flash(e || (L.career.feed[0] && L.career.feed[0].s)); window.scrollTo(0, 0); break; }
+    case 'c-pass': { const e = HC.passDeals(L); if (e) flash(e); break; }
+    case 'c-bo': { const e = HC.acceptBuyout(L, +id); flash(e || (L.career.feed[0] && L.career.feed[0].s)); window.scrollTo(0, 0); break; }
+    case 'c-nobo': { const e = HC.declineBuyout(L); if (e) flash(e); break; }
     default: return;
   }
 }
@@ -7300,8 +7586,9 @@ function careerConfirm(id) {
 function careerChange(t) {
   const cr = ui.cr; if (!cr) return false;
   const v = t.value;
-  if (t.id === 'cr-year') { cr.year = +v; cr.real = null; render(); }
-  else if (t.id === 'cr-real') { cr.real = v; render(); }
+  if (t.id === 'cr-year') { cr.year = +v; cr.real = null; cr.nat = null; render(); }
+  else if (t.id === 'cr-real') { cr.real = v; cr.nat = null; render(); }
+  else if (t.id === 'cr-nat') cr.nat = v;
   else if (t.id === 'cr-ht') { cr.ht = +v; render(); }
   else if (t.id === 'cr-wt') { cr.wt = +v; render(); }
   else if (t.id === 'cr-name') cr.name = v;
