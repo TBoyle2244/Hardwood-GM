@@ -4769,7 +4769,20 @@ function contractOpen(L) {
   }
   cands.sort((a, b) => b.want - a.want).slice(0, 5).forEach(o => { delete o.want; list.push(o); });
   list.forEach(o => { o.role = wouldRole(L, o.tid, p); o.win = Math.round(winPct(L, L.teams[o.tid]) * 82); });
-  c.offers = { y, list, rfa: rfa && wants, from: cur.id, value: roundSal(value, y), opt: !!opt };
+  const isRfa = rfa && wants, own = list.find(x => x.tid === cur.id && x.kind === 'resign');
+  if (isRfa && own) {
+    // offer sheets: the more another team pays over your team's own offer, the less likely your team matches
+    list.forEach(o => {
+      if (o.tid === cur.id) return;
+      const over = o.sal / own.sal, tax = H.taxLine(y), after = H.payroll(L, cur.id, y) + o.sal;
+      let mp = 0.45 - Math.max(0, over - 1) * 0.9 + (H.spends(L, cur.id) ? 0.1 : 0) - (tax && after > tax ? 0.2 : 0) + ((c.rel || 55) - 55) / 200;
+      o.mp = Math.round(clamp(mp, 0.05, 0.75) * 100) / 100;
+    });
+    // the qualifying offer: one year now, unrestricted next summer
+    const qo = roundSal(Math.min(own.sal * 0.85, Math.max(H.minSalary(y) * 1.25, H.salFor(p, y - 1) * 1.25 || 0)), y);
+    list.push({ tid: cur.id, sal: qo, yrs: 1, kind: 'qo', note: 'Sign the qualifying offer', role: wouldRole(L, cur.id, p), win: Math.round(winPct(L, cur) * 82) });
+  }
+  c.offers = { y, list, rfa: isRfa && !!own, from: cur.id, value: roundSal(value, y), opt: !!opt };
   if (list.length) feed(L, `Your agent has ${list.length} offer${list.length > 1 ? 's' : ''} for you. He says you're worth about ${H.money(c.offers.value)} a year.`, 'con');
 }
 function sign(L, o) {
@@ -4778,10 +4791,12 @@ function sign(L, o) {
   if (p.con && H.onBooks(p, y)) H.endContractAt(p, y);
   let tid = o.tid, sal = o.sal, yrs = o.yrs;
   // restricted free agency: your team can match another team's offer sheet
-  if (c.offers.rfa && tid !== cur) {
-    const mine = c.offers.list.find(x => x.tid === cur && x.kind === 'resign');
-    if (mine && Math.random() < (mine.sal >= sal * 0.8 ? 0.65 : 0.3)) { feed(L, `The ${teamName(L, cur)} matched the ${L.teams[tid].abbr} offer sheet. You stay.`, 'con'); tid = cur; }
+  c.last = null;
+  if (c.offers.rfa && tid !== cur && o.mp != null) {
+    if (Math.random() < o.mp) { const other = L.teams[tid]; c.last = `The ${teamName(L, cur)} matched the ${other.city} offer sheet (${Math.round(o.mp * 100)}% chance). You stay, at ${H.money(sal)} a year for ${yrs} year${yrs > 1 ? 's' : ''}.`; feed(L, c.last, 'con'); tid = cur; }
+    else { c.last = `The ${teamName(L, cur)} declined to match. You're headed to the ${teamName(L, tid)}!`; feed(L, c.last, 'con'); }
   }
+  if (o.kind === 'qo') { p.team = cur; H.setContract(p, sal, y, 1); c.offers = null; c.tid = cur; c.last = `You signed the qualifying offer: one year at ${H.money(sal)}. Next summer you're an unrestricted free agent.`; feed(L, c.last, 'con'); p.yrs = Math.max(p.yrs || 0, 4); return null; }
   if (tid !== cur && cur >= 0) { const T = L.teams[cur]; if (T.dc) T.dc = T.dc.filter(x => x !== p.id); p.prevTeam = cur; }
   p.team = tid; H.setContract(p, sal, y, yrs); delete p.bought;
   if (tid === cur) { feed(L, `${p.name} signed a ${yrs}-year, ${H.money(sal)}-a-year deal to stay with the ${teamName(L, tid)}.`, 'con'); c.tid = tid; }
@@ -5689,7 +5704,7 @@ const HELP = [
 <li><b>The season.</b> Play one game at a time, a week, or straight to the playoffs. Your box score line is saved after every game (Games tab). Pick a <b>training focus</b> any time: every game you play counts toward that skill's growth next summer. Extra work speeds it up and raises the injury risk.</li>
 </ol>
 <p><b>Skills and OVR.</b> Six skills: shooting, inside scoring, playmaking, rebounding, defense, athleticism. Each position has its own mix (★ marks the skills that count most for yours). OVR is the weighted average. Your skills also shape your stat line: a better shooter takes and makes more shots, a better passer gets more assists. Training the ★ skills raises OVR fastest.</p>
-<p><b>Contracts.</b> When your contract is up (or you hold a player option), your agent brings you offers: your team's (if it still wants you) and up to five others, each with the money, the years, the role you'd have and last season's wins. Teams need cap space, the mid-level exception (from 1999) or a minimum deal to bid. Pick one, or test the open market and take what free agency brings. A restricted free agent's team can match (1981-87, and on early deals later). If you go to camp without choosing, your agent takes the biggest deal. You can't be cut, and if nobody signs you, a team gives you a minimum deal before camp.</p>
+<p><b>Contracts.</b> When your contract is up (or you hold a player option), your agent brings you offers: your team's (if it still wants you) and up to five others, each with the money, the years, the role you'd have and last season's wins. Teams need cap space, the mid-level exception (from 1999) or a minimum deal to bid. Pick one, or test the open market and take what free agency brings. Early in your career (1981-87 always, later while you have under four seasons) you are a restricted free agent: other teams' deals are offer sheets your team can match, and each offer shows the odds (the more a team pays over your team's offer, the less likely the match). Signing the one-year qualifying offer makes you an unrestricted free agent the next summer. If you go to camp without choosing, your agent takes the biggest deal. You can't be cut, and if nobody signs you, a team gives you a minimum deal before camp.</p>
 <p><b>Raises and holdouts.</b> Clearly underpaid (and not on a rookie-scale deal)? Ask for a raise once a year. Turned down, you can hold out: you miss games until the team gives in or you report. Holding out costs trust.</p>
 <p><b>The coach.</b> The Coach and front office card shows his trust in you (0-100). It rises when you win, play well and accept your role, and falls when he turns down your demands, you hold out or ask out. With enough trust and a strong enough case you can ask to start, for more minutes or for more shots. Roles are earned again every season. A new coach starts fresh.</p>
 <p><b>Asking for a trade.</b> Choose a contender, somewhere you'd start, or anywhere. Trust drops sharply. Your team shops you each week before the deadline, or in the summer, and trades you for players with matching salaries. You can take the request back. The AI can also trade you on its own.</p>
@@ -5777,7 +5792,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-14b';
+const APP_VERSION = '2026-11-15a';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7176,11 +7191,13 @@ function cOffersCard() {
   const c = L.career, O = c.offers; if (!O) return '';
   const p = cMe(), cur = L.teams[O.from];
   const rows = O.list.map((o, i) => { const t = L.teams[o.tid];
-    return `<button class="pick" data-act="c-offer" data-id="${i}"><b>${esc(tname(t))}${o.kind === 'opt' ? ': player option' : o.kind === 'resign' ? (O.opt ? ': opt out, new deal' : ': re-sign') : ''}</b>
-      <span class="small">${G.money(o.sal)} a year for ${o.yrs} year${o.yrs > 1 ? 's' : ''} · ${esc(o.role)} · ${o.win} wins last season</span></button>`; }).join('');
+    const mw = o.mp == null ? '' : o.mp >= 0.6 ? 'likely to match' : o.mp >= 0.35 ? 'might match' : 'unlikely to match';
+    return `<button class="pick" data-act="c-offer" data-id="${i}"><b>${esc(tname(t))}${o.kind === 'opt' ? ': player option' : o.kind === 'qo' ? ': qualifying offer' : o.kind === 'resign' ? (O.opt ? ': opt out, new deal' : ': re-sign') : O.rfa ? ': offer sheet' : ''}</b>
+      <span class="small">${G.money(o.sal)} a year for ${o.yrs} year${o.yrs > 1 ? 's' : ''} · ${esc(o.role)} · ${o.win} wins last season${o.kind === 'qo' ? ' · unrestricted free agent next summer' : ''}</span>
+      ${mw ? `<span class="small ${o.mp >= 0.6 ? 'bad' : o.mp >= 0.35 ? '' : 'good'}">${esc(cur.city)} is ${mw} (${Math.round(o.mp * 100)}%). If they match, you stay with them on this deal.</span>` : ''}</button>`; }).join('');
   const notes = [];
   if (O.opt) notes.push('You hold a player option: pick it up for one more year at your old salary, or opt out and take a new deal.');
-  if (O.rfa) notes.push(`You are a restricted free agent: if you sign somewhere else, the ${esc(tname(cur))} can match the offer and keep you.`);
+  if (O.rfa) notes.push(`<b>You are a restricted free agent.</b> Another team's deal is an offer sheet: the ${esc(tname(cur))} can match it and keep you on those terms. Each offer shows how likely they are to match. To be sure of leaving next year, sign the one-year qualifying offer.`);
   if (!O.list.some(x => x.tid === O.from)) notes.push(`The ${esc(tname(cur))} did not make you an offer.`);
   return `<section class="card hero"><div class="eyebrow">Your agent · ${L.year + 1} free agency</div><h2>${O.list.length ? 'You have offers' : 'No offers yet'}</h2>
     <p>Your agent says you're worth about <b>${G.money(O.value)}</b> a year. Pick a deal, or turn them all down and let the open market decide (teams bid during free agency; you might get more, less, or only a minimum deal before camp).</p>
@@ -7262,7 +7279,7 @@ function careerAct(a, el) {
     case 'c-po': careerBusy('Simulating the playoffs…', () => { HC.simPlayoffs(L); window.scrollTo(0, 0); }); return 'async';
     case 'c-off': careerBusy('The draft and free agency…', () => { const e = HC.startDraft(L, imp) || HC.runDraft(L, imp); if (e) flash(e); window.scrollTo(0, 0); }); return 'async';
     case 'c-gy': ui.cgYear = +id; break;
-    case 'c-offer': { const e = HC.chooseOffer(L, +id); if (e) flash(e); track('career-signed'); break; }
+    case 'c-offer': { const e = HC.chooseOffer(L, +id); flash(e || L.career.last || (L.career.feed[0] && L.career.feed[0].s) || 'Signed.'); window.scrollTo(0, 0); track('career-signed'); break; }
     case 'c-oly': { const e = HC.olympics(L, id === '1'); if (e) flash(e); break; }
     case 'c-ask': { const e = HC.ask(L, id); if (e) flash(e); break; }
     case 'c-raise': { const e = HC.askRaise(L); if (e) flash(e); break; }
