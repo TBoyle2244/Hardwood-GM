@@ -4479,9 +4479,15 @@ function careerNew(imp, o) {
   if (L.phase === 'dispersal') { H.beginDispersal(L); H.endDispersal(L); }
   L.user = NONE; L.decisions = []; L.decided = {}; L.erving = null; L.job = null;
   H.aiStyles(L, false);
+  const err = H.startRegular(L, imp); if (err) throw new Error(err);
+  attach(L, imp, o, D);
+  return L;
+}
+// Put a new player into the class for draft D (L.cls), then play out the season before that draft.
+function attach(L, imp, o, D) {
   L.career = { v: 2, rel: 55, rings: [], nRings: 0, type: o.type === 'real' ? 'real' : 'created', y0: D, focus: 'bal', extra: false, emph: {}, summer: null, log: {}, highs: {}, feed: [], stage: 'predraft', dev: {}, seen: [] };
   const c = L.career;
-  const err = H.startRegular(L, imp); if (err) throw new Error(err);
+  if (!L.cls || L.cls.y !== D) throw new Error(`The ${D} draft class isn't ready.`);
   let p;
   if (c.type === 'real') {
     const want = H.cleanName(o.name || '').toLowerCase();
@@ -4505,7 +4511,7 @@ function careerNew(imp, o) {
     const b = buildCreated(D, o, false);
     const college = (o.college || '').trim() || (b.age <= 18 ? 'High school' : 'Unknown');
     p = H.mkPlayer(L, { name: (o.name || '').trim() || 'Rookie Player', pos: b.pos, age: b.age, ovr: b.ovr, pot: b.pot, team: -3, yrs: 0, college, real: false, scout: b.scout, reveal: D });
-    p.sk = b.sk; p.ht = b.ht; p.wt = b.wt; p.unsc = true;
+    p.sk = b.sk; p.ht = b.ht; p.wt = b.wt; p.unsc = L.phase === 'regular';   // graded with the class during the season
     if (o.home) p.home = String(o.home).trim().slice(0, 40);
     const hb = H.PROF[b.pos]; c.base = Object.assign({}, hb);
     c.dev0 = {}; SK.forEach(k => c.dev0[k] = 0); c.adj = 0; c.adj = b.ovr - ovrFrom(c, p); c.ovr0 = 62;
@@ -4524,7 +4530,42 @@ function careerNew(imp, o) {
   while (L.phase === 'regular') H.simDay(L);
   while (L.phase === 'playoffs') H.simPlayoffDay(L);
   c.stage = 'predraft';
-  return L;
+}
+// The draft a new player in this league would enter: the next class not yet drafted.
+function nextDraftYear(L) { return ['season-over', 'preseason', 'regular', 'playoffs'].includes(L.phase) ? L.year + 1 : L.year + 2; }
+function careerSummary(L) {
+  const c = L.career, p = me(L), g = legacy(L);
+  return { pid: c.pid, name: p ? p.name : '?', type: c.type, y0: c.y0, end: c.done ? c.done.y : L.year, legacy: g ? g.score : 0, rank: g ? g.rank : null, hof: c.hofV ? (c.hofV.in ? c.hofV.y : 0) : null, rings: p ? p.rings || 0 : 0 };
+}
+// After retiring: a new player in the same league, entering the next draft (the league plays on to get there).
+function careerContinue(L, imp, o) {
+  const c = L.career; if (!c || !c.done) return 'Your current player is still playing.';
+  const keep = careerSummary(L);
+  if (L.phase === 'draft') { while (H.onClock(L) !== null) H.aiPick(L); H.endDraft(L, imp); }
+  if (L.phase === 'offseason') { if (L.fa && L.fa.era === 'ufa') { let g = 0; while (!H.advanceFA(L) && g++ < 10); } const e = H.startNextSeason(L); if (e) return e; }
+  if (L.phase === 'preseason') { const e = H.startRegular(L, imp); if (e) return e; }
+  if (!['regular', 'season-over'].includes(L.phase) || !L.cls) return 'The league is not at a point where a new player can enter the draft.';
+  const D = L.cls.y;
+  (L.careers = L.careers || []).push(keep);
+  attach(L, imp, Object.assign({}, o, { year: D }), D);
+  return null;
+}
+// After retiring: run a team. The league becomes a GM league with you in the front office.
+function gmJobs(L) {
+  const p = me(L), last = p ? Object.keys(p.hist).map(Number).sort((a, b) => b - a).map(y => p.hist[y].tm).find(x => x != null) : null;
+  const worst = L.teams.slice().sort((a, b) => winPct(L, a) - winPct(L, b)).map(t => t.id).filter(id => id !== last).slice(0, 3);
+  return (last != null ? [last] : []).concat(worst);
+}
+function careerToGM(L, tid) {
+  const c = L.career; if (!c || !c.done) return 'Retire first.';
+  if (!gmJobs(L).includes(tid)) return 'That job is not open.';
+  const keep = careerSummary(L); (L.careers = L.careers || []).push(keep);
+  delete L.career;
+  L.user = tid; L.job = { sec: 60, hist: [] }; L.decisions = []; L.decided = L.decided || {}; L.offers = []; L.fired = null; L.plan = null; L.diff = L.diff || 'pro';
+  const t = L.teams[tid]; t.coach = t.coach || { off: 'bal', def: 'man', tempo: 50, rot: 9, youth: false };
+  H.ensureLeague(L);
+  H.addNews(L, `${keep.name} retired as a player and is the new general manager of the ${t.city} ${t.name}.`);
+  return null;
 }
 
 /* ---------- hooks: what the engine tells career mode ---------- */
@@ -5357,7 +5398,7 @@ function rankAmong(L, key) {
   return better + 1;
 }
 
-const API = { alive, powerOk, askToTrade, takePower, passPower, powerStatus, judgePower, alertMe, dismiss, acceptBuyout, declineBuyout, trainingSoFar, goalState, nextMilestones, takeDeal, passDeals, realCountry, countryList, contractOpen, chooseOffer, testMarket, autoSign, raiseOk, askRaise, holdOut, endHoldout, coachName, relWord, askOk, ask, TRADE_PREF, requestTrade, withdrawTrade, tryTrade,
+const API = { nextDraftYear, careerContinue, gmJobs, careerToGM, careerSummary, alive, powerOk, askToTrade, takePower, passPower, powerStatus, judgePower, alertMe, dismiss, acceptBuyout, declineBuyout, trainingSoFar, goalState, nextMilestones, takeDeal, passDeals, realCountry, countryList, contractOpen, chooseOffer, testMarket, autoSign, raiseOk, askRaise, holdOut, endHoldout, coachName, relWord, askOk, ask, TRADE_PREF, requestTrade, withdrawTrade, tryTrade,
   legacy, aroundMe, LEGACY_NAME, legends, olympicSummers, olympicsOpen, olympics, country, NONE, SK, SK_NAME, SK_W, SK_BASE, HT, WT, htText, TIERS, questions, answerOpts, buildCreated, draftYears, realClass, careerNew, me, team, feed,
   onGame, startSeason, simDays, nextGame, simWeek, simRegular, simPlayoffs, startDraft, runDraft, mockSlot, nextSeason, retire, setFocus, setExtra, setSummer,
   FOCUS, FOCUS_TXT, SUMMER, role, seasonLine, totals, rankAmong, skills, watch, ensureTeam, ordinal, recalc, ovrFrom, devOf };
@@ -6028,6 +6069,7 @@ const HELP = [
 <p><b>Legacy.</b> A score built from your honors, titles and career totals, ranked against the real all-time top 500, scored the same way on their real careers (MVP 12, All-NBA 5/3/2, DPOY 4, title 4, All-Star 1.5 and so on; ABA honors 75%). Tap "How the score adds up" for the breakdown and the legends around you.</p>
 <p><b>Olympics.</b> From 1992, every four years (Tokyo in 2021). Your hometown decides your country: Team USA takes about the best twelve Americans; other countries have to qualify first, then want any NBA player. Play for a shot at a medal (with a small injury risk) or rest. Medals show on your record but don't count toward legacy. A real player plays for his own country if he's on the international list (Dirk for Germany, Luka for Slovenia); you can change it on the setup screen.</p>
 <p><b>Retiring.</b> After any season you can retire from the Career tab. A serious injury, old age (34 and up) or falling below a playable level can also end your career for you. Retired players go into the Hall of Fame race four years later.</p>
+<p><b>After you retire.</b> The retired screen offers three ways forward. <b>Play a new player</b> in the same league: he enters the next draft (right away if the season just ended; otherwise the league plays on to get there), and your earlier players stay in the record books and in "Your players in this league". <b>Become a general manager</b>: pick from your old team and the three teams with the worst records; the league turns into a GM league with you running that team (it replaces any GM league you had saved). Or <b>start over</b> with a new league.</p>
 <p><b>Coming later:</b> playing your games in arcade mode.</p>`},
 { id: 'eras', t: 'Rules by era', tabs: [], b: `
 <ul>
@@ -6109,7 +6151,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-15e';
+const APP_VERSION = '2026-11-15f';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7290,12 +7332,18 @@ function skillBars(sk, pos, delta) {
     return `<div class="bar skb"><span class="bar-l">${esc(HC.SK_NAME[k])}${w[k] >= 0.2 ? ' ★' : ''}</span><span class="bar-t"><span class="bar-f ${v >= 80 ? 'c-good' : v >= 62 ? 'c-mid' : 'c-low'}" style="width:${Math.max(4, Math.min(100, (v - 25) / 0.7))}%"></span></span><span class="bar-v">${v}${d ? ` <span class="${d > 0 ? 'good' : 'bad'} small">${d > 0 ? '+' : ''}${d}</span>` : ''}</span></div>`; }).join('');
 }
 function cSetup() {
-  let h = modeSeg();
+  const cont = !!(L && L.career && L.career.done && ui.cr && ui.cr.cont);
+  let h = cont ? '' : modeSeg();
   if (!BUNDLE && !BUNDLE_ERR) return h + `<section class="card hero"><div class="eyebrow">Career mode</div><h2>Loading the history books…</h2><p>Every roster and draft since 1975-76 loads the first time.</p></section>`;
   if (!BUNDLE) return h + `<section class="card"><h3>Career mode needs the built-in data</h3><p class="small">${esc(BUNDLE_ERR || '')} Connect to the internet once and reopen the app.</p></section>`;
   const { cr, years } = crState(), X = IX();
+  if (cont) { cr.year = HC.nextDraftYear(L); if (!HC.realClass(X, cr.year).length) cr.type = 'created'; }
   const yOpts = years.map(v => `<option value="${v}"${v === cr.year ? ' selected' : ''}>${v} draft${v === 1977 ? ' (first after the merger)' : ''}</option>`).join('');
-  h += `<section class="card hero"><div class="eyebrow">Player career</div><h2>Start your career</h2>
+  h += cont ? `<section class="card hero"><div class="eyebrow">Same league, new player</div><h2>The ${cr.year} draft</h2>
+    <p>Your new player enters the next draft in this league: the ${cr.year} class. ${L.phase === 'season-over' ? 'It is right after this season.' : `The league plays on until then (a few seconds).`} Everything your last player did stays in the record books.</p>
+    <div class="row"><button class="btn sm" data-act="c-cancel">Back</button></div>
+    ${HC.realClass(X, cr.year).length ? `<div class="seg">` : '<div class="seg" style="display:none">'}`
+    : `<section class="card hero"><div class="eyebrow">Player career</div><h2>Start your career</h2>
     <p>You are one player, from draft night to retirement. Every team, yours included, is run by the computer. You choose how you train, and the league plays out around you with the real players of your era.</p>
     <label class="fld">Draft year<select id="cr-year">${yOpts}</select></label>
     <div class="seg"><button class="${cr.type === 'created' ? 'on' : ''}" data-act="c-type" data-id="created">Create a player</button><button class="${cr.type === 'real' ? 'on' : ''}" data-act="c-type" data-id="real">Be a real player</button></div></section>`;
@@ -7337,7 +7385,7 @@ function cSetup() {
     ${kvBox([['OVR now', rating(b.ovr)], ['Ceiling', rating(b.pot)]])}
     ${skillBars(b.sk, pos)}
     <p class="small">★ = counts most toward OVR for a ${esc(pos)}. Draft stock: ${esc(pickRange(b.scoutMid, b.wide))}${cr.year < 1985 ? ' (more rounds in this era, so later picks are possible)' : ''}.</p>
-    <p class="small">When you declare, a little luck moves your ceiling and your scouting grade. Then the ${cr.year - 1}-${String(cr.year).slice(2)} season plays out while you wait for the draft (a few seconds).</p>
+    <p class="small">When you declare, a little luck moves your ceiling and your scouting grade.${cont && L.phase === 'season-over' ? '' : ` Then the ${cr.year - 1}-${String(cr.year).slice(2)} season plays out while you wait for the draft (a few seconds).`}</p>
     <div class="row"><button class="btn primary" data-act="c-new">Declare for the ${cr.year} draft</button></div></section>`;
   return h;
 }
@@ -7445,12 +7493,27 @@ function careerSoFar(p) {
     ${HC.nextMilestones(L).length ? `<p class="small">Next: ${esc(HC.nextMilestones(L).join(' · '))}.</p>` : ''}
     <p class="small">#${HC.rankAmong(L, 'pts')} in career points among everyone who has played in your league${rg.g ? ` · ${rg.g} playoff games` : ''}. <button class="lnk" data-act="statPlayer" data-id="${p.id}">Full career stats ›</button></p></section>`;
 }
+function nextCard() {
+  const D = HC.nextDraftYear(L), jobs = HC.gmJobs(L), last = jobs[0];
+  return `<section class="card hero"><div class="eyebrow">What's next</div><h2>Keep going</h2>
+    <h3>Play a new player</h3><p class="small">Same league, same history: your new player enters the ${D} draft${L.phase === 'season-over' ? ', right after this season' : ' (the league plays on to get there)'}.</p>
+    <div class="row"><button class="btn primary" data-act="c-next">Create the next player</button></div>
+    <h3>Become a general manager</h3><p class="small">Run a team in this league, from ${['season-over', 'draft'].includes(L.phase) ? 'this draft' : L.phase === 'offseason' ? 'this summer' : 'this season'} on. Openings:${ui.hasGM ? ' <b>this replaces your saved GM league.</b>' : ''}</p>
+    <div class="row">${jobs.map(tid => confirmBtn('kGM-' + tid, tname(L.teams[tid]) + (tid === last ? ' (your old team)' : ''))).join('')}</div>
+    <h3>Start over</h3><p class="small">A brand-new league and a new player.</p>
+    <div class="row">${confirmBtn('reset', 'Start a new career', 'danger')}</div></section>`;
+}
+function pastCareers() {
+  const C = L.careers || []; if (!C.length) return '';
+  return `<section class="card"><h3>Your players in this league</h3><div class="list">${C.map(x => `<div class="pl"><div class="pl-main"><div class="pl-name">${esc(x.name)}<div class="pl-sub">${x.y0}-${x.end + 1} · legacy ${x.legacy}${x.rings ? ` · ${x.rings} ring${x.rings > 1 ? 's' : ''}` : ''}${x.hof ? ` · Hall of Fame ${x.hof}` : ''}</div></div></div></div>`).join('')}</div></section>`;
+}
 function cDone() {
+  if (ui.cr && ui.cr.cont) return cSetup();
   const p = cMe(), c = L.career;
   return `<section class="card hero"><div class="eyebrow">Career over · ${SL(c.done.y)}</div><h2>${esc(p.name)} has retired</h2>
     <p>${esc(perGameTxt(HC.totals(p)))} over ${HC.totals(p).seasons} seasons${p.rings ? `, with ${p.rings} championship${p.rings > 1 ? 's' : ''}` : ''}.</p>
 
-    <div class="row">${confirmBtn('reset', 'Start a new career', 'danger')}</div></section>` + hofCard() + legacyCard() + playerCard(p) + feedCard(12);
+    </section>` + hofCard() + nextCard() + legacyCard() + pastCareers() + playerCard(p) + feedCard(12);
 }
 function cHome() {
   if (!L) return cSetup();
@@ -7458,12 +7521,12 @@ function cHome() {
   if (c.done) return cDone();
   let h = alertsCard();
   if (ui.box) h += boxCard(ui.box);
-  if (c.stage === 'predraft') return h + predraftCard(p) + playerHero(p) + feedCard(4);
+  if (c.stage === 'predraft') return h + predraftCard(p) + playerHero(p) + feedCard(4) + pastCareers();
   if (L.phase === 'regular' || L.phase === 'playoffs') h += seasonCard(p) + goalsCard() + raceCard() + trainingCard() + (L.phase === 'regular' ? coachCard() : '') + playerHero(p);
   else if (L.phase === 'season-over') h += seasonOverCard(p) + goalsCard() + playerHero(p);
   else if (L.phase === 'offseason') h += cOffersCard() + olyCard() + offseasonCard(p) + summerCard() + (c.drafted && c.drafted.y === L.year + 1 ? draftBoard() : '') + coachCard() + playerHero(p);
   else if (L.phase === 'preseason') h += preseasonCard(p) + devCard() + coachCard() + trainingCard() + playerHero(p);
-  return h + legacyCard() + careerSoFar(p) + feedCard(8);
+  return h + legacyCard() + careerSoFar(p) + feedCard(8) + pastCareers();
 }
 
 /* ---------- game log, team, data ---------- */
@@ -7647,6 +7710,13 @@ function careerAct(a, el) {
       const cr = ui.cr; ['name', 'college', 'home'].forEach(k => { const el = $('#cr-' + k); if (el) cr[k] = el.value; });
       const nm = cr.type === 'real' ? cr.real : (cr.name || '').trim();
       if (!nm) { flash('Give your player a name first.'); return; }
+      if (cr.cont && L && L.career && L.career.done) {
+        careerBusy(`Getting the league to the ${cr.year} draft…`, () => {
+          const e = HC.careerContinue(L, imp, { type: cr.type, name: nm, pos: cr.pos, ht: cr.ht, wt: cr.wt, college: cr.college, home: cr.home, ans: cr.ans, nat: cr.type === 'real' ? (cr.nat || HC.realCountry(nm)) : null });
+          if (e) flash(e); else { ui.cr = null; ui.tab = 'home'; ui.box = null; track('career-next-player'); }
+        });
+        return 'async';
+      }
       careerBusy(`Playing out the ${cr.year - 1}-${String(cr.year).slice(2)} season before your draft…`, () => {
         L = HC.careerNew(imp, { type: cr.type, year: cr.year, name: nm, pos: cr.pos, ht: cr.ht, wt: cr.wt, college: cr.college, home: cr.home, ans: cr.ans, nat: cr.type === 'real' ? (cr.nat || HC.realCountry(nm)) : null });
         ui.tab = 'home'; ui.box = null; track('career-new-' + cr.year); track('career-' + cr.type);
@@ -7673,6 +7743,8 @@ function careerAct(a, el) {
     case 'c-untreq': { const e = HC.withdrawTrade(L); if (e) flash(e); break; }
     case 'c-leg': ui.legOpen = !ui.legOpen; break;
     case 'c-dismiss': HC.dismiss(L, id); break;
+    case 'c-next': ui.cr = { type: 'created', pos: 'SG', name: '', college: '', home: '', ans: {}, cont: true }; window.scrollTo(0, 0); break;
+    case 'c-cancel': ui.cr = null; break;
     case 'c-pw': { const e = HC.askToTrade(L, +(ui.pwSel != null ? ui.pwSel : id)); flash(e || (L.career.feed[0] && L.career.feed[0].s)); ui.pwOpen = false; window.scrollTo(0, 0); break; }
     case 'c-pwdeal': { const e = HC.takePower(L, +id); flash(e || (L.career.feed[0] && L.career.feed[0].s)); window.scrollTo(0, 0); break; }
     case 'c-pwpass': { const e = HC.passPower(L); if (e) flash(e); break; }
@@ -7688,6 +7760,12 @@ function careerConfirm(id) {
   if (id === 'kRetire') { const e = HC.retire(L); flash(e || 'You have retired. Thanks for the memories.'); track('career-retired'); return true; }
   if (id === 'kMarket') { const e = HC.testMarket(L); flash(e || 'You turned everything down. Teams bid during free agency.'); return true; }
   if (id === 'kHold') { const e = HC.holdOut(L); flash(e || 'You are holding out.'); return true; }
+  if (id.startsWith('kGM-')) {
+    const e = HC.careerToGM(L, +id.slice(4)); if (e) { flash(e); return true; }
+    DB.set('career', null); ui.mode = 'gm'; ui.tab = 'home'; ui.hasGM = true; ui.box = null; ui.cr = null;
+    flash(`You're the general manager of the ${tname(L.teams[L.user])}. Your career league is now your GM league.`); track('career-to-gm');
+    return true;
+  }
   if (id.startsWith('kTr-')) { const e = HC.requestTrade(L, id.slice(4)); flash(e || 'You asked for a trade.'); track('career-trade-request'); return true; }
   return false;
 }
@@ -7711,8 +7789,10 @@ function careerChange(t) {
 async function switchMode(m) {
   m = m === 'career' ? 'career' : 'gm'; if (m === ui.mode && !(L && !!L.career !== (m === 'career'))) { render(); return; }
   clearTimeout(saveT); if (L) DB.set(saveKey(), L);
+  if (L && !L.career) ui.hasGM = true;
   ui.mode = m; DB.set('mode', m); ui.tab = 'home'; ui.box = null; ui.statPid = null; L = null; render();
   const lg = await DB.get(m === 'career' ? 'career' : 'league');
+  if (m === 'gm') ui.hasGM = !!(lg && lg.teams);
   if (lg && lg.teams) { L = lg; G.ensureLeague(L); }
   track('mode-' + m, true); render();
 }
@@ -7761,7 +7841,7 @@ function act(a, el) {
       if (ui.confirm !== id) { ui.confirm = id; render(); return; }
       ui.confirm = null;
       if (careerConfirm(id)) { /* career mode */ }
-      else if (id === 'reset') { const car = !!(L && L.career); DB.set(saveKey(), null); L = null; ui.tab = 'home'; flash(car ? 'Career deleted. Set up a new one below.' : 'League deleted. Your imported data is still here.'); }
+      else if (id === 'reset') { const car = !!(L && L.career); if (!car) ui.hasGM = false; DB.set(saveKey(), null); L = null; ui.tab = 'home'; flash(car ? 'Career deleted. Set up a new one below.' : 'League deleted. Your imported data is still here.'); }
       else if (id === 'clearImp') { IM = { pg: {}, adv: {}, drafts: {}, future: {} }; flash('Imported data cleared.'); }
       else if (id.startsWith('fire')) { const e = G.fireCoach(L, id.slice(4)); flash(e || 'Coach fired. Hire a replacement before opening night.'); }
       else if (id.startsWith('rls')) { const pid = +id.slice(3); G.release(L, pid, { stretch: true }); ui.open = null; flash(waivedMsg(L.players[pid], true)); }
@@ -7958,7 +8038,7 @@ document.addEventListener('input', e => { if (e.target.id === 'tempo') { const h
   await DB.open();
   const [l, im, mode, cl] = await Promise.all([DB.get('league'), DB.get('imports'), DB.get('mode'), DB.get('career')]);
   if (im && im.pg) IM = Object.assign({ pg: {}, adv: {}, drafts: {}, future: {} }, im);
-  ui.mode = mode === 'career' ? 'career' : 'gm';
+  ui.mode = mode === 'career' ? 'career' : 'gm'; ui.hasGM = !!(l && l.teams);
   const lg = ui.mode === 'career' ? cl : l;
   if (lg && lg.teams) { L = lg; G.ensureLeague(L); }
   render();
