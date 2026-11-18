@@ -2121,13 +2121,8 @@ function whatItTakes(L, partner, get) {
   const max = rules(L.year).rosterMax, inSeason = L.phase === 'regular' || L.phase === 'playoffs', y = capYear(L);
   const mine = roster(L, L.user).map(p => ({ t: 'p', id: p.id, w: Math.max(0.01, playerWeight(p) + contractW(L, partner, p)), p }));
   const picks = teamPicks(L, L.user).map(k => ({ t: 'k', id: k.id, w: pickWeight(L, k), k }));
-  const fits = pkg => {
-    if (!tradeVerdict(L, partner, pkg, get).ok) return false;
-    if (tradeCapMsg(L, L.user, partner, pkg, get) || stepienMsg(L, L.user, pkg, get) || stepienMsg(L, partner, get, pkg)) return false;
-    const mineAfter = roster(L, L.user).length - pkg.players.length + (get.players || []).length, theirAfter = roster(L, partner).length - (get.players || []).length + pkg.players.length;
-    return !(inSeason && (mineAfter > max || theirAfter > max)) && mineAfter >= 5;
-  };
-  const sal = it => it.t === 'p' ? (salFor(it.p, y) || 0) : 0;
+  const byId = (t, id) => (t === 'p' ? mine : picks).find(i => i.id === id);
+  const cost = pkg => pkg.players.reduce((s, id) => s + byId('p', id).w, 0) + pkg.picks.reduce((s, id) => s + byId('k', id).w, 0);   // what it costs you
   const noisy = list => list.map(i => Object.assign({}, i, { r: i.w * (0.3 + Math.random() * 1.4) })).sort((x, z) => z.r - x.r);
   const orders = [
     () => noisy(mine.concat(picks)),
@@ -2135,45 +2130,71 @@ function whatItTakes(L, partner, get) {
     () => noisy(picks).concat(noisy(mine)),
     () => noisy(mine.filter(i => i.p.age <= 25).concat(picks)),
     () => noisy(mine.filter(i => i.p.age >= 28)).concat(noisy(mine.filter(i => i.p.age < 28)))];
-  const found = [], seen = new Set();
-  for (let t = 0; t < 90; t++) {
-    const pkg = { players: [], picks: [] }; let ok = false;
-    for (const it of orders[t % orders.length]()) {
-      if (pkg.players.length + pkg.picks.length >= 5) break;
-      (it.t === 'p' ? pkg.players : pkg.picks).push(it.id);
-      // they can't take back more salary than the rules allow: skip anything that breaks their side
-      if (it.t === 'p' && teamCapMsg(L, partner, get.players || [], pkg.players)) { pkg.players.pop(); continue; }
-      if (fits(pkg)) { ok = true; break; }
+  // one search: packages of yours that the team accepts for gx
+  const search = (gx, tries) => {
+    const fits = pkg => {
+      if (!tradeVerdict(L, partner, pkg, gx).ok) return false;
+      if (tradeCapMsg(L, L.user, partner, pkg, gx) || stepienMsg(L, L.user, pkg, gx) || stepienMsg(L, partner, gx, pkg)) return false;
+      const mineAfter = roster(L, L.user).length - pkg.players.length + (gx.players || []).length, theirAfter = roster(L, partner).length - (gx.players || []).length + pkg.players.length;
+      return !(inSeason && (mineAfter > max || theirAfter > max)) && mineAfter >= 5;
+    };
+    const out = [], seen = new Set();
+    for (let t = 0; t < tries; t++) {
+      const pkg = { players: [], picks: [] }; let ok = false;
+      for (const it of orders[t % orders.length]()) {
+        if (pkg.players.length + pkg.picks.length >= 5) break;
+        (it.t === 'p' ? pkg.players : pkg.picks).push(it.id);
+        // they can't take back more salary than the rules allow: skip anything that breaks their side
+        if (it.t === 'p' && teamCapMsg(L, partner, gx.players || [], pkg.players)) { pkg.players.pop(); continue; }
+        if (fits(pkg)) { ok = true; break; }
+      }
+      if (!ok) continue;
+      // take back anything they don't need, smallest first
+      const all = pkg.players.map(id => byId('p', id)).concat(pkg.picks.map(id => byId('k', id))).sort((x, z) => x.w - z.w);
+      for (const it of all) {
+        const tryPkg = { players: pkg.players.filter(x => !(it.t === 'p' && x === it.id)), picks: pkg.picks.filter(x => !(it.t === 'k' && x === it.id)) };
+        if (n(tryPkg) && fits(tryPkg)) { pkg.players = tryPkg.players; pkg.picks = tryPkg.picks; }
+      }
+      const key = pkg.players.slice().sort().join(',') + '|' + pkg.picks.slice().sort().join(',');
+      if (seen.has(key)) continue; seen.add(key);
+      const v = tradeVerdict(L, partner, pkg, gx), ages = pkg.players.map(id => L.players[id].age);
+      const label = !pkg.players.length ? 'Picks only' : !pkg.picks.length ? (ages.every(a => a <= 25) ? 'Young players' : ages.every(a => a >= 28) ? 'Veterans' : 'Players only') : 'Players and picks';
+      out.push({ label, pkg, get: { players: (gx.players || []).slice(), picks: (gx.picks || []).slice() }, ratio: v.give / Math.max(0.01, v.get * v.ask), cost: cost(pkg) });
     }
-    if (!ok) continue;
-    // take back anything they don't need, smallest first
-    const all = pkg.players.map(id => mine.find(i => i.id === id)).concat(pkg.picks.map(id => picks.find(i => i.id === id))).sort((x, z) => x.w - z.w);
-    for (const it of all) {
-      const tryPkg = { players: pkg.players.filter(x => !(it.t === 'p' && x === it.id)), picks: pkg.picks.filter(x => !(it.t === 'k' && x === it.id)) };
-      if (n(tryPkg) && fits(tryPkg)) { pkg.players = tryPkg.players; pkg.picks = tryPkg.picks; }
-    }
-    const key = pkg.players.slice().sort().join(',') + '|' + pkg.picks.slice().sort().join(',');
-    if (seen.has(key)) continue; seen.add(key);
-    const v = tradeVerdict(L, partner, pkg, get), ages = pkg.players.map(id => L.players[id].age);
-    const label = !pkg.players.length ? 'Picks only' : !pkg.picks.length ? (ages.every(a => a <= 25) ? 'Young players' : ages.every(a => a >= 28) ? 'Veterans' : 'Players only') : 'Players and picks';
-    found.push({ label, pkg, ratio: v.give / Math.max(0.01, v.get * v.ask) });
+    out.sort((x, z) => x.ratio - z.ratio);
+    if (out.length && out[0].ratio <= 2) for (let i = out.length - 1; i >= 0; i--) if (out[i].ratio > 2.2) out.splice(i, 1);
+    return out;
+  };
+  const plain = search(get, 90);
+  // the cheapest few, and different kinds of deal where possible
+  const found = [], kinds = new Set();
+  for (const f of plain) if (!kinds.has(f.label) && found.length < 5) { found.push(f); kinds.add(f.label); }
+  for (const f of plain) if (found.length < 5 && !found.includes(f)) found.push(f);
+  // taking back one of their bad contracts: only when nothing else works, or when it saves you at least 20%
+  const bestCost = plain.length ? Math.min(...plain.map(f => f.cost)) : Infinity;
+  const bad = roster(L, partner).filter(q => !(get.players || []).includes(q.id) && salFor(q, y) && contractW(L, partner, q) < -0.3)
+    .sort((a, b) => contractW(L, partner, a) - contractW(L, partner, b)).slice(0, 4);
+  // with no bad contracts to give, a team blocked by the salary rules can still send back a plain salary
+  const pool = bad.length || plain.length || capFor(y) == null ? bad : roster(L, partner).filter(q => !(get.players || []).includes(q.id) && salFor(q, y)).sort((a, b) => salFor(b, y) - salFor(a, y)).slice(0, 3);
+  const extra = [];
+  for (const q of pool) {
+    const gx = { players: (get.players || []).concat(q.id), picks: (get.picks || []).slice() };
+    const r = search(gx, 45)[0];
+    if (!r || !(r.cost <= bestCost * 0.8) || r.ratio > 1.8) continue;   // no gross overpays dressed up as salary help
+    const yrs = Math.max(0, (q.con.exp || y) - y + 1);
+    r.label += `, taking back ${q.name}`; r.back = { id: q.id, sal: salFor(q, y), yrs, bad: contractW(L, partner, q) < -0.3 };
+    extra.push(r);
   }
-  // the cheapest few, and different kinds of deal where possible; drop gross overpays when there's anything better
-  found.sort((x, z) => x.ratio - z.ratio);
-  if (found.length && found[0].ratio <= 2) for (let i = found.length - 1; i >= 0; i--) if (found[i].ratio > 2.2) found.splice(i, 1);
-  const pickd = [], kinds = new Set();
-  for (const f of found) if (!kinds.has(f.label) && pickd.length < 5) { pickd.push(f); kinds.add(f.label); }
-  for (const f of found) if (pickd.length < 5 && !pickd.includes(f)) pickd.push(f);
-  found.length = 0; pickd.forEach(f => found.push(f));
+  extra.sort((a, b) => a.cost - b.cost).slice(0, 2).forEach(r => { if (found.length >= 5) found.pop(); found.push(r); });
   found.sort((a, b) => a.ratio - b.ratio);
-  const sOut = pkg => pkg.players.reduce((a, id) => a + (salFor(L.players[id], y) || 0), 0);
-  found.forEach(f => { f.salOut = sOut(f.pkg); });
+  found.forEach(f => { f.salOut = f.pkg.players.reduce((a, id) => a + (salFor(L.players[id], y) || 0), 0); });
   let why = 'Try asking for less, or for a player with a bigger salary to match yours.';
   if (!found.length && capFor(y) != null) {
     const big = mine.slice().sort((a, b) => b.w - a.w).slice(0, 3).find(i => tradeVerdict(L, partner, { players: [i.id], picks: [] }, get).ok);
-    if (big) why = `${big.p.name} would be enough for them, but the salary rules block it: a team over the cap can take back at most 125% of the salary it sends, plus $100K. Ask for more salary back (add one of their contracts) to make it work.`;
+    if (big) why = `${big.p.name} would be enough for them, but the salary rules block it: a team over the cap can take back at most 125% of the salary it sends, plus $100K, and none of their contracts makes it work.`;
   }
-  return { pkgs: found.slice(0, 5), msg: found.length ? `${L.teams[partner].city} would take ${found.length === 1 ? 'this' : `any of these ${Math.min(5, found.length)}`}.` : `${L.teams[partner].city} won't do it for anything you have that fits the rules. ${why}` };
+  const k = found.length;
+  return { pkgs: found.slice(0, 5), msg: k ? `${L.teams[partner].city} would take ${k === 1 ? 'this' : `any of these ${Math.min(5, k)}`}.${extra.length ? ' Some take back one of their contracts too: check the salary and years.' : ''}` : `${L.teams[partner].city} won't do it for anything you have that fits the rules. ${why}` };
 }
 // Sign-and-trade: re-sign your own free agent and trade him in the same move (from the 1999 labor deal).
 function satAllowed(L) { const y = capYear(L); return y >= 1999 && L.phase === 'offseason' && !!L.fa && (L.fa.era !== 'ufa' || L.fa.round === 0); }
@@ -6103,7 +6124,7 @@ const HELP = [
 <p>Talent is mostly taken out of the comparison, so chemistry measures fit, not how good the players are. The card lists what's helping and hurting. The trade builder shows how a deal would change it, and AI teams weigh fit in trades and free agency too (contenders the most).</p>` },
 
 { id: 'moves', t: 'Moves tab: trades', tabs: ['moves'], b: `
-<p><b>What would it take?</b> Pick the players and/or picks you want from one team under <b>You receive</b> (leave You send empty), then tap <b>What would it take?</b>. The game tries many combinations of your players and picks and shows up to five packages that team would accept, cheapest first and of different kinds where it can (players only, picks only, young players, veterans, players and picks). Each one already passes the salary-matching, roster-size and Stepien rules. Tap <b>Put in the builder</b> to adjust it, or <b>Make this trade</b> to do it now. If nothing works, it tells you why; often the other team is over the cap and can't take back your bigger contract, so ask for one of their salaries too.</p>
+<p><b>What would it take?</b> Pick the players and/or picks you want from one team under <b>You receive</b> (leave You send empty), then tap <b>What would it take?</b>. The game tries many combinations of your players and picks and shows up to five packages that team would accept, cheapest first and of different kinds where it can (players only, picks only, young players, veterans, players and picks). Each one already passes the salary-matching, roster-size and Stepien rules. Tap <b>Put in the builder</b> to adjust it, or <b>Make this trade</b> to do it now. Some options also have you <b>take back one of their contracts</b>: an overpaid one they'd like to dump (which makes them ask less of you), or, when the salary rules block everything else, a contract that makes the salaries match. These show only when nothing else works or when they save you at least 20%, and each shows the salary and the years left, so you can see what you're signing up for. If nothing works at all, it tells you why.</p>
 <ul>
 <li><b>Trade builder.</b> Pick a team, or <b>All teams</b> to browse every player and pick in the league (choosing one sets the partner to his team; a trade is always with one team). Then tap players and picks on both sides (picks for the next three drafts, shown with their projected slot). Sort both lists by position, overall, potential or salary; the number beside each player is his salary this season. Before you propose, it shows salary in and out, roster sizes, the chemistry change, and anything that makes the deal impossible.</li>
 <li><b>Three-team trades.</b> Choose a <b>Third team</b> under the trade partner. Switch between the three rosters, tap players and picks to add them, and use <b>Send to</b> to change where each one goes (by default yours go to your partner and theirs come to you). Every team has to get something, and each AI team judges only its own part: what it gets against what it gives up. Salary matching and roster limits are checked for each team.</li>
@@ -6271,7 +6292,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-18b';
+const APP_VERSION = '2026-11-18c';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7200,7 +7221,8 @@ function whatTakesCard(tt) {
   const item = id => { const q = L.players[id]; return q ? `${esc(q.pos)} ${esc(q.name)} (${q.ovr}${capOn ? ', ' + G.money(G.salFor(q, y) || 0) : ''})` : '?'; };
   return `<div class="wt"><div class="eyebrow">What ${esc(L.teams[tt].city)} would take</div><p class="small">${esc(W.msg)}</p>
     ${W.pkgs.map((o, i) => `<div class="wt-opt"><b>${esc(o.label)}</b>${o.ratio > 1.6 ? ' <span class="small bad">(you\'d be overpaying)</span>' : o.ratio <= 1.15 ? ' <span class="small good">(close to even)</span>' : ''}
-      <div class="small">${o.pkg.players.map(item).concat(o.pkg.picks.map(id => esc(G.pickLabel(L, G.pickById(L, id))) + ' pick')).join(' · ')}</div>
+      <div class="small">You send: ${o.pkg.players.map(item).concat(o.pkg.picks.map(id => esc(G.pickLabel(L, G.pickById(L, id))) + ' pick')).join(' · ')}</div>
+      ${o.back ? `<div class="small ${o.back.bad ? 'bad' : ''}">You also take back ${item(o.back.id)}: ${G.money(o.back.sal)} a year for ${o.back.yrs} more season${o.back.yrs === 1 ? '' : 's'}${o.back.bad ? ' (overpaid: this is the price of the deal)' : ' (to match salaries)'}.</div>` : ''}
       <div class="row"><button class="btn sm" data-act="wtLoad" data-id="${i}">Put in the builder</button><button class="btn sm primary" data-act="wtGo" data-id="${i}">Make this trade</button></div></div>`).join('')}</div>`;
 }
 function tradeBlockCard() {
@@ -8082,8 +8104,8 @@ function act(a, el) {
       } if (i >= 0) arr.splice(i, 1); else if (arr.length < 6) arr.push(id); else flash('A deal can include up to 6 items per side.'); break; }
     case 'clearTrade': ui.give = []; ui.get = []; ui.mv = []; ui.wt = null; break;
     case 'whatTakes': { const tt = ui.tradeTeam == null || ui.tradeTeam === L.user ? L.teams.find(t => t.id !== L.user).id : ui.tradeTeam; const r = G.whatItTakes(L, tt, tradePkg(ui.get, false)); ui.wt = { tid: tt, key: ui.get.slice().sort().join(','), pkgs: r.pkgs, msg: r.msg }; track('what-it-takes'); break; }
-    case 'wtLoad': { const o = ui.wt && ui.wt.pkgs[+id]; if (o) { ui.give = o.pkg.players.map(x => 'p:' + x).concat(o.pkg.picks.map(x => 'k:' + x)); ui.prot = {}; } break; }
-    case 'wtGo': { const o = ui.wt && ui.wt.pkgs[+id]; if (!o) break; const r = G.proposeTrade(L, ui.wt.tid, o.pkg, tradePkg(ui.get, false)); flash(r.msg); ui.tradeMsg = r.msg; ui.tradeOk = r.ok; if (r.ok) { ui.give = []; ui.get = []; ui.wt = null; } break; }
+    case 'wtLoad': { const o = ui.wt && ui.wt.pkgs[+id]; if (o) { ui.give = o.pkg.players.map(x => 'p:' + x).concat(o.pkg.picks.map(x => 'k:' + x)); ui.prot = {}; if (o.back) { ui.get = o.get.players.map(x => 'p:' + x).concat(o.get.picks.map(x => 'k:' + x)); } } break; }
+    case 'wtGo': { const o = ui.wt && ui.wt.pkgs[+id]; if (!o) break; const r = G.proposeTrade(L, ui.wt.tid, o.pkg, o.get); flash(r.msg); ui.tradeMsg = r.msg; ui.tradeOk = r.ok; if (r.ok) { ui.give = []; ui.get = []; ui.wt = null; } break; }
     case 't3v': ui.t3v = +id; break;
     case 'mv': { // three-team builder: add or remove an item; it goes to the other team by default
       const from = +el.dataset.from, others = L.teams.filter(t => t.id !== L.user), tb = ui.tradeTeam == null || ui.tradeTeam === L.user || !L.teams[ui.tradeTeam] ? others[0].id : ui.tradeTeam;
