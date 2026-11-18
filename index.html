@@ -2170,20 +2170,26 @@ function whatItTakes(L, partner, get) {
   const found = [], kinds = new Set();
   for (const f of plain) if (!kinds.has(f.label) && found.length < 5) { found.push(f); kinds.add(f.label); }
   for (const f of plain) if (found.length < 5 && !found.includes(f)) found.push(f);
-  // taking back one of their bad contracts: only when nothing else works, or when it saves you at least 20%
+  // taking back their contracts (up to three): only when nothing else works, or when it saves you at least 20%.
+  // Overpaid contracts first; with none, and the salary rules blocking every plain deal, their biggest salaries.
   const bestCost = plain.length ? Math.min(...plain.map(f => f.cost)) : Infinity;
-  const bad = roster(L, partner).filter(q => !(get.players || []).includes(q.id) && salFor(q, y) && contractW(L, partner, q) < -0.3)
-    .sort((a, b) => contractW(L, partner, a) - contractW(L, partner, b)).slice(0, 4);
-  // with no bad contracts to give, a team blocked by the salary rules can still send back a plain salary
-  const pool = bad.length || plain.length || capFor(y) == null ? bad : roster(L, partner).filter(q => !(get.players || []).includes(q.id) && salFor(q, y)).sort((a, b) => salFor(b, y) - salFor(a, y)).slice(0, 3);
+  const others = roster(L, partner).filter(q => !(get.players || []).includes(q.id) && salFor(q, y));
+  const bad = others.filter(q => contractW(L, partner, q) < -0.3).sort((a, b) => contractW(L, partner, a) - contractW(L, partner, b)).slice(0, 5);
+  const pool = bad.length || plain.length || capFor(y) == null ? bad : others.sort((a, b) => salFor(b, y) - salFor(a, y)).slice(0, 5);
+  const combos = k => { const P = k === 1 ? pool : pool.slice(0, 4), out = [], rec = (st, cur) => { if (cur.length === k) { out.push(cur.slice()); return; } for (let i = st; i < P.length; i++) { cur.push(P[i]); rec(i + 1, cur); cur.pop(); } }; rec(0, []); return out; };
   const extra = [];
-  for (const q of pool) {
-    const gx = { players: (get.players || []).concat(q.id), picks: (get.picks || []).slice() };
-    const r = search(gx, 45)[0];
-    if (!r || !(r.cost <= bestCost * 0.8) || r.ratio > 1.8) continue;   // no gross overpays dressed up as salary help
-    const yrs = Math.max(0, (q.con.exp || y) - y + 1);
-    r.label += `, taking back ${q.name}`; r.back = { id: q.id, sal: salFor(q, y), yrs, bad: contractW(L, partner, q) < -0.3 };
-    extra.push(r);
+  for (let k = 1; k <= 3 && pool.length >= k; k++) {
+    for (const set of combos(k)) {
+      if (inSeason && roster(L, L.user).length + (get.players || []).length + k - 1 > max + 2) continue;   // no room even after sending players
+      const gx = { players: (get.players || []).concat(set.map(q => q.id)), picks: (get.picks || []).slice() };
+      const r = search(gx, k === 1 ? 40 : 25)[0];
+      if (!r || !(r.cost <= bestCost * 0.8) || r.ratio > 1.8) continue;   // no gross overpays dressed up as salary help
+      const names = set.map(q => q.name);
+      r.label += `, taking back ${names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0]}`;
+      r.back = set.map(q => ({ id: q.id, sal: salFor(q, y), yrs: Math.max(0, (q.con.exp || y) - y + 1), bad: contractW(L, partner, q) < -0.3 }));
+      extra.push(r);
+    }
+    if (extra.length) break;   // fewer contracts first: only add more if fewer didn't work
   }
   extra.sort((a, b) => a.cost - b.cost).slice(0, 2).forEach(r => { if (found.length >= 5) found.pop(); found.push(r); });
   found.sort((a, b) => a.ratio - b.ratio);
@@ -2191,10 +2197,10 @@ function whatItTakes(L, partner, get) {
   let why = 'Try asking for less, or for a player with a bigger salary to match yours.';
   if (!found.length && capFor(y) != null) {
     const big = mine.slice().sort((a, b) => b.w - a.w).slice(0, 3).find(i => tradeVerdict(L, partner, { players: [i.id], picks: [] }, get).ok);
-    if (big) why = `${big.p.name} would be enough for them, but the salary rules block it: a team over the cap can take back at most 125% of the salary it sends, plus $100K, and none of their contracts makes it work.`;
+    if (big) why = `${big.p.name} would be enough for them, but the salary rules block it: a team over the cap can take back at most 125% of the salary it sends, plus $100K, and no combination of up to three of their contracts makes it work.`;
   }
   const k = found.length;
-  return { pkgs: found.slice(0, 5), msg: k ? `${L.teams[partner].city} would take ${k === 1 ? 'this' : `any of these ${Math.min(5, k)}`}.${extra.length ? ' Some take back one of their contracts too: check the salary and years.' : ''}` : `${L.teams[partner].city} won't do it for anything you have that fits the rules. ${why}` };
+  return { pkgs: found.slice(0, 5), msg: k ? `${L.teams[partner].city} would take ${k === 1 ? 'this' : `any of these ${Math.min(5, k)}`}.${extra.length ? ' Some have you take back their contracts too: check the salaries and years.' : ''}` : `${L.teams[partner].city} won't do it for anything you have that fits the rules. ${why}` };
 }
 // Sign-and-trade: re-sign your own free agent and trade him in the same move (from the 1999 labor deal).
 function satAllowed(L) { const y = capYear(L); return y >= 1999 && L.phase === 'offseason' && !!L.fa && (L.fa.era !== 'ufa' || L.fa.round === 0); }
@@ -6124,7 +6130,7 @@ const HELP = [
 <p>Talent is mostly taken out of the comparison, so chemistry measures fit, not how good the players are. The card lists what's helping and hurting. The trade builder shows how a deal would change it, and AI teams weigh fit in trades and free agency too (contenders the most).</p>` },
 
 { id: 'moves', t: 'Moves tab: trades', tabs: ['moves'], b: `
-<p><b>What would it take?</b> Pick the players and/or picks you want from one team under <b>You receive</b> (leave You send empty), then tap <b>What would it take?</b>. The game tries many combinations of your players and picks and shows up to five packages that team would accept, cheapest first and of different kinds where it can (players only, picks only, young players, veterans, players and picks). Each one already passes the salary-matching, roster-size and Stepien rules. Tap <b>Put in the builder</b> to adjust it, or <b>Make this trade</b> to do it now. Some options also have you <b>take back one of their contracts</b>: an overpaid one they'd like to dump (which makes them ask less of you), or, when the salary rules block everything else, a contract that makes the salaries match. These show only when nothing else works or when they save you at least 20%, and each shows the salary and the years left, so you can see what you're signing up for. If nothing works at all, it tells you why.</p>
+<p><b>What would it take?</b> Pick the players and/or picks you want from one team under <b>You receive</b> (leave You send empty), then tap <b>What would it take?</b>. The game tries many combinations of your players and picks and shows up to five packages that team would accept, cheapest first and of different kinds where it can (players only, picks only, young players, veterans, players and picks). Each one already passes the salary-matching, roster-size and Stepien rules. Tap <b>Put in the builder</b> to adjust it, or <b>Make this trade</b> to do it now. Some options also have you <b>take back up to three of their contracts</b> (fewer first: it only adds more when fewer don't work): an overpaid one they'd like to dump (which makes them ask less of you), or, when the salary rules block everything else, a contract that makes the salaries match. These show only when nothing else works or when they save you at least 20%, and each shows the salary and the years left, so you can see what you're signing up for. If nothing works at all, it tells you why.</p>
 <ul>
 <li><b>Trade builder.</b> Pick a team, or <b>All teams</b> to browse every player and pick in the league (choosing one sets the partner to his team; a trade is always with one team). Then tap players and picks on both sides (picks for the next three drafts, shown with their projected slot). Sort both lists by position, overall, potential or salary; the number beside each player is his salary this season. Before you propose, it shows salary in and out, roster sizes, the chemistry change, and anything that makes the deal impossible.</li>
 <li><b>Three-team trades.</b> Choose a <b>Third team</b> under the trade partner. Switch between the three rosters, tap players and picks to add them, and use <b>Send to</b> to change where each one goes (by default yours go to your partner and theirs come to you). Every team has to get something, and each AI team judges only its own part: what it gets against what it gives up. Salary matching and roster limits are checked for each team.</li>
@@ -6292,7 +6298,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-18c';
+const APP_VERSION = '2026-11-18d';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7222,7 +7228,7 @@ function whatTakesCard(tt) {
   return `<div class="wt"><div class="eyebrow">What ${esc(L.teams[tt].city)} would take</div><p class="small">${esc(W.msg)}</p>
     ${W.pkgs.map((o, i) => `<div class="wt-opt"><b>${esc(o.label)}</b>${o.ratio > 1.6 ? ' <span class="small bad">(you\'d be overpaying)</span>' : o.ratio <= 1.15 ? ' <span class="small good">(close to even)</span>' : ''}
       <div class="small">You send: ${o.pkg.players.map(item).concat(o.pkg.picks.map(id => esc(G.pickLabel(L, G.pickById(L, id))) + ' pick')).join(' · ')}</div>
-      ${o.back ? `<div class="small ${o.back.bad ? 'bad' : ''}">You also take back ${item(o.back.id)}: ${G.money(o.back.sal)} a year for ${o.back.yrs} more season${o.back.yrs === 1 ? '' : 's'}${o.back.bad ? ' (overpaid: this is the price of the deal)' : ' (to match salaries)'}.</div>` : ''}
+      ${(o.back || []).map(b => `<div class="small ${b.bad ? 'bad' : ''}">You also take back ${item(b.id)}: ${G.money(b.sal)} a year for ${b.yrs} more season${b.yrs === 1 ? '' : 's'}${b.bad ? ' (overpaid: this is the price of the deal)' : ' (to match salaries)'}.</div>`).join('')}
       <div class="row"><button class="btn sm" data-act="wtLoad" data-id="${i}">Put in the builder</button><button class="btn sm primary" data-act="wtGo" data-id="${i}">Make this trade</button></div></div>`).join('')}</div>`;
 }
 function tradeBlockCard() {
