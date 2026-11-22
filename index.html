@@ -6398,7 +6398,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-22a';
+const APP_VERSION = '2026-11-22b';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7447,7 +7447,7 @@ function vCoach() {
   const scTxt = () => { const m = G.scoutMiss(L, L.user); return `Grades move ${Math.round(m.w * 100)}% of the way from the public grade toward the truth, give or take ${m.sd.toFixed(1)}`; };
   const match = x => (x.role === 'oc' && x.pref === c.off) || (x.role === 'dc' && x.pref === c.def);
   const staffRows = G.STAFF_ROLES.map(role => { const x = st[role];
-    return x ? `<div class="pl wide"><div class="pl-main"><span class="pos">${role.toUpperCase()}</span><div class="pl-name">${esc(x.name)}${x.interim ? ' <span class="small">(interim)</span>' : ''}${x.former ? ` <span class="tag">Former ${esc(x.former.pos)}</span>` : ''}<div class="pl-sub">${G.ROLE_NAME[role]} · age ${x.age} · ${G.money(x.sal || 0)}/yr · ${x.rev ? `<span class="${x.rev.d > 0 ? 'good' : x.rev.d < 0 ? 'bad' : ''}">${x.rev.d > 0 ? '+' : ''}${x.rev.d} from his ${x.rev.y} draft review</span> · ` : ''}${role === 'tr' ? trTxt() : role === 'sc' ? scTxt() : prefTxt(x)}${role !== 'hc' ? (match(x) ? ' · <span class="good">matches your scheme</span>' : ' · <span class="warn">scheme mismatch, half effect</span>') : ''}</div></div><div class="pl-r"><span class="lbl">RTG</span>${rating(x.r)}</div></div>
+    return x ? `<div class="pl wide"><div class="pl-main"><span class="pos">${role.toUpperCase()}</span><div class="pl-name">${esc(x.name)}${x.interim ? ' <span class="small">(interim)</span>' : ''}${x.former ? ` <span class="tag">Former ${esc(x.former.pos)}</span>` : ''}<div class="pl-sub">${G.ROLE_NAME[role]} · age ${x.age} · ${G.money(x.sal || 0)}/yr · ${x.rev ? `<span class="${x.rev.d > 0 ? 'good' : x.rev.d < 0 ? 'bad' : ''}">${x.rev.d > 0 ? '+' : ''}${x.rev.d} from his ${x.rev.y} draft review</span> · ` : ''}${role === 'tr' ? trTxt() : role === 'sc' ? scTxt() : prefTxt(x)}${role === 'oc' || role === 'dc' ? (match(x) ? ' · <span class="good">matches your scheme</span>' : ' · <span class="warn">scheme mismatch, half effect</span>') : ''}</div></div><div class="pl-r"><span class="lbl">RTG</span>${rating(x.r)}</div></div>
       ${win ? `<div class="pl-btns">${confirmBtn('fire' + role, 'Fire')}</div>` : ''}</div>`
       : `<div class="pl wide"><div class="pl-main"><span class="pos">${role.toUpperCase()}</span><div class="pl-name"><b class="bad">Vacant</b><div class="pl-sub">${G.ROLE_NAME[role]}. Hire one below before opening night, or an interim coach takes over.</div></div></div></div>`; }).join('');
   const open = G.STAFF_ROLES.filter(role => !st[role]);
