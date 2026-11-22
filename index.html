@@ -2326,6 +2326,44 @@ function rookieNews(L) {
   const mine = roster(L, L.user).filter(p => p.reveal === L.year).sort((a, b) => b.pot - a.pot); if (!mine.length) return;
   addNews(L, `All-Star break: your rookies' true potential is now known. ${mine.slice(0, 5).map(p => `${p.pos} ${p.name} ${p.ovr} OVR / ${p.pot} POT (scout said ${myGrade(L, Object.assign({}, p, { reveal: null }))})`).join('; ')}.`);
 }
+// How a player suits a team's offense and defense, from his profile (per-36 style numbers) and position.
+// Returns { off: {s, label, why}, def: {...} } with s roughly 0-1.
+function schemeFit(L, p, tid) {
+  const t = L.teams[tid], pr = p.prof; if (!t || !pr || !t.coach) return null;
+  const n = (v, lo, hi) => clamp(((v || 0) - lo) / (hi - lo), 0, 1);
+  const sc = n(pr.pts, 8, 28), rb = n(pr.reb, 3, 13), ps = n(pr.ast, 1, 9), st = n(pr.stl, 0.5, 2.3), bk = n(pr.blk, 0.2, 2.5), sh = n(pr.ft || 0.7, 0.6, 0.9);
+  const big = p.pos === 'C' || p.pos === 'PF', guard = p.pos === 'PG' || p.pos === 'SG', wing = p.pos === 'SF' || p.pos === 'PF';
+  const top = (a, b) => a[0] >= b[0] ? a : b;
+  let o, d;
+  switch (t.coach.off) {
+    case 'inside': o = big ? [0.25 + sc * 0.45 + rb * 0.3, 'a post scorer'] : [0.15 + ps * 0.4, 'feeds the post']; break;
+    case 'outside': o = big ? [0.1 + sh * 0.5, 'can he shoot?'] : [0.3 + sh * 0.5 + sc * 0.2, 'a perimeter scorer']; break;
+    case 'run': o = top([0.2 + st * 0.4 + (p.age <= 22 ? 0.2 : 0), 'young legs and steals'], [0.1 + ps * 0.5, 'pushes the ball']); if (p.pos === 'C') o[0] -= 0.15; break;
+    case 'tri': o = top([0.2 + ps * 0.6, 'a passer'], [0.15 + sc * 0.6, 'a go-to scorer']); break;
+    case 'iso': o = [0.05 + sc * 0.8, 'can he create his own shot?']; break;
+    case 'ssol': o = p.pos === 'PG' ? [0.2 + ps * 0.6 + sh * 0.2, 'a playmaker'] : [0.15 + sh * 0.6 - (p.pos === 'C' ? 0.15 : 0), 'a shooter']; break;
+    case 'pace': o = p.pos === 'PG' ? [0.2 + ps * 0.6 + sh * 0.2, 'runs the pick-and-roll'] : p.pos === 'C' ? [0.15 + rb * 0.35 + bk * 0.3, 'a rim-runner'] : [0.15 + sh * 0.65, 'spaces the floor']; break;
+    default: o = [0.3 + Math.max(sc, ps, rb, sh) * 0.35, 'fits anywhere'];
+  }
+  switch (t.coach.def) {
+    case 'pack': d = big ? [0.2 + bk * 0.45 + rb * 0.35, 'protects the paint'] : [0.25, 'not the key piece']; break;
+    case 'press': d = guard ? [0.15 + st * 0.75, 'gets steals'] : [0.2 + st * 0.3, 'not the key piece']; break;
+    case 'zone': d = big ? [0.2 + bk * 0.5 + rb * 0.25, 'length in the lane'] : [0.22 + st * 0.35 + bk * 0.2, 'closes out on shooters']; break;
+    case 'phys': d = [0.2 + rb * 0.4 + st * 0.2 + (big ? 0.1 : 0), 'plays physical']; break;
+    case 'overload': d = [0.15 + bk * 0.45 + st * 0.3, 'helps and recovers']; break;
+    case 'switch': d = wing ? [0.3 + (st + bk) * 0.35, 'guards several spots'] : p.pos === 'C' ? [0.05 + bk * 0.25 + st * 0.3, 'can he guard the perimeter?'] : [0.15 + st * 0.5, 'stays in front']; break;
+    case 'jordan': d = [0.3 + st * 0.35, 'sends help']; break;
+    default: d = [0.3 + (st + bk) * 0.25, 'solid on the ball'];
+  }
+  const lab = v => v >= 0.6 ? 'Great fit' : v >= 0.42 ? 'Good fit' : v >= 0.25 ? 'OK fit' : 'Poor fit';
+  return { off: { s: o[0], label: lab(o[0]), why: o[1], scheme: (OFFENSES[t.coach.off] || {}).short || t.coach.off }, def: { s: d[0], label: lab(d[0]), why: d[1], scheme: (DEFENSES[t.coach.def] || {}).short || t.coach.def } };
+}
+// The current rating a team sees for a draft prospect: his real rating plus half its scout's error.
+function ovrFor(L, p, tid) {
+  if (p.team !== -3 || tid == null || tid < 0 || !L.teams[tid] || (p.seen && tid === L.user)) return p.ovr;
+  const r = scoutR(L, tid), c = L.teams[tid].staff && L.teams[tid].staff.sc;
+  return clamp(Math.round(p.ovr + hnorm(p.id + 7777, tid * 131 + (c ? c.id : 0)) * scoutSD(r) * 0.6), 30, 95);
+}
 function myGrade(L, p) { return hasUser(L) ? gradeFor(L, p, L.user) : p.scout; }
 function scoutMiss(L, tid) { const r = scoutR(L, tid); return { r, w: scoutW(r), sd: scoutSD(r) }; }
 function promoteExPlayers(L) {
@@ -4545,7 +4583,7 @@ const API = { resignQuote, signQuote, OPT_MULT, optOn, optText, teamOption, auto
   parseCSV, parseBRef, mergeSeason, newLeague, ensureLeague, addNews, roster, freeAgents, value, release, sign, cutTo, depthChart, setDepth, moveDepth, resetDepth, setPlayHurt,
   minutesFor, rotationOrder, ratings, teamOverall, isBig, isGuard, dispPool, dispOnClock, dispPick, dispPass, beginDispersal, dispAI, endDispersal, answerErving,
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
-  tradeLocked, lockText, deadlineDay, pastDeadline, ROLE_NAME, STAFF_ROLES, staffSal, staffBudget, budgetOf, staffPay, budgetRoom, marketOf, marketName, trainerR, injMult, healMult, scoutR, scoutMiss, gradeFor, myGrade, setBudgets, reviewScouts, ensureStaff, staffBonus, fireCoach, hireCoach, coachAcceptP, coachWindow, takeJob, careerScore,
+  tradeLocked, lockText, deadlineDay, pastDeadline, ROLE_NAME, STAFF_ROLES, staffSal, staffBudget, budgetOf, staffPay, budgetRoom, marketOf, marketName, trainerR, injMult, healMult, scoutR, scoutMiss, gradeFor, myGrade, schemeFit, ovrFor, setBudgets, reviewScouts, ensureStaff, staffBonus, fireCoach, hireCoach, coachAcceptP, coachWindow, takeJob, careerScore,
   mor, moraleWord, underpaid, renegotiate, renegotiatePrice, gamePlan, setGamePlan, clearGamePlan, coachFor, nextGame, boxLine, boxStar,
   canStartSeason, startRegular, simDay, simWeek, simNextGame, daysLeft, simPlayoffDay, simPlayoffRound, curRound, roundName, homePattern,
   sortTeams, divisions, gamesBack, pct, seeds, perGame, AWARD_NAMES, startDraft, onClock, makePick, aiPick, draftUntilUser, draftAll, scoutPlayer, beginDraft, SCOUT_VISITS, endDraft,
@@ -6291,7 +6329,7 @@ const HELP = [
 { id: 'draft', t: 'Draft and scouting', tabs: [], b: `
 <ul>
 <li><b>All season</b>, next summer's class is on the Office tab. At first nobody is graded. Each week a random handful get a scout grade, so the board reshuffles; by the end of the regular season everyone has one. Grades come from projected draft slot and college, not from how careers turned out.</li>
-<li><b>Your scout's board.</b> There are no workouts. Your head scout grades every prospect. The PUBLIC grade comes from draft slot and college; YOURS is your scout's. A scout rated 35 moves about 35% of the way from the public grade toward the truth, a 92 about 75%, and each adds a little error of his own, so even a great scout misses sometimes. Scouts rated 65 or better also report five skill grades. Every AI team drafts off its own scout's board. Some history decisions make your scout sharper.</li>
+<li><b>Your scout's board.</b> There are no workouts. Your head scout grades every prospect. The LEAGUE grade comes from draft slot and college; POT is your scout's. A scout rated 35 moves about 35% of the way from the public grade toward the truth, a 92 about 75%, and each adds a little error of his own, so even a great scout misses sometimes. Scouts rated 65 or better also report five skill grades. The board shows three numbers: OVR (your scout's estimate of how good he is now, within about half his usual error), POT (your scout's grade) and LEAGUE (the consensus grade), plus how each prospect fits your current offense and defense (Great, Good, OK or Poor fit, with the reason). Every AI team drafts off its own scout's board. Some history decisions make your scout sharper.</li>
 <li><b>Scout review.</b> At the All-Star break, every team's last draft is judged: are its picks turning out better than the public grades said, compared with other teams? First-rounders count double. The scout who ran that draft gains or loses up to 3 rating points, even if he has moved on. Your result shows in the news and as a <b>draft report card</b> on the Coach tab: a letter grade, your rank among all teams, the scout's rating change, your best value pick, and an early tag for each pick (Steal, Good value, Fair, Reach, Bust risk).</li>
 <li><b>Lottery.</b> The order follows the real system of the year: coin flip early on, then the lottery formats as they changed.</li>
 <li><b>On the clock.</b> Draft a player, let your scouts pick, sim to your next pick, or auto-draft the rest. Shop your pick to move down; to move up, call the team on the clock.</li>
@@ -6425,7 +6463,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-22e';
+const APP_VERSION = '2026-11-22f';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -6834,7 +6872,7 @@ function vDraft() {
   let h;
   if (!started) {
     h = `<section class="card hero"><div class="eyebrow">${D.year} draft · Scouting report</div><h2>Your board is ready</h2>
-      <p>${visitTxt}. The public grade comes from projected draft slot and college. Your scout's grade moves about ${Math.round(sm.w * 100)}% of the way from it toward the truth, and he can still miss by ${sm.sd.toFixed(1)} or so either way. Every other team's scout grades the class too, and they draft off their own board.</p>${lotTxt}
+      <p>${visitTxt}. The public grade comes from projected draft slot and college. OVR and POT are your scout's estimates; LEAGUE is the consensus grade. His POT moves about ${Math.round(sm.w * 100)}% of the way from it toward the truth, and he can still miss by ${sm.sd.toFixed(1)} or so either way. Every other team's scout grades the class too, and they draft off their own board.</p>${lotTxt}
       <p class="small">Your picks: ${ord}. Hire a better scout on the Coach tab between seasons for a sharper board.</p>
       <div class="row"><button class="btn primary" data-act="beginDraft">Begin the draft</button></div></section>`;
   } else {
@@ -6850,14 +6888,16 @@ function vDraft() {
   const grp = ui.draftGrp === 'SEEN' ? 'ALL' : ui.draftGrp;
   const byLg = ui.draftRank === 'lg';
   const all = D.pool.map(i => L.players[i]).filter(p => p && (grp === 'ALL' || p.pos === grp)).sort((a, b) => byLg ? b.scout - a.scout || gr[b.id] - gr[a.id] : gr[b.id] - gr[a.id] || b.scout - a.scout);
-  const rankRow = `<div class="row"><span class="small">Rank by</span><div class="seg"><button class="${byLg ? '' : 'on'}" data-act="chip" data-key="draftRank" data-id="me">Your scout</button><button class="${byLg ? 'on' : ''}" data-act="chip" data-key="draftRank" data-id="lg">Public grade</button></div></div>`;
+  const rankRow = `<div class="row"><span class="small">Rank by</span><div class="seg"><button class="${byLg ? '' : 'on'}" data-act="chip" data-key="draftRank" data-id="me">Your scout</button><button class="${byLg ? 'on' : ''}" data-act="chip" data-key="draftRank" data-id="lg">League consensus</button></div></div>`;
   const vsTxt = p => { const d = gr[p.id] - p.scout; return p.seen || Math.abs(d) < 5 ? '' : `<div class="small ${d > 0 ? 'good' : 'warn'}">Your scout likes him ${d > 0 ? 'more' : 'less'} than the league (${d > 0 ? '+' : ''}${d})</div>`; };
+  const fc = l => l === 'Great fit' ? 'good' : l === 'Good fit' ? 'good' : l === 'OK fit' ? '' : 'warn';
+  const fitTxt = p => { const f = G.schemeFit(L, p, L.user); return f ? `<div class="small">Your ${esc(f.off.scheme)} offense: <b class="${fc(f.off.label)}">${f.off.label}</b> (${esc(f.off.why)}) · ${esc(f.def.scheme)} defense: <b class="${fc(f.def.label)}">${f.def.label}</b> (${esc(f.def.why)})</div>` : ''; };
   const goodSc = sm.r >= 65;
   const pool = all.slice(0, show);
   const chipRow = `<div class="chips">${['ALL'].concat(G.POS).map(g => `<button class="chip ${grp === g ? 'on' : ''}" data-act="chip" data-key="draftGrp" data-id="${g}">${g === 'ALL' ? 'All' : g}</button>`).join('')}</div>`;
   h += `<section class="card"><div class="split"><h3>Draft board</h3><span class="small">${all.length} prospects</span></div>${rankRow}${goodSc ? '' : '<p class="small">Scouts rated 65 or better also report each prospect\'s skills.</p>'}${chipRow}<div class="list">${pool.length ? pool.map(p => `
     <div class="pl"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}<div class="pl-sub">${esc(p.college || '')} · age ${p.age}${p.realPick && p.realPick.pick ? ` · real: #${p.realPick.pick} ${esc(p.realPick.tm)}` : ''}</div></div>
-    <div class="pl-r"><span class="lbl">PUBLIC</span>${rating(p.scout)}</div><div class="pl-r"><span class="lbl">${p.seen ? 'TRUE' : 'YOURS'}</span>${rating(gr[p.id])}</div></div>${p.seen || goodSc ? skillLine(p) : ''}${vsTxt(p)}
+    <div class="pl-r"><span class="lbl">OVR</span>${rating(G.ovrFor(L, p, L.user))}</div><div class="pl-r"><span class="lbl">POT</span>${rating(gr[p.id])}</div><div class="pl-r"><span class="lbl">LEAGUE</span>${rating(p.scout)}</div></div>${p.seen || goodSc ? skillLine(p) : ''}${fitTxt(p)}${vsTxt(p)}
     <div class="pl-btns">${mine ? `<button class="btn sm primary" data-act="draftPick" data-id="${p.id}">Draft</button>` : ''}</div></div>`).join('') : '<p>No prospects at this position.</p>'}</div>
     ${all.length > show ? `<div class="row"><button class="btn" data-act="draftMore">Show ${Math.min(60, all.length - show)} more</button></div>` : ''}</section>`;
   return h + myPicks();
