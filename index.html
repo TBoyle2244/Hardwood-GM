@@ -2300,15 +2300,24 @@ function reviewScouts(L) {
   L.scRev = L.scRev || {}; if (L.scRev[y]) return; L.scRev[y] = true;
   const by = {};
   for (const x of log) { const p = getP(L, x.pid); if (!p || x.scid == null) continue; const w = x.r === 1 ? 2 : 1, v = (p.pot - (x.sc != null ? x.sc : p.scout));
-    const b = by[x.tid] = by[x.tid] || { scid: x.scid, s: 0, w: 0, best: null }; b.s += v * w; b.w += w; if (!b.best || v > b.best.v) b.best = { v, p }; }
+    const b = by[x.tid] = by[x.tid] || { scid: x.scid, s: 0, w: 0, best: null, picks: [] }; b.s += v * w; b.w += w; b.picks.push({ pid: p.id, n: x.n, r: x.r, v }); if (!b.best || v > b.best.v) b.best = { v, p, n: x.n }; }
   const tids = Object.keys(by); if (tids.length < 3) return;
   tids.forEach(t => by[t].avg = by[t].s / by[t].w);
   const lg = tids.reduce((a, t) => a + by[t].avg, 0) / tids.length;
+  const order = tids.slice().sort((a, b) => by[b].avg - by[a].avg);
   const find = id => { for (const t of L.teams) if (t.staff && t.staff.sc && t.staff.sc.id === id) return t.staff.sc; return (L.coachPool || []).find(c => c.id === id); };
   for (const t of tids) {
     const b = by[t], c = find(b.scid); if (!c) continue;
     const d = b.avg - lg, k = clamp(Math.round(d / 1.5), -3, 3), old = c.r;
     c.r = clamp(c.r + k, 35, 92); c.rev = { y, d: c.r - old, v: Math.round(d * 10) / 10 };
+    if (+t === L.user) {
+      const rank = order.indexOf(t) + 1, pct = rank / order.length;
+      const grade = pct <= 0.1 ? 'A' : pct <= 0.25 ? 'B+' : pct <= 0.45 ? 'B' : pct <= 0.6 ? 'C+' : pct <= 0.75 ? 'C' : pct <= 0.9 ? 'D' : 'F';
+      const tag = v => v >= 6 ? 'Steal' : v >= 2 ? 'Good value' : v > -2 ? 'Fair' : v > -6 ? 'Reach' : 'Bust risk';
+      L.scRep = { y, grade, rank, of: order.length, d: Math.round(d * 10) / 10, old, now: c.r, sc: c.name, gone: c.id !== (L.teams[L.user].staff.sc || {}).id,
+        picks: b.picks.sort((a, b2) => a.n - b2.n).map(x => ({ pid: x.pid, n: x.n, r: x.r, tag: tag(x.v - lg) })), best: b.best && b.best.v - lg >= 2 ? { pid: b.best.p.id, n: b.best.n } : null };
+      addNews(L, `Draft report card (${y}): grade ${grade}, #${rank} of ${order.length} teams.`);
+    }
     if (+t === L.user) addNews(L, `Scouting review of the ${y} draft: your picks are turning out ${Math.abs(d).toFixed(1)} points ${d >= 0 ? 'better' : 'worse'} than the league's grades said, compared with other teams.${b.best && b.best.v >= 4 ? ` Best find: ${b.best.p.pos} ${b.best.p.name}.` : ''} ${c.name}'s rating ${c.r > old ? 'rises' : c.r < old ? 'drops' : 'holds'}${c.r !== old ? ` ${c.r > old ? '+' : ''}${c.r - old}` : ''} to ${c.r}.${c.id !== (L.teams[L.user].staff.sc || {}).id ? ' (He no longer works for you.)' : ''}`);
   }
 }
@@ -6265,7 +6274,7 @@ const HELP = [
 <ul>
 <li><b>All season</b>, next summer's class is on the Office tab. At first nobody is graded. Each week a random handful get a scout grade, so the board reshuffles; by the end of the regular season everyone has one. Grades come from projected draft slot and college, not from how careers turned out.</li>
 <li><b>Your scout's board.</b> There are no workouts. Your head scout grades every prospect. The PUBLIC grade comes from draft slot and college; YOURS is your scout's. A scout rated 35 moves about 35% of the way from the public grade toward the truth, a 92 about 75%, and each adds a little error of his own, so even a great scout misses sometimes. Scouts rated 65 or better also report five skill grades. Every AI team drafts off its own scout's board. Some history decisions make your scout sharper.</li>
-<li><b>Scout review.</b> At the All-Star break, every team's last draft is judged: are its picks turning out better than the public grades said, compared with other teams? First-rounders count double. The scout who ran that draft gains or loses up to 3 rating points, even if he has moved on. Your result shows in the news and on his Coach tab line.</li>
+<li><b>Scout review.</b> At the All-Star break, every team's last draft is judged: are its picks turning out better than the public grades said, compared with other teams? First-rounders count double. The scout who ran that draft gains or loses up to 3 rating points, even if he has moved on. Your result shows in the news and as a <b>draft report card</b> on the Coach tab: a letter grade, your rank among all teams, the scout's rating change, your best value pick, and an early tag for each pick (Steal, Good value, Fair, Reach, Bust risk).</li>
 <li><b>Lottery.</b> The order follows the real system of the year: coin flip early on, then the lottery formats as they changed.</li>
 <li><b>On the clock.</b> Draft a player, let your scouts pick, sim to your next pick, or auto-draft the rest. Shop your pick to move down; to move up, call the team on the clock.</li>
 <li><b>Draft tracker.</b> Once the draft begins, a tracker on the draft screen lists every pick as it happens, newest first, with the team, round, scout grade and the real-life pick. Filter by team or round. It shows your scout's grade for each pick. After the draft, every past draft stays on the League tab under <b>Drafts</b>, with how each player has turned out.</li>
@@ -6398,7 +6407,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-22b';
+const APP_VERSION = '2026-11-22c';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7459,6 +7468,18 @@ function vCoach() {
     <p class="small">Assistants improve their side of the ball, with full effect only when your scheme matches what they prefer. The head coach adds points on game night and helps young players develop. The trainer cuts injuries and gets players back sooner. The scout grades every draft prospect: the better he is, the closer his grades are to the truth. ${win ? 'You can change your staff until opening night.' : 'You can change your staff after the season.'}</p>
     <p class="small"><b>Owner's staff budget:</b> ${G.money(bud)} · paying ${G.money(pay)} · <b class="${room < 0 ? 'bad' : 'good'}">${room < 0 ? G.money(-room) + ' over' : G.money(room) + ' left'}</b>. ${esc(G.marketName(me()))}. The owner resets it every summer: bigger cities spend more, and winning, especially deep playoff runs, earns a raise. A small-market owner pays up only when the team wins. You can't hire past the budget.</p>
     <div class="list">${staffRows}</div>${poolRows ? `<h3 class="sub">Available staff</h3><p class="small">The best people prefer winning teams and cost more.</p><div class="list">${poolRows}</div>` : ''}</section>`;
+  const rep = L.scRep, last = (G.draftHistory(L)[L.year] || []).filter(x => x.tid === L.user);
+  const gCls = g => /^A|^B/.test(g) ? 'good' : /^C/.test(g) ? 'warn' : 'bad';
+  const pend = last.length && ['preseason', 'regular'].includes(L.phase) && !(rep && rep.y === L.year);
+  const repCard = !pend && rep && rep.y >= L.year - 1 ? `<section class="card"><div class="split"><h3>${rep.y} draft report card</h3><span class="award ${gCls(rep.grade)}">${rep.grade}</span></div>
+    <p class="small">Graded at the All-Star break against every other team: your picks are turning out ${Math.abs(rep.d).toFixed(1)} points ${rep.d >= 0 ? 'better' : 'worse'} than the public grades said, compared with the league. <b>#${rep.rank} of ${rep.of}.</b> First-rounders count double.</p>
+    <p class="small"><b>Scout:</b> ${esc(rep.sc)}${rep.gone ? ' (no longer with you)' : ''} · rating ${rep.old} → <b class="${rep.now > rep.old ? 'good' : rep.now < rep.old ? 'bad' : ''}">${rep.now}</b> (${rep.now > rep.old ? '+' : ''}${rep.now - rep.old})</p>
+    ${rep.best ? (() => { const p = G.getP(L, rep.best.pid); return p ? `<p class="small"><b>Best value pick:</b> #${rep.best.n} ${esc(p.pos)} ${esc(p.name)}</p>` : ''; })() : '<p class="small">No standout value pick in this class.</p>'}
+    <div class="list">${rep.picks.map(x => { const p = G.getP(L, x.pid); if (!p) return ''; const tc = x.tag === 'Steal' || x.tag === 'Good value' ? 'good' : x.tag === 'Fair' ? '' : x.tag === 'Reach' ? 'warn' : 'bad';
+      return `<div class="pl"><div class="pl-main"><span class="pos pk">${x.n}</span><div class="pl-name">${esc(p.name)} <span class="tag">${esc(p.pos)}</span><div class="pl-sub">Round ${x.r}${p.team >= 0 && p.team !== L.user && L.teams[p.team] ? ' · now ' + esc(L.teams[p.team].abbr) : ''}</div></div><span class="small ${tc}"><b>${x.tag}</b></span></div></div>`; }).join('')}</div>
+    <p class="small">Tags are early returns: how each pick looks against where the league graded him, not a final verdict.</p></section>`
+    
+    : pend ? `<section class="card"><h3>${L.year} draft report card</h3><p class="small">Your ${last.length} pick${last.length > 1 ? 's are' : ' is'} graded at the All-Star break. The grade decides whether your scout's rating goes up or down, and names your best value pick.</p></section>` : '';
   const segc = (key, opts) => `<div class="seg">${opts.map(([v, n]) => `<button class="${c[key] === v ? 'on' : ''}" data-act="coach" data-key="${key}" data-id="${v}">${n}</button>`).join('')}</div>`;
   const bar = (n, v) => `<div class="bar"><span class="bar-l">${n}</span><span class="bar-t"><span class="bar-f ${grade(v)}" style="width:${Math.max(4, Math.min(100, (v - 30) / 0.65))}%"></span></span><span class="bar-v">${Math.round(v)}</span></div>`;
   const chart = G.depthChart(L, L.user), mins = {}; r.mins.forEach(x => mins[x.p.id] = x);
@@ -7492,7 +7513,7 @@ function vCoach() {
       <p class="small">Faster means more possessions. A slower game shortens it, which gives an underdog a better chance of an upset.</p></section>
     <section class="card"><label class="tog"><input type="checkbox" id="youth"${c.youth ? ' checked' : ''}> Develop young players</label>
       <p class="small">Players 25 and under who play real minutes (800+) get an extra development bump in the offseason.</p></section>
-    ${staffCard}<section class="card"><h3>Team ratings</h3>${bar('Offense', r.off)}${bar('Defense', r.def)}${bar('Inside', r.in)}${bar('Outside', r.out)}</section>`;
+    ${staffCard}${repCard}<section class="card"><h3>Team ratings</h3>${bar('Offense', r.off)}${bar('Defense', r.def)}${bar('Inside', r.in)}${bar('Outside', r.out)}</section>`;
 }
 
 /* ---------- Data ---------- */
