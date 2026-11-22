@@ -1819,7 +1819,7 @@ function receiverWeight(L, tid, incoming, outgoing) {
   const inc = (incoming.players || []).map(id => L.players[id]);
   const after = roster(L, tid).filter(p => !out.has(p.id)).concat(inc).sort((a, b) => value(b) - value(a));
   const keep = new Set(after.slice(0, max).map(p => p.id));
-  let pw = inc.reduce((s, p) => s + playerWeight(p) * (keep.has(p.id) ? 1 : 0.05) * (p.tradeReq ? 0.85 : 1), 0);
+  let pw = inc.reduce((s, p) => s + weight(valueFor(L, p, tid)) * (keep.has(p.id) ? 1 : 0.05) * (p.tradeReq ? 0.85 : 1), 0);
   const cw = inc.reduce((s, p) => s + contractW(L, tid, p), 0); // a player they'd cut still costs them his salary
   // players who make the team fit better are worth more to it, and ones who wreck the fit are worth less
   if (pw > 0 && tid !== L.user) { const cp = chemPreview(L, tid, outgoing.players, incoming.players); if (cp) pw *= clamp(1 + cp.dEff * chemCare(L, tid), 0.7, 1.3); }
@@ -4503,11 +4503,24 @@ function closeFreeAgency(L) {
 }
 
 /* ---------- leaders ---------- */
+// Rookies: the team that has him learns his true potential at the All-Star break of his first season;
+// everyone else keeps seeing their own scout's grade until the season is over.
+function potPublic(L, p) {
+  if (p.reveal == null) return true;
+  if (L.year > p.reveal) return true;
+  return L.year === p.reveal && (L.phase === 'season-over' || L.phase === 'draft' || L.phase === 'offseason');
+}
+function potKnownBy(L, p, tid) {
+  if (potPublic(L, p)) return true;
+  return L.year === p.reveal && p.team === tid && (L.phase === 'playoffs' || (L.phase === 'regular' && L.day >= allStarDay(L)));
+}
 function potKnown(L, p) {
   if (p.reveal == null || p.seen) return true;
-  if (L.year > p.reveal) return true;
-  return L.year === p.reveal && (L.phase === 'season-over' || L.phase === 'draft' || L.phase === 'offseason' || L.phase === 'playoffs' || (L.phase === 'regular' && L.day >= allStarDay(L)));   // rookies are known at the All-Star break
+  return potKnownBy(L, p, hasUser(L) ? L.user : p.team);
 }
+// The potential a team believes a player has: the truth if they know it, otherwise their scout's grade.
+function potFor(L, p, tid) { return p.reveal == null || potKnownBy(L, p, tid) ? p.pot : gradeFor(L, p, tid); }
+function valueFor(L, p, tid) { const pot = potFor(L, p, tid); return pot === p.pot ? value(p) : value(Object.assign({}, p, { pot })); }
 function shownPot(L, p) { return potKnown(L, p) ? p.pot : myGrade(L, p); }
 // Per-game leaders need 70% of their team's games; percentage leaders need a minimum of makes.
 const LEAD = { pts: 'Points', reb: 'Rebounds', ast: 'Assists', stl: 'Steals', blk: 'Blocks', fgp: 'FG%', tpm: '3-pointers made', ftp: 'FT%' };
@@ -4539,7 +4552,7 @@ const API = { resignQuote, signQuote, OPT_MULT, optOn, optText, teamOption, auto
   startNextSeason, getP, allPlayers, capFor, avgSalary, minSalary, maxSalary, taxLine, luxuryTax, mleAmount, mleFree, capYear, faEra, ERA_INFO, money, payroll, capSpace, expiring,
   askPrice, tenderPrice, isRestricted, compPicks, resign, letGo, matchSheet, declineSheet, sheetTargets, sendSheet, signFA, onBooks, ensureFA, marketValue, salFor, fitFor, priceFor,
   resignPrice, offerScore, baseAsk, placeBid, withdrawBid, bidOutlook, advanceFA, interestedTeams, extInfo, extend, FA_ROUNDS, canSignOutside,
-  leaders, LEAD, potKnown, shownPot, LOTTERY_TXT, poDepth,
+  leaders, LEAD, potKnown, potKnownBy, potFor, valueFor, shownPot, LOTTERY_TXT, poDepth,
   whatItTakes, raiseMax, meanFactor, INC_NAME, incFor, incHit, likelyBonus, payBonuses, userTerms,
   HOOKS, hasUser, cuttable, aiStyles, logInjury, endContractAt, contractYears, isMine, mor, addMor, raceFor, teamModes, prodScore, careerScore, retireJerseys, franchiseScore, HOFG, isGuard, mkPlayer, PROF, finishProfile, slotGrade, COLLEGES, BIG_SCHOOLS, cleanName, rookieDeal, progress, classBoard, injuries, allStarDay, finishSeason };
 if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.HW = API;
@@ -6375,7 +6388,7 @@ const HELP = [
 <li><b>My trade won't go through.</b> The builder says why if a rule blocks it. Otherwise the other team wants more value. Try the trading block to see what teams will actually give.</li>
 <li><b>Can I change a player's position?</b> No. Set your starting five with the rotation arrows and pick a lineup style instead.</li>
 <li><b>My stars aren't winning.</b> Check Chemistry and the Lineup card on the Coach tab: missing skills, too many players who need the ball, or a bad starting shape can cost a few points. Also check that your offense and defense suit your players.</li>
-<li><b>Why does a prospect's grade change?</b> Scout grades are estimates that fill in during the season. If you change scouts, the grades change, because they are his opinions. Once a rookie reaches the All-Star break of his first season, his true potential is known and replaces the scout grade.</li>
+<li><b>Why does a prospect's grade change?</b> Scout grades are estimates that fill in during the season. If you change scouts, the grades change, because they are his opinions. At the All-Star break of a rookie's first season, the team that has him learns his true potential. Every other team, you included when he's on someone else's roster, keeps seeing its own scout's grade until the season ends, and AI teams value your rookies in trades by their scout's grade too.</li>
 <li><b>How do I avoid getting fired?</b> Know the goal on opening night, stay out of the luxury tax unless you're contending, and don't trade away the season in a year the owner expects the playoffs.</li>
 <li><b>Overhauling the roster in summer?</b> Fine, but expect chemistry to start low and climb as the group plays together.</li>
 <li><b>Young players not developing?</b> They need real minutes (800+ a season) for the extra bump, and a good head coach helps.</li>
@@ -6412,7 +6425,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-22d';
+const APP_VERSION = '2026-11-22e';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -6787,7 +6800,7 @@ function offersCard() {
 function skillLine(p) {
   const pr = p.prof; if (!pr) return '';
   const g = (v, lo, hi) => Math.max(20, Math.min(99, Math.round(30 + 60 * (v - lo) / (hi - lo))));
-  const k = v => Math.max(25, Math.min(99, Math.round(p.pot + (v - 60) * 0.5)));
+  const base = G.shownPot(L, p), k = v => Math.max(25, Math.min(99, Math.round(base + (v - 60) * 0.5)));
   const sk = [['Scoring', g(pr.pts, 8, 28)], ['Rebounding', g(pr.reb, 3, 13)], ['Passing', g(pr.ast, 1, 9)], ['Defense', g(pr.stl * 1.5 + pr.blk, 0.8, 4)], ['Shooting', g(pr.ft || 0.7, 0.6, 0.9)]];
   return `<div class="skills">${sk.map(([n, v]) => `<span class="sk"><span class="lbl">${n}</span>${rating(k(v))}</span>`).join('')}</div>`;
 }
@@ -6918,7 +6931,7 @@ function vDrafts() {
 function myPicks() {
   const mine = L.draft.log.filter(x => x.tid === L.user);
   if (!mine.length) return '';
-  return `<section class="card"><h3>Your class</h3><div class="list">${mine.map(x => { const p = L.players[x.pid]; return `<div class="pl"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}<div class="pl-sub">Round ${p.draft.rnd}, #${x.n} overall · ${G.money(p.con ? p.con.sal : 0)}</div></div><div class="pl-r"><span class="lbl">${p.seen ? 'TRUE' : 'SCOUT'}</span>${rating(p.seen ? p.pot : p.scout)}</div></div></div>`; }).join('')}</div></section>`;
+  return `<section class="card"><h3>Your class</h3><div class="list">${mine.map(x => { const p = L.players[x.pid]; return `<div class="pl"><div class="pl-main"><span class="pos">${esc(p.pos)}</span><div class="pl-name">${esc(p.name)}<div class="pl-sub">Round ${p.draft.rnd}, #${x.n} overall · ${G.money(p.con ? p.con.sal : 0)}</div></div><div class="pl-r"><span class="lbl">${G.potKnown(L, p) ? 'POT' : 'SCOUT'}</span>${rating(G.shownPot(L, p))}</div></div></div>`; }).join('')}</div></section>`;
 }
 
 /* ---------- Contracts ---------- */
