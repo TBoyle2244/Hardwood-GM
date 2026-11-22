@@ -2321,6 +2321,11 @@ function reviewScouts(L) {
     if (+t === L.user) addNews(L, `Scouting review of the ${y} draft: your picks are turning out ${Math.abs(d).toFixed(1)} points ${d >= 0 ? 'better' : 'worse'} than the league's grades said, compared with other teams.${b.best && b.best.v >= 4 ? ` Best find: ${b.best.p.pos} ${b.best.p.name}.` : ''} ${c.name}'s rating ${c.r > old ? 'rises' : c.r < old ? 'drops' : 'holds'}${c.r !== old ? ` ${c.r > old ? '+' : ''}${c.r - old}` : ''} to ${c.r}.${c.id !== (L.teams[L.user].staff.sc || {}).id ? ' (He no longer works for you.)' : ''}`);
   }
 }
+function rookieNews(L) {
+  if (!hasUser(L)) return;
+  const mine = roster(L, L.user).filter(p => p.reveal === L.year).sort((a, b) => b.pot - a.pot); if (!mine.length) return;
+  addNews(L, `All-Star break: your rookies' true potential is now known. ${mine.slice(0, 5).map(p => `${p.pos} ${p.name} ${p.ovr} OVR / ${p.pot} POT (scout said ${myGrade(L, Object.assign({}, p, { reveal: null }))})`).join('; ')}.`);
+}
 function myGrade(L, p) { return hasUser(L) ? gradeFor(L, p, L.user) : p.scout; }
 function scoutMiss(L, tid) { const r = scoutR(L, tid); return { r, w: scoutW(r), sd: scoutSD(r) }; }
 function promoteExPlayers(L) {
@@ -3309,7 +3314,7 @@ function simDay(L) {
   }
   L.day++;
   if (L.day % 7 === 0 || L.day >= L.schedule.length) endWeek(L);
-  if (L.day === allStarDay(L)) { allStarGame(L); reviewScouts(L); }
+  if (L.day === allStarDay(L)) { allStarGame(L); reviewScouts(L); rookieNews(L); }
   if (L.day === deadlineDay(L)) addNews(L, 'The trade deadline has passed. Rosters are set until the season ends, apart from free-agent signings.');
   if (hasUser(L) && !pastDeadline(L) && Math.random() < 0.05) makeOffers(L, 1, 6);
   if (hasUser(L) && !pastDeadline(L) && Math.random() < 0.02) for (let i = 0; i < 30; i++) if (makeOffer3(L)) break;
@@ -4501,7 +4506,7 @@ function closeFreeAgency(L) {
 function potKnown(L, p) {
   if (p.reveal == null || p.seen) return true;
   if (L.year > p.reveal) return true;
-  return L.year === p.reveal && (L.phase === 'season-over' || L.phase === 'draft' || L.phase === 'offseason');
+  return L.year === p.reveal && (L.phase === 'season-over' || L.phase === 'draft' || L.phase === 'offseason' || L.phase === 'playoffs' || (L.phase === 'regular' && L.day >= allStarDay(L)));   // rookies are known at the All-Star break
 }
 function shownPot(L, p) { return potKnown(L, p) ? p.pot : myGrade(L, p); }
 // Per-game leaders need 70% of their team's games; percentage leaders need a minimum of makes.
@@ -6370,7 +6375,7 @@ const HELP = [
 <li><b>My trade won't go through.</b> The builder says why if a rule blocks it. Otherwise the other team wants more value. Try the trading block to see what teams will actually give.</li>
 <li><b>Can I change a player's position?</b> No. Set your starting five with the rotation arrows and pick a lineup style instead.</li>
 <li><b>My stars aren't winning.</b> Check Chemistry and the Lineup card on the Coach tab: missing skills, too many players who need the ball, or a bad starting shape can cost a few points. Also check that your offense and defense suit your players.</li>
-<li><b>Why does a prospect's grade change?</b> Scout grades are estimates that fill in during the season. If you change scouts, the grades change, because they are his opinions.</li>
+<li><b>Why does a prospect's grade change?</b> Scout grades are estimates that fill in during the season. If you change scouts, the grades change, because they are his opinions. Once a rookie reaches the All-Star break of his first season, his true potential is known and replaces the scout grade.</li>
 <li><b>How do I avoid getting fired?</b> Know the goal on opening night, stay out of the luxury tax unless you're contending, and don't trade away the season in a year the owner expects the playoffs.</li>
 <li><b>Overhauling the roster in summer?</b> Fine, but expect chemistry to start low and climb as the group plays together.</li>
 <li><b>Young players not developing?</b> They need real minutes (800+ a season) for the extra bump, and a good head coach helps.</li>
@@ -6407,7 +6412,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-22c';
+const APP_VERSION = '2026-11-22d';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
