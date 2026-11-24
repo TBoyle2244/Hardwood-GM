@@ -498,6 +498,19 @@ table.ts { width: 100%; border-collapse: separate; border-spacing: 0 3px; margin
 /* control tips: smaller, top-left, out of the middle of the court */
 .arc-tip { left: max(10px, env(safe-area-inset-left)) !important; transform: none !important; top: calc(max(8px, env(safe-area-inset-top)) + 70px); bottom: auto !important; max-width: min(300px, 36vw) !important; font-size: 12px !important; padding: 5px 9px !important; line-height: 1.3; }
 @media (max-height: 500px) { .arc-tip { top: calc(max(6px, env(safe-area-inset-top)) + 50px); font-size: 11px !important; } }
+/* matchup: game setup row */
+.arc-match .setup { width: min(1000px, 100%); display: flex; flex-wrap: wrap; gap: 8px 18px; background: #0b0d1e; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; padding: 8px 10px; }
+.arc-match .setup > div { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.arc-match .setup span { color: #bfe0ff; font: 900 12px/1 "Courier New", monospace; letter-spacing: 1px; text-transform: uppercase; margin-right: 2px; }
+.arc-match .setup button { background: #1659b8; border: 3px solid #2b7fe0; color: #fff; font: 800 13px/1 system-ui, sans-serif; padding: 7px 10px; }
+.arc-match .setup button.on { border-color: #6ff3ff; background: #1a8f4a; }
+@media (max-height: 500px) { .arc-match .setup { padding: 5px 8px; gap: 5px 12px; } .arc-match .setup button { padding: 5px 8px; font-size: 12px; } }
+/* watching CPU vs CPU: no controls on screen */
+.arc-ui.watch .arc-pad, .arc-ui.watch .arc-stick, .arc-ui.watch .arc-card:not(.ftc), .arc-ui.watch .arc-tip { display: none !important; }
+.arc-match { overflow-y: auto; -webkit-overflow-scrolling: touch; justify-content: flex-start; }
+.arc-match .mh.mhb { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 0; z-index: 2; text-align: left; flex: none; }
+.arc-match .mh.mhb button { font: 800 15px/1.1 system-ui, sans-serif; letter-spacing: 0; padding: 9px 16px; background: #1a8f4a; border: 3px solid #4ade80; color: #fff; }
+@media (max-height: 500px) { .arc-match .mh.mhb button { padding: 6px 12px; font-size: 13px; } }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -6042,7 +6055,7 @@ const ARC = (() => {
   class Game {
     // o: { teams: [{ tid, abbr, name, players: [p...5] }, ...], year, qsec, user: 0 | 1 | null }
     constructor(o) {
-      this.year = o.year || 2000; this.qsec = o.qsec || 120; this.user = o.user == null ? null : o.user;
+      this.year = o.year || 2000; this.qsec = o.qsec || 120; this.user = o.user == null ? null : o.user; this.userSide = this.user; this.diff = o.diff == null ? 1 : o.diff;   // 0 Rookie, 1 Pro, 2 All-Star
       this.sp = clamp((this.year - 1979) / 35, 0, 1); // how spread out the offense plays (posts early, corners later)
       this.three = this.year >= 1979;
       this.T = o.teams.map((t, side) => ({ side, tid: t.tid, key: t.key, city: t.city, nick: t.nick, rec: t.rec, kit: side === 0 ? 'home' : 'away', abbr: t.abbr, name: t.name, pri: tcol(t.key, t.tid, this.year)[0], sec: tcol(t.key, t.tid, this.year)[1], color: side === 0 ? '#f4f1ea' : tcol(t.key, t.tid, this.year)[0], trim: side === 0 ? tcol(t.key, t.tid, this.year)[0] : tcol(t.key, t.tid, this.year)[1], score: 0,
@@ -6280,6 +6293,10 @@ const ARC = (() => {
       return null;
     }
     // Finish the game without you: the computer plays both sides at high speed.
+    // Difficulty: Rookie makes your shots fall more and the computer's less, and its hands slower; All-Star the other way.
+    shotMul(pl) { if (this.userSide == null) return 1; return pl.side === this.userSide ? [1.08, 1, 0.95][this.diff] : [0.86, 1, 1.07][this.diff]; }
+    handsMul(d) { if (this.userSide == null || d.side === this.userSide) return 1; return [0.55, 1, 1.4][this.diff]; }
+    timingWin() { return [1.6, 1.1, 0.85][this.diff]; }
     simToEnd() { this.user = null; let n = 0; while (!this.over && n++ < 200000) this.step(1 / 30, {}); }
     // the make chance shown under your shooter: a well-timed shot from here, against this defense, on these legs
     chance(pl) {
@@ -6346,7 +6363,7 @@ const ARC = (() => {
     releaseShot(pl) {
       const s = pl.shooting; if (!s) return; if (this.ball.holder !== pl) { delete pl.shooting; return; }   // lost the ball on the way up: arms come down
       const h = this.hoopOf(pl.side), d = dist(pl, h), three = this.isThree(pl), dfn = this.nearestDef(pl), open = dfn ? dist(dfn, pl) : 20;
-      const timing = clamp(1 - Math.abs(s.t - s.apex) / (s.apex * 1.1), 0, 1);       // 1 = released right at the top
+      const timing = clamp(1 - Math.abs(s.t - s.apex) / (s.apex * (s.user ? this.timingWin() : 1.1)), 0, 1);       // 1 = released right at the top (Rookie forgives more)
       // dunkers throw it down from up to 8 feet when nobody is directly between them and the rim (4 feet when somebody is)
       const lane = this.laneClear(pl);
       const dunkR = pl.r.dunk ? (lane ? 8 : 4) : 0;
@@ -6359,7 +6376,7 @@ const ARC = (() => {
       let blocked = false;
       if (dfn && open < 3.2 && dfn.z > 0.8 && !dunk) blocked = Math.random() < 0.2 + dfn.r.blk * 0.35;
       if (dfn && open < 3 && !dfn.blocking && Math.random() < 0.1) { this.foul(dfn); this.foulShot(pl, three ? 3 : 2, Math.random() < p * 0.6); delete pl.shooting; return; }
-      p = clamp(p, 0.02, 0.95);
+      p = clamp(p * this.shotMul(pl), 0.02, 0.95);
       const make = !blocked && Math.random() < p;
       pl.st.fga++; if (three) pl.st.tpa++;
       this.shots.push({ side: pl.side, pl, x: pl.x, y: pl.y, make, three, dunk });
@@ -6474,7 +6491,7 @@ const ARC = (() => {
         const sh = this.T[this.poss].P.find(x => !!x.shooting);
         if (sh && dist(pl, sh) < 3.2 && pl.z === 0 && Math.random() < 0.12 + pl.r.blk * 0.1) { pl.vz = 11 + pl.r.blk * 2; pl.z = 0.01; }
         if (b.holder && b.holder.side !== pl.side && dist(pl, b.holder) < 2.6 && !b.holder.oob && Math.random() < 0.0011 * (1.6 - pl.r.def)) { this.defFoul(pl, b.holder, 'Reach-in foul'); return; }   // the computer reaches too, and sometimes gets whistled
-        if (b.holder && b.holder.side !== pl.side && dist(pl, b.holder) < 2.6 && Math.random() < 0.0012 * (0.5 + pl.r.stl) * (1.35 - b.holder.r.pass) * pl.r.def) {
+        if (b.holder && b.holder.side !== pl.side && dist(pl, b.holder) < 2.6 && Math.random() < this.handsMul(pl) * 0.0012 * (0.5 + pl.r.stl) * (1.35 - b.holder.r.pass) * pl.r.def) {
           pl.st.stl++; b.holder.st.tov++; this.reach = (this.reach || 0) + 1; this.say(`Steal by ${short(pl.p)}!`); this.give(pl); this.poss = pl.side; this.shot = 24; this.pickCtrl(); return;
         }
       }
@@ -6490,7 +6507,7 @@ const ARC = (() => {
         else { b.x = f.from.x + (f.to.x - f.from.x) * k; b.y = f.from.y + (f.to.y - f.from.y) * k; b.z = 4 + Math.sin(k * Math.PI) * (f.lob ? 9 : 2.5); }
         // defenders in the passing lane can pick it off
         f.tried = f.tried || new Set();
-        if (k > (f.lob ? 0.8 : 0.2) && k < (f.lob ? 0.95 : 0.85)) for (const d of this.T[1 - f.by.side].P) if (dist(d, b) < 1.5 && !f.tried.has(d) && (f.tried.add(d), Math.random() < 0.7 * (0.04 + d.r.stl * 0.1) * (1.3 - f.by.r.pass) * d.r.def * (f.lob ? 0.5 : 1))) {
+        if (k > (f.lob ? 0.8 : 0.2) && k < (f.lob ? 0.95 : 0.85)) for (const d of this.T[1 - f.by.side].P) if (dist(d, b) < 1.5 && !f.tried.has(d) && (f.tried.add(d), Math.random() < this.handsMul(d) * 0.7 * (0.04 + d.r.stl * 0.1) * (1.3 - f.by.r.pass) * d.r.def * (f.lob ? 0.5 : 1))) {
           d.st.stl++; f.by.st.tov++; this.say(`Picked off by ${short(d.p)}!`); this.give(d); this.poss = d.side; this.shot = 24; this.pickCtrl(true); return;
         }
         if (k >= 1) { this.give(f.to); this.pickCtrl();
@@ -6714,7 +6731,7 @@ const ARC = (() => {
   /* ---------- drawing and touch controls ---------- */
   function View(root, game, onExit) {
     const cv = document.createElement('canvas'), ctx = cv.getContext('2d'), ui = document.createElement('div');
-    root.appendChild(cv); root.appendChild(ui);
+    root.appendChild(cv); root.appendChild(ui); ui.classList.add('arc-ui');
     let w = 0, h = 0, dpr = 1, camX = 47;
     const inp = { jx: 0, jy: 0 }, edge = {}, keys = {};
     function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; PH = camFar ? clamp(Math.min(Math.round(h / 1.5), Math.round((LEN + 2 * MARGIN) * SC * h / Math.max(1, w))), 150, 440) : clamp(Math.round(h / 2.7), 140, 320); PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW * RS; pc.height = PH * RS; }
@@ -6825,7 +6842,7 @@ const ARC = (() => {
       const me = game.user != null ? game.ctrl[game.user] : null; if (!me || game.over) { card.innerHTML = ''; return; }
       const R2 = rat(me), keys2 = mode === 'off' ? ['LAY', 'MID', '3PT', 'DRB', 'PAS'] : ['REB', 'STL', 'BLK', 'DEF'], k = me.p.id + mode;
       if (k !== cardKey) { cardKey = k; card.innerHTML = `<div class="nm">${me.p.name}, ${me.p.pos}${me.num != null ? ` <span>#${me.num}</span>` : ''}</div><div class="en"><i></i></div><div class="rt">${keys2.map(x => `<div><b>${x}</b>${R2[x]}</div>`).join('')}</div>`; }
-      const bar = card.querySelector('.en i'); if (bar) { bar.style.width = Math.round(me.en * 100) + '%'; bar.style.background = enCol(me.en); }
+      const ew = Math.round(me.en * 100); if (ew !== card._ew) { card._ew = ew; const bar = card.querySelector('.en i'); if (bar) { bar.style.width = ew + '%'; bar.style.background = enCol(me.en); } }
     }
     // joystick: touch anywhere on the left half
     let stickId = null, sx = 0, sy = 0;
@@ -6965,7 +6982,7 @@ const ARC = (() => {
             else if (v === 'prev' || v === 'next') { subSide = 1 - subSide; subSel = null; subMsg = ''; }
             else if (v === 'cs0' || v === 'cs1') chartSide = +v[2];
             else if (v === 'bs0' || v === 'bs1') boxSide = +v[2];
-            else if (v === 'auto') game.autoSub[game.user] = !game.autoSub[game.user];
+            else if (v === 'auto') { if (game.user != null) game.autoSub[game.user] = !game.autoSub[game.user]; }
             else if (v === 'tips') { showTips = !showTips; if (!showTips) tipEl.classList.remove('on'); }
             else if (v === 'snd') { SFX.set(!SFX.on); SFX.init(); }
             else if (v === 'autod') { game.autoDef = !game.autoDef; try { localStorage.setItem('arcAutoD', game.autoDef ? 'on' : 'off'); } catch (e2) {} }
@@ -6991,10 +7008,10 @@ const ARC = (() => {
         <div class="scroll"><table class="subs"><tr class="h"><th colspan="2">Starters</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${subRows(T, T.P, false)}
         <tr class="h"><th colspan="2">Bench</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${T.B.length ? subRows(T, T.B, true) : '<tr><td colspan="18">No bench players.</td></tr>'}</table></div>`;
       else body = `<div class="set"><button data-m="snd">Sound: <b>${SFX.on ? 'On' : 'Off'}</b></button><button data-m="autod">Auto defense: <b>${game.autoDef ? 'On' : 'Off'}</b></button><p class="note">On: your defender guards his man by himself until you move him. You still jump, block and steal.</p><button data-m="cam">Camera: <b>${camFar ? 'Full court' : 'Close'}</b></button><p class="note">Full court zooms out so you can see the whole floor, like the original arcade view.</p>
-        <button data-m="auto">Auto substitutions for your team: <b>${game.autoSub[game.user] ? 'On' : 'Off'}</b></button><p class="note">On: your coach rests tired players and brings starters back at dead balls. Off: you make every change yourself (fouled-out players still come out).</p>
+        <button data-m="auto">Auto substitutions for your team: <b>${game.user == null || game.autoSub[game.user] ? 'On' : 'Off'}</b></button><p class="note">On: your coach rests tired players and brings starters back at dead balls. Off: you make every change yourself (fouled-out players still come out).</p>
         <button data-m="tips">Control tips: <b>${showTips ? 'On' : 'Off'}</b></button></div>`;
-      const left = game.timeouts[game.user];
-      menu.innerHTML = `<div class="mh">PAUSED</div><div class="mb"><div class="tabs"><button data-m="timeout" class="to"${left > 0 ? '' : ' disabled'}>Call Timeout (${left})</button>${TABS.map(([k2, n]) => `<button data-m="${k2}" class="${tab === k2 ? 'on' : ''}">${n}</button>`).join('')}</div><div class="pane">${body}</div></div>
+      const left = game.user != null ? game.timeouts[game.user] : 0;
+      menu.innerHTML = `<div class="mh">PAUSED</div><div class="mb"><div class="tabs">${game.user != null ? `<button data-m="timeout" class="to"${left > 0 ? '' : ' disabled'}>Call Timeout (${left})</button>` : ''}${TABS.map(([k2, n]) => `<button data-m="${k2}" class="${tab === k2 ? 'on' : ''}">${n}</button>`).join('')}</div><div class="pane">${body}</div></div>
         <div class="mf">${confirmQuit ? `<div class="sq"><button data-m="sim">Sim to the end</button><button data-m="quit">Quit game</button><button data-m="simquit">Cancel</button></div>` : '<button data-m="simquit">Sim / Quit</button>'}<button data-m="resume" class="go">Resume</button></div>`;
       fillPortraits(menu);
     }
@@ -7002,20 +7019,33 @@ const ARC = (() => {
     let match = null;
     const stars = ovr => { const v = clamp(Math.round(((ovr || 50) - 40) / 10 * 2) / 2, 1, 5); return [1, 2, 3, 4, 5].map(i => `<i class="${v >= i ? 'f' : v >= i - 0.5 ? 'h' : ''}">★</i>`).join(''); };
     function showMatchup() {
-      paused = true;
+      paused = true; ui.classList.toggle('watch', game.userSide == null); prewarm();
       if (!match) { match = document.createElement('div'); match.className = 'arc-match'; ui.appendChild(match);
         match.addEventListener('click', e => { const b2 = e.target.closest('[data-k]'); if (b2) { const k = b2.dataset.k;
           if (k === 'tip') { SFX.init(); match.remove(); match = null; paused = false; return; }
-          game.setKit(game.user != null ? game.user : 0, k); for (const key in cache) delete cache[key]; showMatchup(); } }); }
+          if (k.startsWith('d:')) { game.diff = +k.slice(2); try { localStorage.setItem('arcDiff', k.slice(2)); } catch (e2) {} return showMatchup(); }
+          if (k.startsWith('q:')) { game.qsec = +k.slice(2); game.clock = game.qsec; return showMatchup(); }
+          if (k.startsWith('c:')) { const cpu = k === 'c:cpu'; game.user = game.userSide = cpu ? null : 0; if (!cpu) game.pickCtrl(true); ui.classList.toggle('watch', cpu); mode = ''; try { localStorage.setItem('arcCtl', cpu ? 'cpu' : 'you'); } catch (e2) {} return showMatchup(); }
+          game.setKit(0, k); for (const key in cache) delete cache[key]; warmed = false; showMatchup(); } }); }
       const me = game.user != null ? game.user : 0, T0 = game.T[0], T1 = game.T[1];
       const five = T => `<div class="five">${T.P.map(pl => { const pc2 = portrait(pl); return `<div class="pc"><img src="${pc2.toDataURL()}" alt=""><div class="st">${stars(pl.p.ovr)}</div><b>${pl.p.name}</b><span>${pl.p.pos} #${pl.num}</span></div>`; }).join('')}</div>`;
       const sw = (T, k) => { const c1 = k === 'home' ? '#f4f1ea' : k === 'away' ? T.pri : T.sec, c2 = k === 'home' ? T.pri : k === 'away' ? T.sec : T.pri; return `<span class="sw" style="background:${c1};border-color:${c2}"></span>`; };
-      match.innerHTML = `<div class="mh">TONIGHT'S MATCHUP</div>
+      match.innerHTML = `<div class="mh mhb"><span>TONIGHT'S MATCHUP</span><button data-k="tip" class="go">${game.userSide == null ? 'Watch ▶' : 'Tip off ▶'}</button></div>
         <div class="sides">${five(T0)}${five(T1)}</div>
         <div class="banner"><div class="tm" style="background:${T0.pri}"><b>${(T0.city || '').toUpperCase()}</b><b>${(T0.nick || T0.name).toUpperCase()}</b><span>${T0.rec || ''}</span></div><div class="vs">VS</div>
           <div class="tm r" style="background:${T1.pri}"><b>${(T1.city || '').toUpperCase()}</b><b>${(T1.nick || T1.name).toUpperCase()}</b><span>${T1.rec || ''}</span></div><div class="at">${(T0.city || '').toUpperCase()}</div></div>
-        <div class="kits"><span>Your jersey:</span>${['home', 'away', 'alt'].map(k => `<button data-k="${k}" class="${game.T[me].kit === k ? 'on' : ''}">${sw(game.T[me], k)}${k === 'home' ? 'Home' : k === 'away' ? 'Away' : 'Alternate'}</button>`).join('')}
-          <span class="opp">${game.T[1 - me].abbr} wear ${game.T[1 - me].kit === 'home' ? 'white' : 'their colors'}</span><button data-k="tip" class="go">Tip off</button></div>`;
+        <div class="setup"><div><span>Difficulty</span>${['Rookie', 'Pro', 'All-Star'].map((n, i) => `<button data-k="d:${i}" class="${game.diff === i ? 'on' : ''}">${n}</button>`).join('')}</div>
+          <div><span>Quarters</span>${[[60, '1 min'], [120, '2 min'], [180, '3 min'], [300, '5 min']].map(([v, n]) => `<button data-k="q:${v}" class="${game.qsec === v ? 'on' : ''}">${n}</button>`).join('')}</div>
+          <div><span>Control</span><button data-k="c:you" class="${game.userSide != null ? 'on' : ''}">You vs CPU</button><button data-k="c:cpu" class="${game.userSide == null ? 'on' : ''}">CPU vs CPU (watch)</button></div></div>
+        <div class="kits"><span>${game.userSide == null ? 'Home jersey' : 'Your jersey'}:</span>${['home', 'away', 'alt'].map(k => `<button data-k="${k}" class="${game.T[me].kit === k ? 'on' : ''}">${sw(game.T[me], k)}${k === 'home' ? 'Home' : k === 'away' ? 'Away' : 'Alternate'}</button>`).join('')}
+          <span class="opp">${game.T[1 - me].abbr} wear ${game.T[1 - me].kit === 'home' ? 'white' : 'their colors'}</span></div>`;
+    }
+    let warmed = false;
+    function prewarm() {
+      if (warmed) return; warmed = true;
+      const jobs = []; for (const T of game.T) for (const pl of T.P.concat(T.B)) for (const fl of [false, true]) { for (let f = 0; f <= 6; f++) jobs.push([pl, f, 'down', fl]); for (const ps of ['drib', 'up']) jobs.push([pl, 0, ps, fl]); }
+      const step2 = () => { if (!alive) return; const t0 = performance.now(); while (jobs.length && performance.now() - t0 < 8) { const [pl, f, ps, fl] = jobs.shift(); sprite(pl, f, ps, fl); } if (jobs.length) setTimeout(step2, 0); };
+      setTimeout(step2, 50);
     }
     let last = performance.now(), raf = 0, alive = true;
     function frame(now) {
@@ -7032,10 +7062,12 @@ const ARC = (() => {
       if (!paused) sounds(dt); draw(); hud(); setButtons(); updCard();
       raf = requestAnimationFrame(frame);
     }
+    const hudCache = { s: '', m: '' };
     function hud() {
       const T = game.T, q = game.q > 4 ? 'OT' : 'Q' + game.q, c = Math.ceil(game.clock), mm = Math.floor(c / 60), ss = String(c % 60).padStart(2, '0');
-      scoreEl.innerHTML = `<span class="t" style="--c:${T[0].trim}">${T[0].abbr}</span><b>${T[0].score}</b><span class="mid">${q} ${mm}:${ss}<small>${Math.max(0, Math.ceil(game.shot))}</small></span><b>${T[1].score}</b><span class="t" style="--c:${T[1].color}">${T[1].abbr}</span>`;
-      msgEl.textContent = game.msgT > 0 ? game.msg : '';
+      const sHTML = `<span class="t" style="--c:${T[0].trim}">${T[0].abbr}</span><b>${T[0].score}</b><span class="mid">${q} ${mm}:${ss}<small>${Math.max(0, Math.ceil(game.shot))}</small></span><b>${T[1].score}</b><span class="t" style="--c:${T[1].color}">${T[1].abbr}</span>`;
+      if (sHTML !== hudCache.s) { hudCache.s = sHTML; scoreEl.innerHTML = sHTML; }
+      const mTxt = game.msgT > 0 ? game.msg : ''; if (mTxt !== hudCache.m) { hudCache.m = mTxt; msgEl.textContent = mTxt; }
       if (game.over && !ui.querySelector('.arc-end')) showEnd();
       if (game.half && !ui.querySelector('.arc-half')) showHalf();
       const F = game.fts, ftOn = false;
@@ -7071,7 +7103,7 @@ const ARC = (() => {
     }
     // Player of the Game: final score, line score, the best player's line and his shot chart.
     function showEnd() {
-      const B = game.box(), won = B[0].score > B[1].score, all = game.T[0].P.concat(game.T[0].B, game.T[1].P, game.T[1].B);
+      const B = game.box(), us = game.userSide, won = us != null && B[us].score > B[1 - us].score, all = game.T[0].P.concat(game.T[0].B, game.T[1].P, game.T[1].B);
       const gs = pl => pl.st.pts + 1.2 * pl.st.reb + 1.5 * pl.st.ast + 2 * (pl.st.stl + pl.st.blk) - 0.7 * (pl.st.fga - pl.st.fgm) - pl.st.tov + (pl.side === (B[0].score > B[1].score ? 0 : 1) ? 3 : 0);
       const pog = all.slice().sort((a, b) => gs(b) - gs(a))[0], T = game.T[pog.side], s = pog.st, pct = (m, a) => a ? Math.round(m / a * 100) + '%' : '-';
       const d = document.createElement('div'); d.className = 'arc-end pog';
@@ -7558,7 +7590,7 @@ const ARC = (() => {
   // Start a game in a full-screen layer. opts: { home, away (team objects with players), year, qsec, onExit }
   function start(opts) {
     const root = document.createElement('div'); root.className = 'arc-root'; document.body.appendChild(root);
-    const game = new Game({ teams: [opts.home, opts.away], year: opts.year, qsec: opts.qsec, user: 0, autoDef: (() => { try { return localStorage.getItem('arcAutoD') !== 'off'; } catch (e) { return true; } })() });
+    const game = new Game({ teams: [opts.home, opts.away], year: opts.year, qsec: opts.qsec, user: (() => { try { return localStorage.getItem('arcCtl') === 'cpu' ? null : 0; } catch (e) { return 0; } })(), diff: (() => { try { const v = localStorage.getItem('arcDiff'); return v == null ? 1 : +v; } catch (e) { return 1; } })(), autoDef: (() => { try { return localStorage.getItem('arcAutoD') !== 'off'; } catch (e) { return true; } })() });
     const v = View(root, game, how => { if (how === 'again') start(opts); else if (opts.onExit) opts.onExit(game); });
     if (typeof window !== 'undefined') window.__arcGame = game;   // for automated tests
     return v;
@@ -7629,6 +7661,7 @@ const HELP = [
 <li><b>Rebounding</b>: defenders box out their man when a shot goes up, and a boxed-out player has a harder time getting the ball. Offensive rebounds right at the rim are often tipped back in.</li>
 <li><b>Tips</b>: control tips show in your first arcade game only (Settings → Control tips to turn them back on). After a basket, +1/+2/+3 floats over the rim in the scoring team's color.</li>
 <li><b>Crossover</b>: tap Cross and your ball handler jabs about 3 feet to the other side and bursts out of it, guarded or not. Against a close defender it works about half the time (better handlers more often): he bites the wrong way and is frozen for a moment, and once in a while he ends up on the floor. A failed cross can get stripped.</li>
+<li><b>Game setup</b> (on the matchup screen): Difficulty — Rookie (your shots fall more, a wider green window, the computer's shots fall less and its hands are slower), Pro (even), All-Star (the other way); quarter length; and Control — You vs CPU, or CPU vs CPU to watch the game play itself. Your choices are remembered.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7870,7 +7903,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24k';
+const APP_VERSION = '2026-11-24l';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
