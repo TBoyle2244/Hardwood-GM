@@ -418,6 +418,57 @@ details.more summary { cursor: pointer; font-family: var(--cond); font-weight: 6
 .arc-card { left: 50% !important; transform: translateX(-50%); }
 .arc-tip { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px) !important; }
 @media (max-height: 500px) { .arc-tip { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 84px) !important; max-width: 42vw; font-size: 12px; } .arc-card { padding: 4px 8px; } }
+/* arcade: Hoop Land style message strip under the scoreboard */
+.arc-msg { left: 50% !important; right: auto !important; transform: translateX(-50%); background: rgba(12,12,24,.88); border: 2px solid #36a3ff; color: #fff; font: 900 13px/1 "Courier New", monospace !important; letter-spacing: 1px; text-transform: uppercase; text-shadow: none !important; padding: 6px 14px; white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis; }
+.arc-msg:empty { display: none; }
+/* free-throw card */
+.arc-card.ftc { padding: 0; overflow: hidden; min-width: 230px; }
+.arc-card.ftc .fh { font: 900 11px/1 "Courier New", monospace; letter-spacing: 1px; color: #fff; padding: 5px 8px; text-shadow: 0 1px 0 #000; }
+.arc-card.ftc .fb { display: flex; gap: 8px; align-items: center; padding: 6px 8px; }
+.arc-card.ftc .pf { width: 46px; height: 52px; flex: none; background: #0b0d1e; border: 2px solid #36a3ff; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+.ptc { image-rendering: pixelated; width: 100%; height: auto; display: block; }
+/* pause menu panes */
+.arc-menu .tabs button.to { background: #0b3d8a; border-color: #ffd34d; }
+.arc-menu .tabs button:disabled { opacity: .45; }
+.arc-menu .seg { display: flex; gap: 6px; margin-bottom: 6px; } .arc-menu .seg button { padding: 6px 16px; } .arc-menu .seg button.on { border-color: #6ff3ff; background: #1a64cc; }
+.arc-menu .note.hi, .arc-end .note.hi { color: #ffd34d; font-weight: 700; }
+.thd { display: flex; align-items: stretch; gap: 6px; margin-bottom: 6px; }
+.thd .tp { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; padding: 6px 10px; border: 2px solid rgba(255,255,255,.35); color: #fff; text-shadow: 0 1px 0 #000; font: 900 12px/1.2 "Courier New", monospace; }
+.thd .tp b:last-child { font-size: 16px; } .thd .tp.r { text-align: right; }
+.thd .sc { background: #0b0d1e; border: 2px solid #36a3ff; color: #fff; font: 900 26px/1 "Courier New", monospace; display: flex; align-items: center; padding: 0 10px; min-width: 52px; justify-content: center; }
+.thd .qc { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; font: 900 15px/1.2 "Courier New", monospace; padding: 0 6px; } .thd .qc span { color: #ffd34d; font-size: 13px; }
+table.ls td, table.ls th { text-align: center !important; font-family: "Courier New", monospace; font-weight: 800; } table.ls td.tn { text-align: left !important; } table.ls td.tn i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; } table.ls td.tot { color: #ffd34d; }
+.tops { display: flex; gap: 8px; margin-top: 6px; } .top { flex: 1; min-width: 0; background: #0b2f6e; border: 2px solid #36a3ff; }
+.top .tt, .pog .tt { color: #fff; font: 900 11px/1 "Courier New", monospace; letter-spacing: 1px; padding: 5px 8px; text-shadow: 0 1px 0 #000; }
+.top .tb { display: flex; align-items: center; gap: 8px; padding: 6px; flex-wrap: wrap; }
+.top .pf, .pog .pf { width: 48px; height: 54px; flex: none; background: #0b0d1e; border: 2px solid #36a3ff; display: flex; align-items: flex-end; overflow: hidden; }
+.top .nm { display: flex; flex-direction: column; min-width: 0; flex: 1; } .top .nm b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .top .nm span { font-size: 12px; color: #bfe0ff; }
+.top .st, .pog .st { display: flex; gap: 4px; width: 100%; } .top .st div, .pog .st div { flex: 1; text-align: center; background: #1557b4; padding: 4px 2px; font-size: 11px; color: #bfe0ff; } .top .st b, .pog .st b { display: block; font: 900 17px/1.1 "Courier New", monospace; color: #fff; }
+.pog .st.sm b { font-size: 14px; }
+table.bx td, table.bx th { text-align: center !important; font-variant-numeric: tabular-nums; } table.bx td.n, table.bx th:first-child { text-align: left !important; }
+table.pbp td { white-space: normal !important; font-size: 13px; } table.pbp td:first-child, table.pbp td:last-child { white-space: nowrap !important; font-family: "Courier New", monospace; font-weight: 800; color: #bfe0ff; } table.pbp td.m { width: 100%; }
+svg.chart { width: 100%; max-width: 420px; max-height: 58vh; display: block; margin: 0 auto; }
+svg.chart .fl { fill: #c98e52; } svg.chart .ln { fill: none; stroke: #fff; stroke-width: .35; } svg.chart .rim { fill: none; stroke: #ff7a1a; stroke-width: .35; }
+svg.chart .mk { fill: #22c55e; stroke: #063; stroke-width: .25; } svg.chart .ms { fill: #ef4444; stroke: #600; stroke-width: .25; }
+.leg { display: flex; gap: 14px; justify-content: center; align-items: center; margin-top: 6px; font-size: 13px; } .leg i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; } .leg i.mk { background: #22c55e; } .leg i.ms { background: #ef4444; }
+.arc-menu .sq { display: flex; gap: 8px; } .arc-menu .sq button { min-width: 0 !important; }
+/* Player of the Game */
+.arc-end.pog { background: #1150a8; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; border-radius: 0; color: #fff; font-family: system-ui, -apple-system, sans-serif; z-index: 6; }
+.arc-end.pog .mh { background: #120f1c; border: 3px solid #36a3ff; color: #fff; font: 900 24px/1 "Courier New", monospace; letter-spacing: 6px; text-align: center; padding: 8px; margin-bottom: 8px; }
+.arc-end.pog table.ls { width: 100%; border-collapse: separate; border-spacing: 0 3px; margin: 0 0 8px; } .arc-end.pog table.ls td, .arc-end.pog table.ls th { background: #1557b4; padding: 5px; border: 0; } .arc-end.pog table.ls tr.h th { background: #0a2a66; }
+.pog .pg { display: flex; gap: 10px; flex-wrap: wrap; } .pog .pc, .pog .pcht { flex: 1 1 280px; background: #0b2f6e; border: 2px solid #36a3ff; }
+.pog .pb { display: flex; gap: 10px; align-items: center; padding: 8px; } .pog .pf { width: 76px; height: 86px; } .pog .pb .nm { display: block; font-size: 18px; } .pog .pb span { font-size: 13px; color: #bfe0ff; }
+.pog .st { padding: 0 8px 8px; } .pog .pcht svg.chart { max-height: 36vh; padding: 6px; }
+.arc-end.pog .boxes table { font-size: 12px; } .arc-end.pog .note { color: #d7ebff; margin: 8px 0; }
+.arc-end.pog .arc-row button { background: #1659b8; border: 3px solid #2b7fe0; color: #fff; font: 800 15px/1.1 system-ui, sans-serif; padding: 12px 16px; border-radius: 0; } .arc-end.pog .arc-row .go { background: #1a8f4a; border-color: #4ade80; }
+.arc-menu { background: rgba(8,10,22,.82); }
+@media (max-height: 500px) {
+  .arc-menu { gap: 5px; } .arc-menu .mh { font-size: 16px; padding: 4px; letter-spacing: 4px; } .arc-menu .mb { padding: 6px; gap: 6px; }
+  .arc-menu .tabs { width: 128px; gap: 5px; overflow: auto; -webkit-overflow-scrolling: touch; } .arc-menu .tabs button { padding: 7px 6px; font-size: 13px; flex: none; }
+  .arc-menu .mf button { padding: 8px 10px; font-size: 14px; } .thd .sc { font-size: 20px; min-width: 40px; } .thd .tp { padding: 3px 8px; font-size: 10px; } .thd .tp b:last-child { font-size: 13px; }
+  .arc-menu table { font-size: 12px; } .arc-menu td, .arc-menu th { padding: 4px 5px; } .top .pf { width: 38px; height: 43px; } .top .st b { font-size: 14px; }
+  .arc-end.pog { inset: 4px 6px; padding: 8px; } .arc-end.pog .mh { font-size: 18px; padding: 5px; } .pog .pf { width: 56px; height: 64px; }
+}
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -5945,13 +5996,15 @@ const ARC = (() => {
       this.T.forEach(T => { const used = new Set(); T.P.concat(T.B).forEach(pl => { let n = pl.p.num != null ? +pl.p.num : null, k = 0; while (n == null || used.has(n)) { const hv = Math.abs(Math.sin((pl.p.id || pl.i + 1) * 12.9898 + k++ * 78.233)) * 43758.5453; n = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 40, 41, 42, 44, 45, 50, 52, 54, 55][Math.floor((hv % 1) * 37)]; } used.add(n); pl.num = n; }); });
       this.q = 1; this.clock = this.qsec; this.shot = 24; this.poss = 0; this.state = 'inbound'; this.wait = 1.2;
       this.ball = { x: 47, y: 25, z: 4, holder: null, flight: null, lastPasser: null };
+      this.pbp = []; this.shots = []; this.timeouts = [this.year >= 1999 ? 7 : 7, 7];
       this.ctrl = [null, null]; this.log = []; this.msg = ''; this.msgT = 0; this.over = false; this.t = 0; this.jumpHold = null;
       this.setupJump();
       if (this.user != null) this.say('Hold SHOOT, let go at the top of the jump', 3.5);
     }
     hoopOf(side) { return { x: side === 0 ? HOOP[1] : HOOP[0], y: HY }; } // the hoop this side attacks: user (side 0) attacks right
     dir(side) { return side === 0 ? 1 : -1; }
-    say(m, t) { this.msg = m; this.msgT = t || 1.6; }
+    say(m, t) { this.msg = m; this.msgT = t || 1.6; if (/Tap JUMP|Hold SHOOT|bit on the fake|^Step-back|^Spin move|^Shook him|^Alley-oop!$/.test(m)) return; const last = this.pbp[this.pbp.length - 1]; if (!last || last.m !== m || this.t - last.t > 2) this.pbp.push({ q: this.q, clock: Math.max(0, Math.ceil(this.clock)), m, t: this.t, s: [this.T[0].score, this.T[1].score] }); }
+    qpts(side, pts) { const T = this.T[side]; T.qs = T.qs || []; T.qs[this.q - 1] = (T.qs[this.q - 1] || 0) + pts; }
     all() { return this.T[0].P.concat(this.T[1].P); }
     // Offensive spots by era: posts on the blocks early, corners and wings later.
     spots(side) {
@@ -6027,6 +6080,12 @@ const ARC = (() => {
       this.tire(dt);
       if (this.clock <= 0) { this.clock = 0; if (this.state !== 'shot') return this.endQuarter(); }
       if (this.shot <= 0 && this.state === 'live') { this.turnover(this.ball.holder, 'Shot clock violation'); return; }
+      // three seconds in the key: an offensive player can't camp in the lane (the shooter and loose balls reset it)
+      if (this.state === 'live' && this.frontcourt) { const h = this.hoopOf(this.poss), base = this.poss === 0 ? LEN : 0;
+        for (const pl of this.T[this.poss].P) { const inKey = Math.abs(pl.y - HY) < 8 && Math.abs(pl.x - base) < 19;
+          pl.keyT = inKey && pl.z === 0 && pl !== this.ball.holder ? (pl.keyT || 0) + dt : 0;   // the ball handler attacking the rim is fine
+          if (pl.keyT > 3) { pl.keyT = 0; this.turnover(pl, 'Three in the key violation'); return; } } }
+      else for (const pl of this.T[0].P.concat(this.T[1].P)) pl.keyT = 0;
       // half-court rules: get it across in 8 seconds (10 before 2001-02), and once it's across you can't take it back
       { const hb = this.ball.holder;
         if (hb && this.state === 'live' && !hb.oob) {
@@ -6080,6 +6139,7 @@ const ARC = (() => {
         if (pl.anim && pl.anim.k === 'hesi') sp *= 0.3;
         if (pl.charge > 0) { tx = pl.x; ty = pl.y; }
         if (pl.stepTo) { pl.stepTo.t -= dt; tx = pl.stepTo.x; ty = pl.stepTo.y; sp = 14; if (pl.stepTo.t <= 0) pl.stepTo = null; }
+        if ((pl.keyT || 0) > 1.8 && pl !== ctrl && pl !== this.ball.holder) { ty = pl.y < HY ? HY - 10 : HY + 10; pl.cut = null; }   // get out of the lane
         if (pl.glide) { tx = pl.glide.x; ty = pl.glide.y; sp = pl.glide.sp; }
         else if (pl.z > 0) sp *= 0.25; // little control in the air
         if ((pl.anim && pl.anim.k === 'fall') || (pl.oob && this.ball.holder === pl)) { tx = pl.x; ty = pl.y; }
@@ -6117,6 +6177,17 @@ const ARC = (() => {
       if (pl.drive > 0) { pl.drive -= dt; return { x: h.x - this.dir(off) * 2, y: HY + (pl.y < HY ? -2 : 2) }; }
       const s = this.spots(off)[pl.i]; return { x: (s.x + pl.x) / 2 + this.dir(off) * 3, y: s.y };
     }
+    // Timeout: your team catches its breath. Allowed when you have the ball or it's dead.
+    callTimeout(side) {
+      if (this.timeouts[side] <= 0) return 'No timeouts left.';
+      if (!(this.poss === side || ['inbound', 'ft', 'made', 'break'].includes(this.state))) return 'You can only call timeout when you have the ball or play is dead.';
+      this.timeouts[side]--; for (const pl of this.T[side].P.concat(this.T[side].B)) pl.en = clamp(pl.en + 0.15, 0, 1); for (const pl of this.T[1 - side].P) pl.en = clamp(pl.en + 0.08, 0, 1);
+      this.say(`Timeout, ${this.T[side].abbr}`, 1.6);
+      if (this.state === 'live' && this.ball.holder && this.ball.holder.side === side) { const hb = this.ball.holder; this.setupInbound(side); this.ball.holder.x = hb.x; }   // inbound after the timeout
+      return null;
+    }
+    // Finish the game without you: the computer plays both sides at high speed.
+    simToEnd() { this.user = null; let n = 0; while (!this.over && n++ < 200000) this.step(1 / 30, {}); }
     // the make chance shown under your shooter: a well-timed shot from here, against this defense, on these legs
     chance(pl) {
       const h = this.hoopOf(pl.side), d = dist(pl, h), three = this.isThree(pl), dfn = this.nearestDef(pl), open = dfn ? dist(dfn, pl) : 20;
@@ -6195,6 +6266,7 @@ const ARC = (() => {
       p = clamp(p, 0.02, 0.95);
       const make = !blocked && Math.random() < p;
       pl.st.fga++; if (three) pl.st.tpa++;
+      this.shots.push({ side: pl.side, pl, x: pl.x, y: pl.y, make, three, dunk });
       this.ball.holder = null;
       const DK = dunk ? DUNKS[Math.floor(Math.random() * DUNKS.length)] : null;
       this.ball.flight = { kind: 'shot', by: pl, from: { x: pl.x, y: pl.y, z: pl.z + pl.r.height }, t: 0, T: dunk ? DK.hold + 0.12 : clamp(0.7 + d / 40, 0.7, 1.5), make, three, blocked, dunk, style: DK, hold: DK ? DK.hold : 0 };
@@ -6209,14 +6281,14 @@ const ARC = (() => {
       if (pl.side === this.user && !dunk) this.timingNote = timing;
     }
     foulShot(pl, n, and1) {
-      if (and1) { const pts = n === 3 ? 3 : 2; pl.st.fga++; pl.st.fgm++; if (n === 3) { pl.st.tpa++; pl.st.tpm++; } this.T[pl.side].score += pts; pl.st.pts += pts; n = 1; this.say('And one!'); }
+      if (and1) { const pts = n === 3 ? 3 : 2; pl.st.fga++; pl.st.fgm++; if (n === 3) { pl.st.tpa++; pl.st.tpm++; } this.T[pl.side].score += pts; this.qpts(pl.side, pts); pl.st.pts += pts; n = 1; this.say('And one!'); }
       else { pl.st.fga += 0; this.say('Shooting foul'); }
       this.state = 'ft'; this.wait = 1.3; this.fts = { pl, n }; this.ball.holder = pl; pl.anim = { k: 'fall', t: 0, T: 1.2 }; pl.glide = null;
     }
     shootFTs() {
       const { pl, n } = this.fts; let made = 0;
       for (let i = 0; i < n; i++) { pl.st.fta++; if (Math.random() < pl.r.ft) { made++; pl.st.ftm++; } }
-      pl.st.pts += made; this.T[pl.side].score += made;
+      pl.st.pts += made; this.T[pl.side].score += made; this.qpts(pl.side, made);
       if (made) { const hh = this.hoopOf(pl.side); this.netSwish = { side: hh.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; }
       this.say(`${short(pl.p)} makes ${made} of ${n} free throw${n > 1 ? 's' : ''}`);
       this.setupInbound(1 - pl.side);
@@ -6300,7 +6372,7 @@ const ARC = (() => {
         if (f.blocked && k > 0.25) { b.flight = null; this.looseV(b.x, b.y, b.z, -this.dir(f.by.side) * rnd(8, 15), rnd(-7, 7), rnd(-1, 5), 1 - f.by.side); return; }
         if (k >= 1) {
           if (f.make) {
-            const pts = f.three ? 3 : 2; f.by.st.fgm++; f.by.st.pts += pts; if (f.three) f.by.st.tpm++; this.T[f.by.side].score += pts;
+            const pts = f.three ? 3 : 2; f.by.st.fgm++; f.by.st.pts += pts; if (f.three) f.by.st.tpm++; this.T[f.by.side].score += pts; this.qpts(f.by.side, pts);
             const a = this.ball.lastPasser; if (a && a.side === f.by.side && a !== f.by && Math.random() < 0.7) a.st.ast++;
             this.say(f.dunk ? `${short(f.by.p)}: ${f.style ? f.style.name : 'slam'}!` : f.three ? `${short(f.by.p)} hits the three!` : `${short(f.by.p)} scores`);
             b.flight = null; this.ball.lastPasser = null;
@@ -6327,6 +6399,7 @@ const ARC = (() => {
         for (const pl of this.all()) if (pl.z === 0 && b.vz < 0 && dist(pl, b) < 2.2 && b.z > reach(pl) && b.z < reach(pl) + 3.5 && !(this.user != null && pl === this.ctrl[this.user]) && Math.random() < (0.3 + pl.r.reb * 0.4) * dt * 8) { pl.vz = 11 + pl.r.reb * 3; pl.z = 0.01; }
         const eff2 = pl => dist(pl, b) - pl.r.reb * 0.9 - (pl.side === this.poss ? 0.9 : 0) + Math.random() * 0.8;   // good rebounders and crashing offensive players get there first more often
         const cand = this.all().filter(pl => dist(pl, b) < 1.4 + pl.r.reb * 0.5 + (pl.side === this.poss ? 0.4 : 0) && b.z <= reach(pl)).sort((a, c) => eff2(a) - eff2(c));
+        if (cand.length && Math.random() < 0.05) { const w2 = cand[0], rival = this.all().find(o => o.side !== w2.side && dist(o, w2) < 1.6); if (rival) { const pusher = Math.random() < 0.5 ? w2 : rival; this.foul(pusher); pusher.st.tov += pusher.side === this.poss ? 1 : 0; this.say(`Pushing foul committed by ${pusher.p.name}`, 1.8); this.setupInbound(1 - pusher.side); return; } }
         for (const pl of cand.length ? [cand[0]] : []) {
           if (true) {
             pl.st.reb++; const offReb = pl.side === this.poss;
@@ -6461,11 +6534,11 @@ const ARC = (() => {
     root.appendChild(cv); root.appendChild(ui);
     let w = 0, h = 0, dpr = 1, camX = 47;
     const inp = { jx: 0, jy: 0 }, edge = {}, keys = {};
-    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; PH = clamp(Math.round(h / 2.7), 140, 320); PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW * RS; pc.height = PH * RS; }
+    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; PH = camFar ? clamp(Math.min(Math.round(h / 1.5), Math.round((LEN + 2 * MARGIN) * SC * h / Math.max(1, w))), 150, 440) : clamp(Math.round(h / 2.7), 140, 320); PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW * RS; pc.height = PH * RS; }
     // Pixel-art view: everything is drawn into a small canvas (PH pixels tall) and scaled up with no smoothing.
     // 3/4 top-down camera that follows the ball along the length of the court.
     // SC = pixels per foot. Players are drawn small next to the court (about 3.5 ft tall) like classic arcade games.
-    let PH = 240; const SC = 5, SYF = 0.66, MARGIN = 9, CROWD = 70;
+    let PH = 240, camFar = (() => { try { return localStorage.getItem('arcCam') === 'far'; } catch (e) { return false; } })(); const SC = 5, SYF = 0.66, MARGIN = 9, CROWD = 70;
     const pc = document.createElement('canvas'), px = pc.getContext('2d');
     let PW = 320, world = null, camY = 25;
     const RS = 2;   // the pixel canvas is drawn at 2x: court and ball in 2x2 blocks, players in single pixels for more detail
@@ -6506,6 +6579,13 @@ const ARC = (() => {
     }
     const enCol = e => e >= 0.8 ? '#4ade80' : e >= 0.6 ? '#facc15' : '#f87171';
     function updCard() {
+      if (game.state === 'ft' && game.fts && !game.over) {   // free throws: the shooter's card, like the TV graphic
+        const pl = game.fts.pl, s = pl.st, T = game.T[pl.side], k = 'ft' + pl.p.id + s.ftm + '/' + s.fta;
+        if (k !== cardKey) { cardKey = k; card.classList.add('ftc'); card.innerHTML = `<div class="fh" style="background:${T.pri}">${T.abbr} · FREE THROW${game.fts.n > 1 ? 'S' : ''}</div><div class="fb"><div class="pf"></div><div class="fi"><div class="nm">${pl.p.name}${pl.num != null ? ` <span>#${pl.num}</span>` : ''}</div><div class="rt"><div><b>FTS</b>${rat(pl).FTS}</div><div><b>GAME</b>${s.ftm}/${s.fta}</div><div><b>PTS</b>${s.pts}</div></div></div></div>`;
+          const c = portrait(pl); c.className = 'ptc'; card.querySelector('.pf').appendChild(c); }
+        return;
+      }
+      if (card.classList.contains('ftc')) { card.classList.remove('ftc'); cardKey = null; }
       const me = game.user != null ? game.ctrl[game.user] : null; if (!me || game.over) { card.innerHTML = ''; return; }
       const R2 = rat(me), keys2 = mode === 'off' ? ['LAY', 'MID', '3PT', 'DRB', 'PAS'] : ['REB', 'STL', 'BLK', 'DEF'], k = me.p.id + mode;
       if (k !== cardKey) { cardKey = k; card.innerHTML = `<div class="nm">${me.p.name}, ${me.p.pos}${me.num != null ? ` <span>#${me.num}</span>` : ''}</div><div class="en"><i></i></div><div class="rt">${keys2.map(x => `<div><b>${x}</b>${R2[x]}</div>`).join('')}</div>`; }
@@ -6582,9 +6662,45 @@ const ARC = (() => {
     ui.querySelector('.arc-quit').addEventListener('click', () => stop(true));
     ui.querySelector('.arc-pause').addEventListener('click', () => paused ? resume() : pause());
     ui.addEventListener('click', e => { const a = e.target.closest('[data-x]'); if (a) { if (a.dataset.x === 'again') { stop(false); onExit('again'); } else stop(true); } });
-    /* ---------- pause menu: controls, substitutions, settings ---------- */
-    let menu = null, tab = 'controls', subSide = 0, subSel = null, subMsg = '';
-    function pause() { if (game.over) return; paused = true; for (const id in presses) delete presses[id]; inp.jx = inp.jy = 0; renderMenu(); }
+    /* ---------- shared stat views: line score, top performers, box score, shot chart, play by play ---------- */
+    const clk = s => { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+    const qName = q => q <= 4 ? ['1ST', '2ND', '3RD', '4TH'][q - 1] : (q === 5 ? 'OT' : (q - 4) + 'OT');
+    function lineScore() {
+      const nq = Math.max(4, game.q), qs = Array.from({ length: nq }, (_, i) => i + 1);
+      return `<table class="ls"><tr class="h"><th></th>${qs.map(q => `<th>${qName(q)}</th>`).join('')}<th>TOTAL</th></tr>${game.T.map(T => `<tr><td class="tn"><i style="background:${T.pri}"></i>${T.abbr}</td>${qs.map(q => `<td>${q > game.q ? '' : ((T.qs || [])[q - 1] || 0)}</td>`).join('')}<td class="tot">${T.score}</td></tr>`).join('')}</table>`;
+    }
+    const allOf = T => T.P.concat(T.B);
+    const topOf = T => allOf(T).slice().sort((a, b) => (b.st.pts - a.st.pts) || (b.st.reb + b.st.ast - a.st.reb - a.st.ast))[0];
+    function teamHead() {
+      const T0 = game.T[0], T1 = game.T[1], q = game.over ? 'FINAL' : qName(game.q);
+      const pn = (T, r) => `<div class="tp${r ? ' r' : ''}" style="background:${T.pri}"><b>${(T.city || '').toUpperCase()}</b><b>${(T.nick || T.name || T.abbr).toUpperCase()}</b></div>`, sc = T => `<div class="sc">${T.score}</div>`;
+      return `<div class="thd">${pn(T0)}${sc(T0)}<div class="qc">${q}<span>${game.over ? '' : clk(game.clock)}</span></div>${sc(T1)}${pn(T1, true)}</div>`;
+    }
+    function topCard(T) {
+      const pl = topOf(T); if (!pl) return '';
+      const s = pl.st;
+      return `<div class="top"><div class="tt" style="background:${T.pri}">TOP PERFORMER · ${T.abbr}</div><div class="tb"><div class="pf" data-pt="${T.side}:${allOf(T).indexOf(pl)}"></div><div class="nm"><b>${pl.p.name}</b><span>${pl.p.pos}${pl.num != null ? ' · #' + pl.num : ''}</span></div>
+        <div class="st"><div><b>${s.pts}</b>PTS</div><div><b>${s.fgm}/${s.fga}</b>FGM</div><div><b>${s.reb}</b>REB</div><div><b>${s.ast}</b>AST</div></div></div></div>`;
+    }
+    function fillPortraits(el) { el.querySelectorAll('[data-pt]').forEach(d => { const [sd, k] = d.dataset.pt.split(':').map(Number), pl = allOf(game.T[sd])[k]; if (!pl) return; const c = portrait(pl); c.className = 'ptc'; d.appendChild(c); }); }
+    function boxTable(b) {
+      return `<table class="bx"><tr class="h"><th>${b.abbr}</th><th>MIN</th><th>PTS</th><th>FG</th><th>3P</th><th>FT</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TO</th><th>PF</th></tr>${b.rows.map(r => `<tr><td class="n">${r.pos} ${r.name}</td><td>${r.min}</td><td>${r.pts}</td><td>${r.fgm}-${r.fga}</td><td>${r.tpm}-${r.tpa}</td><td>${r.ftm}-${r.fta}</td><td>${r.reb}</td><td>${r.ast}</td><td>${r.stl}</td><td>${r.blk}</td><td>${r.tov}</td><td>${r.pf}</td></tr>`).join('')}</table>`;
+    }
+    // Half court seen from above, hoop at the top. Every shot is folded onto that half.
+    function shotChart(list) {
+      const pts = list.map(s => { const left = s.x < 47, d = left ? s.x : 94 - s.x, y = left ? 50 - s.y : s.y; return `<circle cx="${y.toFixed(1)}" cy="${d.toFixed(1)}" r="${s.make ? 1.1 : 0.9}" class="${s.make ? 'mk' : 'ms'}"/>`; }).join('');
+      const made = list.filter(s => s.make).length;
+      return `<svg class="chart" viewBox="-1 -1 52 37"><rect x="0" y="0" width="50" height="35" class="fl"/><rect x="17" y="0" width="16" height="19" class="ln"/><circle cx="25" cy="19" r="6" class="ln"/>
+        <path d="M3 0 V14 A23.75 23.75 0 0 0 47 14 V0" class="ln"/><line x1="22" y1="4" x2="28" y2="4" class="ln"/><circle cx="25" cy="5.25" r="0.75" class="rim"/>${pts}</svg>
+        <div class="leg"><span><i class="mk"></i>Made</span><span><i class="ms"></i>Missed</span><b>${made}/${list.length} FG</b></div>`;
+    }
+    function pbpList() {
+      const L = game.pbp.slice().reverse();
+      return L.length ? `<table class="pbp">${L.map(e => `<tr><td>${qName(e.q)} ${clk(e.clock)}</td><td class="m">${e.m}</td><td>${e.s[0]}-${e.s[1]}</td></tr>`).join('')}</table>` : '<p class="note">Nothing yet.</p>';
+    }
+    /* ---------- pause menu: Hoop Land style ---------- */
+    let menu = null, tab = 'team', subSide = 0, subSel = null, subMsg = '', chartSide = 0, boxSide = 0, toMsg = '', confirmQuit = false;
+    function pause() { if (game.over) return; paused = true; for (const id in presses) delete presses[id]; inp.jx = inp.jy = 0; toMsg = ''; confirmQuit = false; renderMenu(); }
     function resume() { paused = false; subSel = null; subMsg = ''; if (menu) { menu.remove(); menu = null; } }
     const CTRL = [['Offense', null, null], ['Move', 'Drag on the left side', 'Arrows / WASD'], ['Pass', 'Tap Pass (or tap the right side)', 'Tap K'], ['Lob pass', 'Hold Pass (or hold the right side)', 'Hold K'],
       ['Shoot', 'Hold Shoot or swipe down and hold; let go at the top', 'Hold J'], ['Pump fake', 'Quick tap of Shoot, or swipe down and let go', 'Tap J'], ['Crossover / switch hands', 'Tap Cross, or swipe left/right', 'Q / E'],
@@ -6598,15 +6714,23 @@ const ARC = (() => {
         return `<tr class="${on ? 'sel' : ''} ${pl.fouledOut ? 'out' : ''}" data-sub="${bench ? 'b' : 's'}${k}"><td>${bench ? 'B' + (k + 6) : ['PG', 'SG', 'SF', 'PF', 'C'][k]}</td><td class="n">${pl.p.name}, ${pl.p.pos}${pl.num != null ? ' #' + pl.num : ''}</td>
           <td style="color:${enCol(pl.en)}">${pl.fouledOut ? 'OUT' : Math.round(pl.en * 100) + '%'}</td><td>${mmss(pl.st.sec)}</td><td>${pl.st.pts}</td><td>${pl.st.pf}</td>${COLS.map(c => `<td class="${R2[c] >= 8 ? 'hi' : ''}">${R2[c]}</td>`).join('')}</tr>`; }).join('');
     }
+    const TABS = [['team', 'Team Stats'], ['box', 'Box Score'], ['chart', 'Shot Chart'], ['pbp', 'Play by Play'], ['subs', 'Substitutions'], ['controls', 'Controls'], ['settings', 'Settings']];
     function renderMenu() {
       if (!menu) { menu = document.createElement('div'); menu.className = 'arc-menu'; ui.appendChild(menu);
         menu.addEventListener('click', e => {
           const t = e.target.closest('[data-m]'); if (t) { const v = t.dataset.m;
-            if (v === 'resume') return resume(); if (v === 'quit') return stop(true);
-            if (v === 'prev' || v === 'next') { subSide = 1 - subSide; subSel = null; subMsg = ''; }
+            if (v === 'resume') return resume();
+            if (v === 'simquit') confirmQuit = !confirmQuit;
+            else if (v === 'quit') return stop(true);
+            else if (v === 'sim') { confirmQuit = false; game.simToEnd(); resume(); return; }
+            else if (v === 'timeout') { const err = game.callTimeout(game.user); toMsg = err || `Timeout called. Your players get a breather (${game.timeouts[game.user]} left).`; tab = 'team'; }
+            else if (v === 'prev' || v === 'next') { subSide = 1 - subSide; subSel = null; subMsg = ''; }
+            else if (v === 'cs0' || v === 'cs1') chartSide = +v[2];
+            else if (v === 'bs0' || v === 'bs1') boxSide = +v[2];
             else if (v === 'auto') game.autoSub[game.user] = !game.autoSub[game.user];
             else if (v === 'tips') { showTips = !showTips; if (!showTips) tipEl.classList.remove('on'); }
-            else tab = v;
+            else if (v === 'cam') { camFar = !camFar; try { localStorage.setItem('arcCam', camFar ? 'far' : 'close'); } catch (e2) {} size(); }
+            else { tab = v; toMsg = ''; }
             return renderMenu(); }
           const r = e.target.closest('[data-sub]'); if (r && subSide === game.user) { const k = +r.dataset.sub.slice(1);
             if (r.dataset.sub[0] === 's') { subSel = subSel === k ? null : k; subMsg = subSel == null ? '' : `Now tap a bench player to bring in for ${game.T[subSide].P[k].p.name}.`; }
@@ -6615,17 +6739,24 @@ const ARC = (() => {
             renderMenu(); }
         });
       }
-      const T = game.T[subSide];
+      const T = game.T[subSide], side = x => `<div class="seg">${game.T.map((T2, i) => `<button data-m="${x}${i}" class="${(x === 'cs' ? chartSide : boxSide) === i ? 'on' : ''}">${T2.abbr}</button>`).join('')}</div>`;
       let body;
-      if (tab === 'controls') body = `<table class="ctl">${CTRL.map(([a, b2, c]) => b2 == null ? `<tr class="h"><th>${a}</th><th>Touch</th><th>Keyboard</th></tr>` : `<tr><td>${a}</td><td>${b2}</td><td>${c}</td></tr>`).join('')}</table>`;
+      if (tab === 'team') body = `${toMsg ? `<p class="note hi">${toMsg}</p>` : ''}${teamHead()}${lineScore()}<div class="tops">${topCard(game.T[0])}${topCard(game.T[1])}</div>`;
+      else if (tab === 'box') body = `${side('bs')}<div class="scroll">${boxTable(game.box()[boxSide])}</div>`;
+      else if (tab === 'chart') body = `${side('cs')}${shotChart(game.shots.filter(s => s.side === chartSide))}`;
+      else if (tab === 'pbp') body = `<div class="scroll">${pbpList()}</div>`;
+      else if (tab === 'controls') body = `<table class="ctl">${CTRL.map(([a, b2, c]) => b2 == null ? `<tr class="h"><th>${a}</th><th>Touch</th><th>Keyboard</th></tr>` : `<tr><td>${a}</td><td>${b2}</td><td>${c}</td></tr>`).join('')}</table>`;
       else if (tab === 'subs') body = `<div class="subhead"><button data-m="prev">◀</button><b>${T.side === game.user ? 'Your team' : 'Opponent'} · ${T.abbr}</b><button data-m="next">▶</button></div>
         <p class="note">${T.side === game.user ? (subMsg || 'Tap a starter, then a bench player to swap them. Energy drops while a player is on the floor (faster when he runs hard) and comes back on the bench. Tired players are slower and miss more.') : 'The other coach makes his own changes.'}</p>
         <div class="scroll"><table class="subs"><tr class="h"><th colspan="2">Starters</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${subRows(T, T.P, false)}
         <tr class="h"><th colspan="2">Bench</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${T.B.length ? subRows(T, T.B, true) : '<tr><td colspan="18">No bench players.</td></tr>'}</table></div>`;
-      else body = `<div class="set"><button data-m="auto">Auto substitutions for your team: <b>${game.autoSub[game.user] ? 'On' : 'Off'}</b></button><p class="note">On: your coach rests tired players and brings starters back at dead balls. Off: you make every change yourself (fouled-out players still come out).</p>
+      else body = `<div class="set"><button data-m="cam">Camera: <b>${camFar ? 'Full court' : 'Close'}</b></button><p class="note">Full court zooms out so you can see the whole floor, like the original arcade view.</p>
+        <button data-m="auto">Auto substitutions for your team: <b>${game.autoSub[game.user] ? 'On' : 'Off'}</b></button><p class="note">On: your coach rests tired players and brings starters back at dead balls. Off: you make every change yourself (fouled-out players still come out).</p>
         <button data-m="tips">Control tips: <b>${showTips ? 'On' : 'Off'}</b></button></div>`;
-      menu.innerHTML = `<div class="mh">PAUSED</div><div class="mb"><div class="tabs">${[['controls', 'Controls'], ['subs', 'Substitutions'], ['settings', 'Settings']].map(([k2, n]) => `<button data-m="${k2}" class="${tab === k2 ? 'on' : ''}">${n}</button>`).join('')}</div><div class="pane">${body}</div></div>
-        <div class="mf"><button data-m="quit">Quit</button><button data-m="resume" class="go">Resume</button></div>`;
+      const left = game.timeouts[game.user];
+      menu.innerHTML = `<div class="mh">PAUSED</div><div class="mb"><div class="tabs"><button data-m="timeout" class="to"${left > 0 ? '' : ' disabled'}>Call Timeout (${left})</button>${TABS.map(([k2, n]) => `<button data-m="${k2}" class="${tab === k2 ? 'on' : ''}">${n}</button>`).join('')}</div><div class="pane">${body}</div></div>
+        <div class="mf">${confirmQuit ? `<div class="sq"><button data-m="sim">Sim to the end</button><button data-m="quit">Quit game</button><button data-m="simquit">Cancel</button></div>` : '<button data-m="simquit">Sim / Quit</button>'}<button data-m="resume" class="go">Resume</button></div>`;
+      fillPortraits(menu);
     }
     /* ---------- tonight's matchup: starting fives with portraits, the records, and your jersey ---------- */
     let match = null;
@@ -6667,11 +6798,22 @@ const ARC = (() => {
       msgEl.textContent = game.msgT > 0 ? game.msg : '';
       if (game.over && !ui.querySelector('.arc-end')) showEnd();
     }
+    // Player of the Game: final score, line score, the best player's line and his shot chart.
     function showEnd() {
-      const B = game.box(), won = B[0].score > B[1].score;
-      const tbl = b => `<table><tr><th>${b.abbr}</th><th>MIN</th><th>PTS</th><th>FG</th><th>3P</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>PF</th></tr>${b.rows.map(r => `<tr><td>${r.pos} ${r.name}</td><td>${r.min}</td><td>${r.pts}</td><td>${r.fgm}-${r.fga}</td><td>${r.tpm}-${r.tpa}</td><td>${r.reb}</td><td>${r.ast}</td><td>${r.stl}</td><td>${r.blk}</td><td>${r.pf}</td></tr>`).join('')}</table>`;
-      const d = document.createElement('div'); d.className = 'arc-end';
-      d.innerHTML = `<h2>${won ? 'You win' : 'You lose'}, ${B[0].score}-${B[1].score}</h2><p>Exhibition game: it doesn't count in the standings.</p>${tbl(B[0])}${tbl(B[1])}<div class="arc-row"><button data-x="again">Play again</button><button data-x="quit">Back to the office</button></div>`;
+      const B = game.box(), won = B[0].score > B[1].score, all = game.T[0].P.concat(game.T[0].B, game.T[1].P, game.T[1].B);
+      const gs = pl => pl.st.pts + 1.2 * pl.st.reb + 1.5 * pl.st.ast + 2 * (pl.st.stl + pl.st.blk) - 0.7 * (pl.st.fga - pl.st.fgm) - pl.st.tov + (pl.side === (B[0].score > B[1].score ? 0 : 1) ? 3 : 0);
+      const pog = all.slice().sort((a, b) => gs(b) - gs(a))[0], T = game.T[pog.side], s = pog.st, pct = (m, a) => a ? Math.round(m / a * 100) + '%' : '-';
+      const d = document.createElement('div'); d.className = 'arc-end pog';
+      d.innerHTML = `<div class="mh">${won ? 'YOU WIN' : 'FINAL'}</div>${teamHead()}${lineScore()}
+        <div class="pg"><div class="pc"><div class="tt" style="background:${T.pri}">PLAYER OF THE GAME</div><div class="pb"><div class="pf"></div><div><b class="nm">${pog.p.name}</b><span>${pog.p.pos}${pog.num != null ? ' · #' + pog.num : ''} · ${(T.city ? T.city + ' ' : '') + (T.nick || T.name || T.abbr)}</span></div></div>
+          <div class="st"><div><b>${s.pts}</b>PTS</div><div><b>${s.reb}</b>REB</div><div><b>${s.ast}</b>AST</div><div><b>${s.stl}</b>STL</div><div><b>${s.blk}</b>BLK</div></div>
+          <div class="st sm"><div><b>${s.fgm}/${s.fga}</b>FG ${pct(s.fgm, s.fga)}</div><div><b>${s.tpm}/${s.tpa}</b>3PT</div><div><b>${s.ftm}/${s.fta}</b>FT</div></div></div>
+          <div class="pcht"><div class="tt" style="background:${T.pri}">SHOT CHART</div>${shotChart(game.shots.filter(x => x.pl === pog))}</div></div>
+        <div class="boxes" hidden>${boxTable(B[0])}${boxTable(B[1])}</div>
+        <p class="note">Exhibition game: it doesn't count in the standings.</p>
+        <div class="arc-row"><button data-y="box">Box score</button><button data-x="again">Play again</button><button data-x="quit" class="go">Continue</button></div>`;
+      const c = portrait(pog); c.className = 'ptc'; d.querySelector('.pf').appendChild(c);
+      d.querySelector('[data-y="box"]').addEventListener('click', () => { const bx = d.querySelector('.boxes'); bx.hidden = !bx.hidden; if (!bx.hidden) bx.scrollIntoView({ block: 'nearest' }); });
       ui.appendChild(d);
     }
     // ---- pixel helpers ----
@@ -7154,6 +7296,10 @@ const HELP = [
 <li><b>Matchups</b>: on defense, players guard their position: guards on guards, forwards on forwards, centers on centers. Subs change the matchups.</li>
 <li><b>Defense pad</b>: <b>Steal</b> swipes at the ball, <b>Block</b> jumps to contest, <b>Charge</b> plants your feet (if the driver runs into you it's an offensive foul, but a late slide is a blocking foul), <b>Switch</b> takes the defender nearest the ball.</li>
 <li><b>Moves beat defenders</b>: a crossover, hesitation, spin or step-back freezes the man guarding you for a moment. Good ball handlers and quick players win more often; a sloppy crossover against a good thief can get stripped.</li>
+<li><b>Pause menu</b>: Call Timeout (7 a game; only when you have the ball or play is dead; it gives your whole team a breather), Team Stats (line score by quarter and each team's top performer), Box Score, Shot Chart (made and missed shots for either team), Play by Play, Substitutions, Controls and Settings. Sim / Quit lets you sim the rest of the game or leave it.</li>
+<li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
+<li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
+<li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
 <li><b>Energy and substitutions</b>: players tire on the floor (faster when they run hard) and recover on the bench. Tired players are slower and miss more. Pause (II) and open Substitutions to see each player's energy, minutes, points, fouls and ratings, and to swap players (tap a starter, then a bench player). Auto substitutions are on unless you turn them off in Settings. Six fouls and a player is out.</li>
 <li><b>Player card</b> (bottom left): your player's name, energy bar and key ratings. The name under him turns green when a well-timed shot from there goes in more than half the time, yellow from a third to half, and red below a third.</li>
 <li><b>Ratings matter about as much as your play</b>: speed, shooting, passing, steals, blocks and rebounding all come from the players' real numbers. Good defenders make shots harder, and the three-point line appears from 1979-80.</li>
@@ -7392,7 +7538,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23u';
+const APP_VERSION = '2026-11-23v';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
