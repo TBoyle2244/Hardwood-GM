@@ -5988,17 +5988,20 @@ const ARC = (() => {
   const R4 = a => a[Math.floor(Math.random() * a.length)];
   /* ten dunks. hold = seconds he carries the ball before it goes through; ball(t) = where the ball is, as
      [ahead, up] in sprite heights (0 = feet, 1 = top of the head), t from 0 to 1 over the hold. */
+  // where the ball sits for each dunk pose (forward, up), in body heights: it stays in his hand through the move
+  const HAND = { tuck: [0.2, 0.62], dunk: [0.12, 0.95], cock: [-0.5, 0.92], reach: [0.5, 1.0], windup: [-0.85, 0.35], slam: [0.55, 0.7] };
+  // Dunk styles: how long the dunker carries the ball (hold), where the ball is relative to him (ball(t), in body heights), and his pose through the move.
   const DUNKS = [
-    { name: 'two-hand slam', hold: 0.25, ball: t => [0.15, 1.15] },
-    { name: 'tomahawk', hold: 0.35, ball: t => t < 0.6 ? [-0.25, 1.15 + t * 0.2] : [0.25, 1.25 - (t - 0.6) * 0.6], pose: t => t < 0.6 ? 'up' : 'slam' },
-    { name: 'windmill', hold: 0.45, ball: t => { const a = -Math.PI / 2 - t * Math.PI * 1.6; return [Math.cos(a) * 0.45, 0.7 + Math.sin(a) * -0.5]; }, pose: t => t < 0.5 ? 'slam' : 'up' },
-    { name: 'reverse jam', hold: 0.4, ball: t => [-0.2, 1.2], flip: t => t > 0.45 },
-    { name: '360', hold: 0.5, ball: t => [Math.cos(t * Math.PI * 2) * 0.25, 0.85 + t * 0.35], spin: true },
-    { name: 'cradle dunk', hold: 0.45, ball: t => t < 0.5 ? [0.35 - t * 0.6, 0.45 + t * 0.2] : [0.1, 0.6 + (t - 0.5) * 1.3], pose: t => t < 0.5 ? 'slam' : 'up' },
-    { name: 'double-pump', hold: 0.45, ball: t => [0.1, 0.75 + Math.abs(Math.sin(t * Math.PI * 2)) * 0.5], pose: t => Math.sin(t * Math.PI * 2) > 0.3 ? 'up' : 'slam' },
-    { name: 'cock-back slam', hold: 0.4, ball: t => t < 0.7 ? [-0.4, 1.0 + t * 0.3] : [0.3, 1.2], pose: t => t < 0.7 ? 'up' : 'slam' },
-    { name: 'hanging dunk', hold: 0.3, ball: t => [0.15, 1.2], hang: 1.0 },
-    { name: 'one-hand flush', hold: 0.2, ball: t => [0.25, 1.2], pose: t => 'slam' }];
+    { name: 'two-hand slam', hold: 0.3, ball: t => t < 0.5 ? [0.05, 0.95] : [0.2, 1.2], pose: t => t < 0.5 ? 'tuck' : 'dunk' },
+    { name: 'tomahawk', hold: 0.38, ball: t => t < 0.6 ? [-0.35, 1.2 + t * 0.15] : [0.35, 1.3 - (t - 0.6) * 0.6], pose: t => t < 0.6 ? 'cock' : 'reach' },
+    { name: 'windmill', hold: 0.5, ball: t => { const a = Math.PI / 2 + t * Math.PI * 1.7; return [Math.cos(a) * 0.5, 0.75 + Math.sin(-a) * 0.5]; }, pose: t => t < 0.3 ? 'reach' : t < 0.6 ? 'windup' : t < 0.8 ? 'cock' : 'reach' },
+    { name: 'reverse jam', hold: 0.42, ball: t => t < 0.5 ? [0.1, 0.95] : [-0.25, 1.2], flip: t => t > 0.45, pose: t => t < 0.5 ? 'tuck' : 'dunk' },
+    { name: '360', hold: 0.52, ball: t => [Math.cos(t * Math.PI * 2) * 0.2, 0.9 + t * 0.3], spin: true, pose: t => t < 0.85 ? 'tuck' : 'reach' },
+    { name: 'cradle dunk', hold: 0.48, ball: t => t < 0.5 ? [0.4 - t * 0.7, 0.45 + t * 0.15] : [0.35, 0.6 + (t - 0.5) * 1.4], pose: t => t < 0.5 ? 'windup' : 'reach' },
+    { name: 'double-pump', hold: 0.48, ball: t => [0.1, 0.75 + Math.abs(Math.sin(t * Math.PI * 2)) * 0.5], pose: t => Math.sin(t * Math.PI * 2) > 0.3 ? 'dunk' : 'tuck' },
+    { name: 'cock-back slam', hold: 0.44, ball: t => t < 0.7 ? [-0.45, 1.05 + t * 0.3] : [0.35, 1.25], pose: t => t < 0.7 ? 'cock' : 'reach' },
+    { name: 'hanging dunk', hold: 0.32, ball: t => [0.15, 1.2], hang: 1.0, pose: t => t < 0.4 ? 'tuck' : 'dunk' },
+    { name: 'one-hand flush', hold: 0.24, ball: t => [0.35, 1.25], pose: t => 'reach' }];
   function mkPl(p, i, side, year) { return { p, i, side, r: rate(p, year), x: 47, y: 25, z: 0, vz: 0, vx: 0, vy: 0, en: 1, hand: 1, st: { pts: 0, fga: 0, fgm: 0, tpa: 0, tpm: 0, fta: 0, ftm: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, sec: 0 } }; }
   // Team colors for the pixel court and uniforms (primary, secondary), by franchise key.
   const TC = { atl: ['#e03a3e', '#c1d32f'], bos: ['#007a33', '#ba9653'], bkn: ['#1a1a1a', '#c4ced4'], nyk: ['#006bb6', '#f58426'], phi: ['#006bb6', '#ed174c'],
@@ -6336,6 +6339,9 @@ const ARC = (() => {
       if (pl.z > 0 || this.ball.holder !== pl || pl.oob) return;
       pl.vz = 13 + (pl.r.dunk ? 1.5 : 0); pl.z = 0.01; pl.shooting = { t: 0, apex: pl.vz / G_ACC, user: !!userTimed };
       if (!userTimed) pl.shooting.rel = pl.shooting.apex * rnd(0.75, 1.2);
+      // in dunk range the dunk starts at takeoff, so the whole rise is the dunk move, not a jump shot
+      const h = this.hoopOf(pl.side), d = dist(pl, h);
+      if (pl.r.dunk && d < (this.laneClear(pl) ? 8 : 4)) { pl.shooting.t = pl.shooting.apex; this.releaseShot(pl); }
     }
     releaseShot(pl) {
       const s = pl.shooting; if (!s || this.ball.holder !== pl) return;
@@ -6495,7 +6501,7 @@ const ARC = (() => {
       if (f && f.kind === 'shot') {
         f.t += dt; const h = this.hoopOf(f.by.side);
         if (f.hold && f.t < f.hold) {   // the dunker carries it through his move
-          const pl = f.by, q = f.style.ball(f.t / f.hold), sf = this.spriteFt || 6, dirx = Math.sign(h.x - pl.x) || this.dir(pl.side);
+          const pl = f.by, tq = f.t / f.hold, q = f.style.pose && HAND[f.style.pose(tq)] ? HAND[f.style.pose(tq)] : f.style.ball(tq), sf = this.spriteFt || 6, dirx = Math.sign(h.x - pl.x) || this.dir(pl.side);
           b.x = pl.x + dirx * q[0] * 2; b.y = pl.y; b.z = pl.z + q[1] * sf;
           f.from = { x: b.x, y: b.y, z: b.z }; return;
         }
@@ -6512,7 +6518,7 @@ const ARC = (() => {
             b.flight = null; this.ball.lastPasser = null;
             if (this.clock <= 0) return this.endQuarter();
             this.netSwish = { side: h.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; b.x = h.x; b.y = h.y; b.z = RIM_Z - 0.5; this.state = 'made'; this.madeBy = f.by.side; this.wait = f.dunk ? 1.1 : 0.6; this.rimShake = f.dunk ? 0.6 : 0;
-            if (f.dunk) { const pl = f.by; this.slam = { hx: h.x, t: this.t }; pl.glide = { x: pl.x, y: pl.y, sp: 2, z: RIM_Z + 0.3 - (this.spriteFt || 4.8) }; pl.hang = 0.55 + (f.style && f.style.hang || 0); }   // throw it down, then hang on the rim
+            if (f.dunk) { const pl = f.by; this.slam = { hx: h.x, t: this.t }; pl.glide = { x: pl.x, y: pl.y, sp: 2, z: RIM_Z + 0.3 - (this.spriteFt || 4.8) }; pl.hang = 0.55 + (f.style && f.style.hang || 0); if (pl.anim && pl.anim.k === 'dunk') pl.anim.T = pl.anim.t + pl.hang + 0.45; }   // throw it down, then hang on the rim
             return;
           }
           b.flight = null; this.ball.lastPasser = null;
@@ -7276,10 +7282,16 @@ const ARC = (() => {
       const o = 4, top = 6;
       // legs and shoes (two run frames)
       const ly = top + 16 + tor, ll = Math.max(3, 6 + leg), s1 = frame === 1 ? 1 : frame === 2 ? -1 : 0;
-      if (pose === 'lay' || pose === 'dunk' || pose === 'slam') {   // one knee driving up (layup) or both tucked (dunk)
-        const kx = faceL ? o + 1 : o + 5, sx = faceL ? o + 5 : o + 1, kl = Math.max(3, ll - 3);
-        R(kx, ly, 2, kl, sk); R(kx + (faceL ? -1 : 0), ly + kl - 1, 3, 2, shoe);
-        if (pose === 'dunk' || pose === 'slam') { R(sx, ly, 2, kl, sk); R(sx + (faceL ? 0 : -1), ly + kl - 1, 3, 2, shoe); }
+      if (pose === 'swing') {   // hanging on the rim, legs swung forward
+        const kl = Math.max(3, ll - 1), hk = Math.round(kl / 2);
+        for (const lx of [o + 1, o + 5]) { R(lx, ly, 2, hk, sk); R(lx + 2, ly + hk, 2, kl - hk, sk); R(lx + 2, ly + kl - 1, 3, 2, shoe); }
+      } else if (pose === 'land') {   // knees bent, wide stance
+        const kl = Math.max(2, ll - 2); R(o, ly, 2, kl, sk); R(o + 6, ly, 2, kl, sk); R(o - 1, ly + kl, 3, 2, shoe); R(o + 6, ly + kl, 3, 2, shoe);
+      } else if (pose === 'lay' || pose === 'dunk' || pose === 'slam' || pose === 'cock' || pose === 'tuck' || pose === 'reach' || pose === 'windup') {   // one knee driving up (layup, reach, windup) or both tucked (dunk, cock-back, tuck)
+        const FL = false, kx = FL ? o + 1 : o + 5, sx = FL ? o + 5 : o + 1, kl = Math.max(3, ll - (pose === 'tuck' ? 4 : 3));   // drawn facing right; the sprite is mirrored for left
+        R(kx, ly, 2, kl, sk); R(kx + (FL ? -1 : 0), ly + kl - 1, 3, 2, shoe);
+        if (pose === 'dunk' || pose === 'slam' || pose === 'cock' || pose === 'tuck') { R(sx, ly, 2, kl, sk); R(sx + (FL ? 0 : -1), ly + kl - 1, 3, 2, shoe); }
+        else if (pose === 'reach' || pose === 'windup') { R(sx - 1, ly, 2, Math.ceil(ll / 2), sk); R(sx - 2, ly + Math.ceil(ll / 2), 2, ll - Math.ceil(ll / 2), sk); R(sx - 3, ly + ll - 1, 3, 2, shoe); }   // trailing leg kicks back
         else { R(sx, ly, 2, ll, sk); R(sx, ly + ll - 2, 2, 1, '#f4f4f4'); R(sx - (faceL ? 0 : 1), ly + ll, 3, 2, shoe); }
       } else if (frame >= 1) {
         // running: a 6-frame cycle. Legs swing forward and back from the hip, the knee bends and the foot lifts on the
@@ -7308,14 +7320,18 @@ const ARC = (() => {
         P(X + 6, Y + 1, 4, 2, sk); P(X + 7, Y + 3, 2, 1, sk); P(X + 5, Y + 1, 1, 2, trim); P(X + 10, Y + 1, 1, 2, trim); P(X + 6, Y + 3, 1, 1, trim); P(X + 9, Y + 3, 1, 1, trim); P(X + 7, Y + 4, 2, 1, trim);
         P(X, Y, 1, 5, trim); P(X + JW - 1, Y, 1, 5, trim); P(X + 1, Y + JH - 2, JW - 2, 1, dk);
         const ns = String(num), nw = ns.length * 4 - 1, nx = X + Math.round((JW - nw) / 2), ny = Y + 5;
-        for (let q = 0; q < ns.length; q++) { const m = MF[ns[q]]; for (let i = 0; i < 15; i++) if (m[i] === '1') { P(nx + q * 4 + (i % 3) + 1, ny + Math.floor(i / 3) + 1, 1, 1, shade(trim === '#f4f1ea' ? jer : trim, -0.45)); P(nx + q * 4 + (i % 3), ny + Math.floor(i / 3), 1, 1, trim); } }
+        if (!faceL) for (let q = 0; q < ns.length; q++) { const m = MF[ns[q]]; for (let i = 0; i < 15; i++) if (m[i] === '1') { P(nx + q * 4 + (i % 3) + 1, ny + Math.floor(i / 3) + 1, 1, 1, shade(trim === '#f4f1ea' ? jer : trim, -0.45)); P(nx + q * 4 + (i % 3), ny + Math.floor(i / 3), 1, 1, trim); } }
         const SY2 = (top + 12 + tor) * K, sd = shade(shorts, -0.15);
         P(X, SY2, JW, 2, sd); P(X + 2, SY2 + 1, JW - 4, 1, shade(shorts, 0.1)); P(X + 1, SY2 + 10 - 1, JW - 2, 1, trim); P(X + 7, SY2 + 3, 2, 6, shade(shorts, -0.25));
       }
       // arms: down, up (shooting / contesting) or one out (dribbling)
-      if (pose === 'up' || pose === 'dunk' || pose === 'hang') { R(o - 1, top - 3, 2, 9, sk); R(o + 7, top - 3, 2, 9, sk); }
-      else if (pose === 'slam') { const fx2 = faceL ? o - 4 : o + 7; R(fx2, top + 1, 5, 2, sk); R(faceL ? o - 1 : o + 7, top + 2, 2, 5, sk); R(faceL ? o + 7 : o - 1, top + 6, 2, 5, sk); }
-      else if (pose === 'lay') { R(faceL ? o - 1 : o + 7, top - 3, 2, 9, sk); R(faceL ? o + 7 : o - 1, top + 6, 2, 5, sk); }
+      if (pose === 'up' || pose === 'dunk' || pose === 'hang' || pose === 'tuck' || pose === 'swing') { R(o - 1, top - 3, 2, 9, sk); R(o + 7, top - 3, 2, 9, sk); }
+      else if (pose === 'slam') { R(o + 7, top + 1, 5, 2, sk); R(o + 7, top + 2, 2, 5, sk); R(o - 1, top + 6, 2, 5, sk); }   // arm thrown down through the rim
+      else if (pose === 'lay') { R(o + 7, top - 3, 2, 9, sk); R(o - 1, top + 6, 2, 5, sk); }
+      else if (pose === 'cock') { R(o - 3, top - 4, 2, 4, sk); R(o - 2, top - 1, 2, 3, sk); R(o - 1, top + 2, 2, 5, sk); R(o + 7, top - 2, 2, 8, sk); }   // ball cocked behind the head
+      else if (pose === 'reach') { R(o + 9, top - 6, 2, 4, sk); R(o + 8, top - 2, 2, 4, sk); R(o + 7, top + 2, 2, 5, sk); R(o - 2, top + 6, 2, 4, sk); R(o - 3, top + 9, 2, 3, sk); }   // one arm stretched up and over the rim
+      else if (pose === 'windup') { R(o - 1, top + 6, 2, 4, sk); R(o - 3, top + 9, 2, 3, sk); R(o - 5, top + 11, 2, 2, sk); R(o + 7, top - 3, 2, 9, sk); }   // arm swinging down and back
+      else if (pose === 'land') { R(o - 2, top + 7, 2, 5, sk); R(o + 8, top + 7, 2, 5, sk); }
       else if (pose === 'drib') { R(faceL ? o + 7 : o - 1, top + 6, 2, 6, sk); R(faceL ? o - 2 : o + 7, top + 7, 3, 2, sk); R(faceL ? o - 3 : o + 9, top + 8, 2, 3, sk); }
       else if (frame >= 1) {   // arms pump opposite the legs: the forward arm bends up at the elbow, the back arm hangs and swings out a little
         const ph = (frame - 1) / 6 * Math.PI * 2, AL = (6 + tor) * K;
@@ -7325,7 +7341,7 @@ const ARC = (() => {
       }
       else { R(o - 1, top + 6, 2, 6 + tor, sk); R(o + 7, top + 6, 2, 6 + tor, sk); }
       if (lk.bands) { R(o - 1, top + 10 + tor, 2, 1, trim); R(o + 7, top + 10 + tor, 2, 1, trim); }   // wristbands
-      if (LK.acc === 3 && pose !== 'up' && pose !== 'dunk') R(o - 1, top + 6, 2, 5 + tor, '#1f1f1f');   // shooting sleeve
+      if (LK.acc === 3 && (pose === 'down' || pose === 'drib')) R(o - 1, top + 6, 2, 5 + tor, '#1f1f1f');   // shooting sleeve
       // head and hair, in full detail
       toonHead(g, o, top - 1, lk, trim === '#f4f1ea' ? '#f4f1ea' : trim, faceL, K);
       // shoes: white soles and a stripe; light from the upper left, shadow on the right edge of every shape
@@ -7340,7 +7356,10 @@ const ARC = (() => {
       }
       const out = outlined(c);
       let res = out;
-      if (faceL) { const f = document.createElement('canvas'); f.width = Wd * K; f.height = (H + 2) * K; const fc = f.getContext('2d'); fc.translate(Wd * K, 0); fc.scale(-1, 1); fc.drawImage(out, 0, 0); res = f; }
+      if (faceL) { const f = document.createElement('canvas'); f.width = Wd * K; f.height = (H + 2) * K; const fc = f.getContext('2d'); fc.translate(Wd * K, 0); fc.scale(-1, 1); fc.drawImage(out, 0, 0); res = f;
+        // the number reads the right way round on a player facing left too
+        fc.setTransform(1, 0, 0, 1, 0, 0); const JW = 8 * K, X2 = Wd * K - o * K - JW, ns = String(num), nw = ns.length * 4 - 1, nx = X2 + Math.round((JW - nw) / 2), ny = (top + 6) * K + 5;
+        for (let q = 0; q < ns.length; q++) { const m = MF[ns[q]]; for (let i = 0; i < 15; i++) if (m[i] === '1') { fc.fillStyle = shade(trim === '#f4f1ea' ? jer : trim, -0.45); fc.fillRect(nx + q * 4 + (i % 3) + 1, ny + Math.floor(i / 3) + 1, 1, 1); fc.fillStyle = trim; fc.fillRect(nx + q * 4 + (i % 3), ny + Math.floor(i / 3), 1, 1); } } }
       cache[key] = { c: res, foot: (ly + ll + 2) * K }; return cache[key];
     }
     function draw() {
@@ -7424,7 +7443,7 @@ const ARC = (() => {
       const an = pl.anim && pl.anim.k;
       const DS = an === 'dunk' && pl.anim.style, dh = DS ? DS.hold : 0.15, dq = DS ? clamp(pl.anim.t / dh, 0, 1) : 0;
       if (DS && pl.anim.t < dh) { if (DS.spin) faceL = Math.floor(pl.anim.t / 0.07) % 2 === 0; else if (DS.flip && DS.flip(dq)) faceL = !faceL; }
-      const pose = an === 'oopup' ? 'dunk' : an === 'dunk' ? (pl.anim.t < dh ? (DS && DS.pose ? DS.pose(dq) : 'dunk') : pl.anim.t < dh + 0.22 ? 'slam' : 'hang') : an === 'layup' ? 'lay' : an === 'pump' || an === 'charge' ? 'up' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
+      const pose = an === 'oopup' ? 'dunk' : an === 'dunk' ? (pl.anim.t < dh ? (DS && DS.pose ? DS.pose(dq) : 'dunk') : pl.anim.t < dh + 0.16 ? 'slam' : pl.z > 0.3 ? (Math.floor((pl.anim.t - dh) / 0.18) % 2 ? 'swing' : 'hang') : 'land') : an === 'layup' ? 'lay' : an === 'pump' || an === 'charge' ? 'up' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
       const sp = sprite(pl, an === 'fall' ? 0 : frame, an === 'fall' ? 'down' : pose, faceL);
       px.fillStyle = 'rgba(0,0,0,.28)'; px.beginPath(); px.ellipse(fx, fy, an === 'fall' ? 11 : 6, 2, 0, 0, Math.PI * 2); px.fill();
       if (an === 'fall') {   // knocked to the floor: the sprite lies on its side, then pops back up
@@ -7838,7 +7857,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24h';
+const APP_VERSION = '2026-11-24i';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
