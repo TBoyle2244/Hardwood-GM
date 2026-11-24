@@ -495,6 +495,9 @@ table.ts { width: 100%; border-collapse: separate; border-spacing: 0 3px; margin
 .arc-end.pog .mh.mhb { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: -18px; z-index: 3; padding: 6px 6px 6px 18px; }
 .arc-end.pog .mh.mhb button { font: 800 15px/1.1 system-ui, sans-serif; letter-spacing: 0; padding: 10px 16px; background: #1a8f4a; border: 3px solid #4ade80; color: #fff; }
 @media (max-height: 500px) { .arc-end.pog .mh.mhb { top: -8px; } .arc-end.pog .mh.mhb button { padding: 6px 12px; font-size: 13px; } }
+/* control tips: smaller, top-left, out of the middle of the court */
+.arc-tip { left: max(10px, env(safe-area-inset-left)) !important; transform: none !important; top: calc(max(8px, env(safe-area-inset-top)) + 70px); bottom: auto !important; max-width: min(300px, 36vw) !important; font-size: 12px !important; padding: 5px 9px !important; line-height: 1.3; }
+@media (max-height: 500px) { .arc-tip { top: calc(max(6px, env(safe-area-inset-top)) + 50px); font-size: 11px !important; } }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -6055,7 +6058,7 @@ const ARC = (() => {
     }
     hoopOf(side) { return { x: side === 0 ? HOOP[1] : HOOP[0], y: HY }; } // the hoop this side attacks: user (side 0) attacks right
     dir(side) { return side === 0 ? 1 : -1; }
-    say(m, t) { this.msg = m; this.msgT = t || 1.6; if (/Tap JUMP|Hold SHOOT|bit on the fake|^Step-back|^Spin move|^Shook him|^Alley-oop!$/.test(m)) return; const last = this.pbp[this.pbp.length - 1]; if (!last || last.m !== m || this.t - last.t > 2) this.pbp.push({ q: this.q, clock: Math.max(0, Math.ceil(this.clock)), m, t: this.t, s: [this.T[0].score, this.T[1].score] }); }
+    say(m, t) { this.msg = m; this.msgT = t || 1.6; this.msgN = (this.msgN || 0) + 1; if (/Tap JUMP|Hold SHOOT|bit on the fake|^Step-back|^Spin move|^Shook him|^Alley-oop!$/.test(m)) return; const last = this.pbp[this.pbp.length - 1]; if (!last || last.m !== m || this.t - last.t > 2) this.pbp.push({ q: this.q, clock: Math.max(0, Math.ceil(this.clock)), m, t: this.t, s: [this.T[0].score, this.T[1].score] }); }
     qpts(side, pts) { const T = this.T[side]; T.qs = T.qs || []; T.qs[this.q - 1] = (T.qs[this.q - 1] || 0) + pts; }
     all() { return this.T[0].P.concat(this.T[1].P); }
     // Offensive spots by era: posts on the blocks early, corners and wings later.
@@ -6209,7 +6212,10 @@ const ARC = (() => {
           const man = this.markOf(pl), onBall = man === this.ball.holder;
           const k = onBall ? 0.16 : 0.25 + (dist(man, this.ball) > 24 ? 0.12 : 0);
           tx = man.x + (h.x - man.x) * k; ty = man.y + (HY - man.y) * k;
-          if (this.state === 'shot' && dist(pl, h) < 14) { tx = (tx + h.x) / 2; ty = (ty + HY) / 2; } // box out near the rim
+          if (this.state === 'shot' && dist(pl, h) < 16 && dist(man, h) < 20) {   // box out: put your body between your man and the rim, right on him
+            const md = dist(man, h) || 1, bx2 = man.x + (h.x - man.x) / md * 1.7, by2 = man.y + (HY - man.y) / md * 1.7;
+            tx = (bx2 + h.x) / 2; ty = (by2 + HY) / 2; pl.boxing = dist(pl, man) < 4 ? man : null;   // hold the inside position, closer to the rim than your man
+          } else if (this.state !== 'loose' && this.state !== 'shot') pl.boxing = null;
         }
         sp *= this.eff(pl);
         if (pl.side === def) for (const m of this.T[off].P) if (m.screen && m.screen.set && dist(m, pl) < 2.4) { sp *= 0.5; break; }   // caught on a screen
@@ -6390,7 +6396,7 @@ const ARC = (() => {
         b.x = f.x0 + (h.x - f.x0) * k; b.y = HY; b.z = f.z0 + (RIM_Z + 0.4 - f.z0) * k + Math.sin(k * Math.PI) * 6;
         if (k < 1) return;
         F.fly = null; pl.st.fta++; const last = F.i >= F.n - 1;
-        if (f.make) { pl.st.ftm++; pl.st.pts++; this.T[pl.side].score++; this.qpts(pl.side, 1); this.netSwish = { side: h.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; }
+        if (f.make) { pl.st.ftm++; pl.st.pts++; this.T[pl.side].score++; this.qpts(pl.side, 1); this.pop = { pts: 1, side: pl.side, hx: h.x, t: this.t }; this.netSwish = { side: h.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; }
         else this.rimHit = { side: h.x > 47 ? 1 : 0, t: 0.25 };
         F.made = (F.made || 0) + (f.make ? 1 : 0);
         if (!last) { this.say(`${short(pl.p)} ${f.make ? 'makes' : 'misses'} free throw ${F.i + 1} of ${F.n}`, 1.2); F.i++; F.mt = 0; this.wait = 0.8; this.give(pl); return; }
@@ -6501,7 +6507,7 @@ const ARC = (() => {
           if (f.make) {
             const pts = f.three ? 3 : 2; f.by.st.fgm++; f.by.st.pts += pts; if (f.three) f.by.st.tpm++; this.T[f.by.side].score += pts; this.qpts(f.by.side, pts);
             const a = this.ball.lastPasser; if (a && a.side === f.by.side && a !== f.by && Math.random() < 0.7) a.st.ast++;
-            this.lastScore = { pl: f.by, t: this.t };
+            this.lastScore = { pl: f.by, t: this.t }; this.pop = { pts, side: f.by.side, hx: h.x, t: this.t };
             this.say(f.dunk ? `${short(f.by.p)}: ${f.style ? f.style.name : 'slam'}!` : f.three ? `${short(f.by.p)} hits the three!` : `${short(f.by.p)} scores`);
             b.flight = null; this.ball.lastPasser = null;
             if (this.clock <= 0) return this.endQuarter();
@@ -6525,13 +6531,19 @@ const ARC = (() => {
         // whoever gets a hand on it first: close enough, and the ball low enough for his reach (jumping helps)
         const reach = pl => (this.spriteFt || 6) * 0.9 + pl.z + pl.r.height - 6;
         for (const pl of this.all()) if (pl.z === 0 && b.vz < 0 && dist(pl, b) < 2.2 && b.z > reach(pl) && b.z < reach(pl) + 3.5 && !(this.user != null && pl === this.ctrl[this.user]) && Math.random() < (0.3 + pl.r.reb * 0.4) * dt * 8) { pl.vz = 11 + pl.r.reb * 3; pl.z = 0.01; }
-        const eff2 = pl => dist(pl, b) - pl.r.reb * 0.9 - (pl.side === this.poss ? 0.9 : 0) + Math.random() * 0.8;   // good rebounders and crashing offensive players get there first more often
+        const sealed = pl => this.T[1 - pl.side].P.some(d => d.boxing === pl && dist(d, pl) < 4.5);   // a man who's boxed out has a harder time
+        const eff2 = pl => dist(pl, b) - pl.r.reb * 0.9 - (pl.side === this.poss ? 0.9 : 0) + Math.random() * 0.8 - (pl.boxing && dist(pl, pl.boxing) < 4.5 ? 2.4 : 0) + (sealed(pl) ? 2 : 0);   // good rebounders and crashing offensive players get there first more often
         const cand = this.all().filter(pl => dist(pl, b) < 1.4 + pl.r.reb * 0.5 + (pl.side === this.poss ? 0.4 : 0) && b.z <= reach(pl)).sort((a, c) => eff2(a) - eff2(c));
         if (cand.length && Math.random() < 0.05) { const w2 = cand[0], rival = this.all().find(o => o.side !== w2.side && dist(o, w2) < 1.6); if (rival) { const pusher = Math.random() < 0.5 ? w2 : rival; this.foul(pusher); pusher.st.tov += pusher.side === this.poss ? 1 : 0; this.say(`Pushing foul committed by ${pusher.p.name}`, 1.8); this.setupInbound(1 - pusher.side); return; } }
         for (const pl of cand.length ? [cand[0]] : []) {
           if (true) {
             pl.st.reb++; const offReb = pl.side === this.poss;
             this.give(pl); this.state = 'live'; this.poss = pl.side; if (!offReb) this.shot = 24; else this.shot = Math.max(this.shot, 14);
+            this.all().forEach(p0 => { p0.boxing = null; });
+            const hh = this.hoopOf(pl.side), ctrlMe = this.user != null && pl === this.ctrl[this.user];
+            if (offReb && !ctrlMe && dist(pl, hh) < 6.5 && (b.z > 6 || pl.z > 0.5) && Math.random() < 0.3 + pl.r.reb * 0.25) {   // tip it back in
+              this.say(`Tip-in try: ${short(pl.p)}`, 1); pl.shooting = { t: 0.25, apex: 0.25, user: false, tip: true }; this.releaseShot(pl); return;
+            }
             this.say(`${offReb ? 'Offensive' : 'Defensive'} rebound: ${short(pl.p)}`, 1.1); this.pickCtrl(true); return;
           }
         }
@@ -6707,7 +6719,53 @@ const ARC = (() => {
       <div class="arc-pad"></div><div class="arc-card"></div><div class="arc-tip"></div>
       <button class="arc-pause" aria-label="Pause">II</button><button class="arc-quit" style="display:none">Quit</button>`;
     const scoreEl = ui.querySelector('.arc-score'), msgEl = ui.querySelector('.arc-msg'), stick = ui.querySelector('.arc-stick'), knob = ui.querySelector('.arc-knob'), pad = ui.querySelector('.arc-pad'), card = ui.querySelector('.arc-card'), tipEl = ui.querySelector('.arc-tip');
-    let paused = false, showTips = true, mode = '', cardKey = '';
+    let paused = false, showTips = (() => { try { return +(localStorage.getItem('arcGamesPlayed') || 0) < 1; } catch (e) { return true; } })(), mode = '', cardKey = '';
+    try { localStorage.setItem('arcGamesPlayed', String(+(localStorage.getItem('arcGamesPlayed') || 0) + 1)); } catch (e) {}
+    /* ---------- sound: everything is synthesized with Web Audio (no audio files) ---------- */
+    const SFX = (() => {
+      let ac = null, master = null, crowd = null, crowdGain = null, on = (() => { try { return localStorage.getItem('arcSound') !== 'off'; } catch (e) { return true; } })();
+      const noiseBuf = sec => { const b = ac.createBuffer(1, Math.round(ac.sampleRate * sec), ac.sampleRate), d = b.getChannelData(0); let last = 0; for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = w * 0.5 + last * 2; } return b; };
+      function init() {
+        if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+        const C = window.AudioContext || window.webkitAudioContext; if (!C) return; ac = new C(); master = ac.createGain(); master.gain.value = on ? 0.55 : 0; master.connect(ac.destination);
+        // crowd bed: filtered noise, quiet, looping
+        crowd = ac.createBufferSource(); crowd.buffer = noiseBuf(3); crowd.loop = true; const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 700; bp.Q.value = 0.6;
+        crowdGain = ac.createGain(); crowdGain.gain.value = 0.05; crowd.connect(bp); bp.connect(crowdGain); crowdGain.connect(master); crowd.start();
+      }
+      const env = (g, t0, a, peak, d) => { g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(peak, t0 + a); g.gain.exponentialRampToValueAtTime(0.0001, t0 + a + d); };
+      function noise(dur, type, freq, q, peak, a) { const t0 = ac.currentTime, s2 = ac.createBufferSource(); s2.buffer = noiseBuf(dur + 0.05); const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q || 1; const g = ac.createGain(); env(g, t0, a || 0.005, peak, dur); s2.connect(f); f.connect(g); g.connect(master); s2.start(t0); s2.stop(t0 + dur + 0.1); return f; }
+      function tone(freq, dur, type, peak, slideTo, a) { const t0 = ac.currentTime, o = ac.createOscillator(), g = ac.createGain(); o.type = type || 'sine'; o.frequency.setValueAtTime(freq, t0); if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur); env(g, t0, a || 0.004, peak, dur); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.05); }
+      const P = {
+        swish() { const f = noise(0.32, 'highpass', 2500, 0.7, 0.5, 0.02); f.frequency.exponentialRampToValueAtTime(5000, ac.currentTime + 0.3); },
+        rim() { tone(520, 0.35, 'triangle', 0.35); tone(1310, 0.22, 'sine', 0.18); noise(0.06, 'bandpass', 1800, 2, 0.25); },
+        glass() { noise(0.12, 'lowpass', 600, 1, 0.5); tone(180, 0.15, 'sine', 0.3); },
+        bounce() { tone(140, 0.09, 'sine', 0.32, 70); noise(0.04, 'lowpass', 400, 1, 0.12); },
+        squeak() { tone(2300 + Math.random() * 900, 0.09, 'sawtooth', 0.05, 3400, 0.01); },
+        whistle() { const t0 = ac.currentTime, o = ac.createOscillator(), lfo = ac.createOscillator(), lg = ac.createGain(), g = ac.createGain(); o.type = 'sine'; o.frequency.value = 2900; lfo.frequency.value = 32; lg.gain.value = 140; lfo.connect(lg); lg.connect(o.frequency); env(g, t0, 0.01, 0.22, 0.45); o.connect(g); g.connect(master); o.start(t0); lfo.start(t0); o.stop(t0 + 0.5); lfo.stop(t0 + 0.5); },
+        buzzer() { tone(196, 1.1, 'square', 0.16, null, 0.01); tone(199, 1.1, 'sawtooth', 0.08, null, 0.01); },
+        cheer(k) { if (!crowdGain) return; const t0 = ac.currentTime, g = crowdGain.gain; g.cancelScheduledValues(t0); g.setValueAtTime(g.value, t0); g.linearRampToValueAtTime(0.05 + 0.25 * (k || 1), t0 + 0.15); g.exponentialRampToValueAtTime(0.05, t0 + 1.8); },
+        ooh() { if (!crowdGain) return; tone(330, 0.7, 'sine', 0.04, 220, 0.15); this.cheer(0.5); }
+      };
+      return { init, play(n, k) { if (!on || !ac) return; try { P[n](k); } catch (e) {} }, get on() { return on; }, set(v) { on = v; try { localStorage.setItem('arcSound', v ? 'on' : 'off'); } catch (e) {} if (master) master.gain.value = v ? 0.55 : 0; }, stop() { try { if (ac) ac.close(); } catch (e) {} ac = null; } };
+    })();
+    const sndSeen = { swish: null, rim: null, msgN: 0, state: '', pop: null }; let dribT = 0, squeakT = 0;
+    // play sounds for whatever happened since the last frame
+    function sounds(dt) {
+      if (!SFX.on) return;
+      if (game.netSwish && game.netSwish !== sndSeen.swish) { sndSeen.swish = game.netSwish; SFX.play('swish'); }
+      if (game.rimHit && game.rimHit !== sndSeen.rim) { sndSeen.rim = game.rimHit; SFX.play(game.rimHit.glass ? 'glass' : 'rim'); }
+      if (game.pop && game.pop !== sndSeen.pop) { sndSeen.pop = game.pop; SFX.play('cheer', game.pop.pts >= 3 ? 1.3 : game.pop.pts === 1 ? 0.4 : 0.9); }
+      if ((game.msgN || 0) !== sndSeen.msgN) { sndSeen.msgN = game.msgN || 0; const m = game.msg || '';
+        if (/foul|violation|Out of bounds|Timeout|Charge!/i.test(m)) SFX.play('whistle');
+        else if (/Steal|Picked off|Blocked|Stripped/.test(m)) SFX.play('ooh');
+        else if (/slam|Alley-oop/i.test(m)) SFX.play('cheer', 1.4); }
+      if (game.state !== sndSeen.state) { if ((game.state === 'break' || game.state === 'end') && sndSeen.state !== '') SFX.play('buzzer'); sndSeen.state = game.state; }
+      const hb = game.ball.holder; dribT -= dt;
+      if (hb && game.state === 'live' && hb.z === 0 && !hb.shooting && !hb.oob && dribT <= 0) { const sp = Math.hypot(hb.vx, hb.vy); dribT = sp > 3 ? 0.36 : 0.55; SFX.play('bounce'); }
+      squeakT -= dt;
+      if (squeakT <= 0) for (const pl of game.all()) { const v = Math.hypot(pl.vx, pl.vy), pv = pl._pv; pl._pv = [pl.vx, pl.vy];
+        if (pv && v > 7 && Math.hypot(pv[0], pv[1]) > 7 && (pl.vx * pv[0] + pl.vy * pv[1]) / (v * Math.hypot(pv[0], pv[1])) < 0.2) { SFX.play('squeak'); squeakT = 0.35; break; } }
+    }
     const tipSeen = { off: 0, def: 0, jump: 0 }; let tipT = 0;
     const TIPS = { off: ['Hold Shoot and let go at the top of the jump. A quick tap is a pump fake.', 'Tap Pass to pass toward the stick; hold it for a lob. Lob to a dunker near the rim for an alley-oop.', 'Tap Cross for a crossover; hold it to hesitate. Tap Step for a step-back; hold it to spin.'],
       def: ['Tap Steal to swipe at the ball. Tap Block to jump.', 'Charge: plant your feet in the driver\'s path. Switch: take the defender nearest the ball.'], jump: ['Jump ball! Tap Block (or tap the right side) just before the ball peaks.'] };
@@ -6793,6 +6851,7 @@ const ARC = (() => {
       }
       e.preventDefault();
     }, { passive: false });
+    root.addEventListener('touchstart', () => SFX.init(), { passive: true });
     root.addEventListener('touchmove', e => { for (const t of e.changedTouches) { if (t.identifier === stickId) stickMove(t.clientX, t.clientY); else pressMove(t.identifier, t.clientX, t.clientY); } if (!paused && !(e.target.closest && e.target.closest('.arc-menu, .arc-end, .arc-match'))) e.preventDefault(); }, { passive: false });
     const end = e => {
       for (const t of e.changedTouches) {
@@ -6888,6 +6947,7 @@ const ARC = (() => {
             else if (v === 'bs0' || v === 'bs1') boxSide = +v[2];
             else if (v === 'auto') game.autoSub[game.user] = !game.autoSub[game.user];
             else if (v === 'tips') { showTips = !showTips; if (!showTips) tipEl.classList.remove('on'); }
+            else if (v === 'snd') { SFX.set(!SFX.on); SFX.init(); }
             else if (v === 'autod') { game.autoDef = !game.autoDef; try { localStorage.setItem('arcAutoD', game.autoDef ? 'on' : 'off'); } catch (e2) {} }
             else if (v === 'cam') { camFar = !camFar; try { localStorage.setItem('arcCam', camFar ? 'far' : 'close'); } catch (e2) {} size(); }
             else { tab = v; toMsg = ''; }
@@ -6910,7 +6970,7 @@ const ARC = (() => {
         <p class="note">${T.side === game.user ? (subMsg || 'Tap a starter, then a bench player to swap them. Energy drops while a player is on the floor (faster when he runs hard) and comes back on the bench. Tired players are slower and miss more.') : 'The other coach makes his own changes.'}</p>
         <div class="scroll"><table class="subs"><tr class="h"><th colspan="2">Starters</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${subRows(T, T.P, false)}
         <tr class="h"><th colspan="2">Bench</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${T.B.length ? subRows(T, T.B, true) : '<tr><td colspan="18">No bench players.</td></tr>'}</table></div>`;
-      else body = `<div class="set"><button data-m="autod">Auto defense: <b>${game.autoDef ? 'On' : 'Off'}</b></button><p class="note">On: your defender guards his man by himself until you move him. You still jump, block and steal.</p><button data-m="cam">Camera: <b>${camFar ? 'Full court' : 'Close'}</b></button><p class="note">Full court zooms out so you can see the whole floor, like the original arcade view.</p>
+      else body = `<div class="set"><button data-m="snd">Sound: <b>${SFX.on ? 'On' : 'Off'}</b></button><button data-m="autod">Auto defense: <b>${game.autoDef ? 'On' : 'Off'}</b></button><p class="note">On: your defender guards his man by himself until you move him. You still jump, block and steal.</p><button data-m="cam">Camera: <b>${camFar ? 'Full court' : 'Close'}</b></button><p class="note">Full court zooms out so you can see the whole floor, like the original arcade view.</p>
         <button data-m="auto">Auto substitutions for your team: <b>${game.autoSub[game.user] ? 'On' : 'Off'}</b></button><p class="note">On: your coach rests tired players and brings starters back at dead balls. Off: you make every change yourself (fouled-out players still come out).</p>
         <button data-m="tips">Control tips: <b>${showTips ? 'On' : 'Off'}</b></button></div>`;
       const left = game.timeouts[game.user];
@@ -6925,7 +6985,7 @@ const ARC = (() => {
       paused = true;
       if (!match) { match = document.createElement('div'); match.className = 'arc-match'; ui.appendChild(match);
         match.addEventListener('click', e => { const b2 = e.target.closest('[data-k]'); if (b2) { const k = b2.dataset.k;
-          if (k === 'tip') { match.remove(); match = null; paused = false; return; }
+          if (k === 'tip') { SFX.init(); match.remove(); match = null; paused = false; return; }
           game.setKit(game.user != null ? game.user : 0, k); for (const key in cache) delete cache[key]; showMatchup(); } }); }
       const me = game.user != null ? game.user : 0, T0 = game.T[0], T1 = game.T[1];
       const five = T => `<div class="five">${T.P.map(pl => { const pc2 = portrait(pl); return `<div class="pc"><img src="${pc2.toDataURL()}" alt=""><div class="st">${stars(pl.p.ovr)}</div><b>${pl.p.name}</b><span>${pl.p.pos} #${pl.num}</span></div>`; }).join('')}</div>`;
@@ -6949,7 +7009,7 @@ const ARC = (() => {
         game.step(dt, I);
         if (tipT > 0) { tipT -= dt; if (tipT <= 0) tipEl.classList.remove('on'); }
       }
-      draw(); hud(); setButtons(); updCard();
+      if (!paused) sounds(dt); draw(); hud(); setButtons(); updCard();
       raf = requestAnimationFrame(frame);
     }
     function hud() {
@@ -7304,6 +7364,9 @@ const ARC = (() => {
         for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
         px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
       } }
+      const PO = game.pop, pa = PO ? game.t - PO.t : 9;   // "+2" floats up over the basket in the scoring team's color
+      if (PO && pa < 1.2) { const [px2, py2] = toScr(PO.hx, HY, RIM_Z + 3 + pa * 5), T2 = game.T[PO.side], col = T2.pri === '#1a1a1a' ? T2.sec : T2.pri;
+        px.save(); px.setTransform(1, 0, 0, 1, 0, 0); px.globalAlpha = pa > 0.8 ? Math.max(0, (1.2 - pa) / 0.4) : 1; pixText(px, '+' + PO.pts, Math.round(px2 * RS), Math.round(py2 * RS), 26, col, 0, '#ffffff'); px.restore(); }
       drawMeter(); for (const L2 of labels) { px.save(); px.setTransform(1, 0, 0, 1, 0, 0); const tw = Math.round(L2.t.length * 6.2) + 8, lx = Math.round(L2.x * RS), ly2 = Math.round(L2.y * RS); px.fillStyle = 'rgba(6,8,16,.72)'; px.fillRect(lx - Math.round(tw / 2), ly2 - 7, tw, 14); pixText(px, L2.t, lx, ly2, 11, L2.c || '#ffffff', 0, null, '600 11px system-ui, -apple-system, "Helvetica Neue", sans-serif');
         if (L2.ar != null) { const ax = lx + Math.round(tw / 2) + 7, ca = Math.cos(L2.ar), sa = Math.sin(L2.ar); px.fillStyle = 'rgba(6,8,16,.72)'; px.fillRect(ax - 7, ly2 - 7, 14, 14); px.translate(ax, ly2); px.fillStyle = '#ffd34d'; px.beginPath(); px.moveTo(ca * 6, sa * 6); px.lineTo(-ca * 4 - sa * 4, -sa * 4 + ca * 4); px.lineTo(-ca * 1.5, -sa * 1.5); px.lineTo(-ca * 4 + sa * 4, -sa * 4 - ca * 4); px.closePath(); px.fill(); }
         px.restore(); } labels = [];
@@ -7446,7 +7509,7 @@ const ARC = (() => {
       const BALL = ['..###..', '.#ooo#.', '#ohoso#', '#ossss#', '#oosoo#', '.#ooo#.', '..###..'], BC = { '#': '#2a1206', o: '#e8721c', h: '#ffb066', s: '#9a3f0c' };
       for (let r = 0; r < 7; r++) for (let q = 0; q < 7; q++) { const ch = BALL[r][q]; if (ch !== '.') { px.fillStyle = BC[ch]; px.fillRect(x - 3 + q, y - 3 + r, 1, 1); } }
     }
-    function stop(exit) { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', size); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); root.remove(); if (exit) onExit('quit'); }
+    function stop(exit) { SFX.stop(); alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', size); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); root.remove(); if (exit) onExit('quit'); }
     if (typeof window !== 'undefined') window.__arcSprite = (pl, frame, pose, faceL) => sprite(pl, frame, pose, faceL).c.toDataURL();   // for tests
     if (game.user != null) showMatchup();
     raf = requestAnimationFrame(frame);
@@ -7523,6 +7586,9 @@ const HELP = [
 <li><b>Fouls and the bonus</b>: a reach-in or blocking foul stops play. The other team inbounds from the sideline at the spot of the foul (shot clock back to at least 14). Every foul counts as a team foul for the quarter; after 4 team fouls in a quarter (5 in quarters of 10 minutes or more, 3 in overtime), every non-shooting foul gives the fouled player 2 free throws. Team fouls and BONUS show in the pause menu.</li>
 <li><b>Free throws</b>: players line up on the lane and the shots go one at a time. When you shoot, use the same meter as a jump shot: hold Shoot and let go at the top (green). A missed last free throw is a live rebound.</li>
 <li><b>Team colors and center court</b>: each team wears the colors it used in that season (for example, the Rockets are red and gold in the 1970s and navy and red in the late 1990s). Center court has an original team badge in those colors; its shape changes when the team changes its look.</li>
+<li><b>Sound</b>: swish, rim and backboard, dribbles, sneaker squeaks, whistles, the buzzer and the crowd (Settings → Sound to turn it off). All sounds are made by the game itself.</li>
+<li><b>Rebounding</b>: defenders box out their man when a shot goes up, and a boxed-out player has a harder time getting the ball. Offensive rebounds right at the rim are often tipped back in.</li>
+<li><b>Tips</b>: control tips show in your first arcade game only (Settings → Control tips to turn them back on). After a basket, +1/+2/+3 floats over the rim in the scoring team's color.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7764,7 +7830,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24f';
+const APP_VERSION = '2026-11-24g';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
