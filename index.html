@@ -6421,7 +6421,7 @@ const ARC = (() => {
       this.ball.holder = null;
       const DK = dunk ? DUNKS[Math.floor(Math.random() * DUNKS.length)] : null;
       this.ball.flight = { kind: 'shot', by: pl, from: { x: pl.x, y: pl.y, z: pl.z + pl.r.height }, t: 0, T: dunk ? DK.hold + 0.12 : clamp(0.7 + d / 40, 0.7, 1.5), make, three, blocked, dunk, style: DK, hold: DK ? DK.hold : 0 };
-      this.state = 'shot'; delete pl.shooting; this.frontcourt = false; this.backT = 0;   // a shot ends team control
+      this.state = 'shot'; delete pl.shooting; if (!close) pl.relT = this.t; this.frontcourt = false; this.backT = 0;   // a shot ends team control
       if (close && !blocked) {   // drive to the rim: dunkers glide in and hang on the rim; layups float in with one hand
         const toward = Math.max(0, d - (dunk ? 0.3 : 1.6)), ux = (h.x - pl.x) / (d || 1), uy = (h.y - pl.y) / (d || 1);
         // the court art draws players small next to the rim, so a dunker is lifted until his hands reach it
@@ -7412,6 +7412,9 @@ const ARC = (() => {
       if (pose === 'up' || pose === 'dunk' || pose === 'hang' || pose === 'tuck' || pose === 'swing') { R(o - 1, top - 3, 2, 9, sk); R(o + 7, top - 3, 2, 9, sk); }
       else if (pose === 'slam') { R(o + 7, top + 1, 5, 2, sk); R(o + 7, top + 2, 2, 5, sk); R(o - 1, top + 6, 2, 5, sk); }   // arm thrown down through the rim
       else if (pose === 'lay') { R(o + 7, top - 3, 2, 9, sk); R(o - 1, top + 6, 2, 5, sk); }
+      else if (pose === 'gather') { R(o - 1, top + 6, 2, 3, sk); R(o + 7, top + 6, 2, 3, sk); R(o + 1, top + 8, 2, 2, sk); R(o + 5, top + 8, 2, 2, sk); }   // ball at the chest, both hands on it
+      else if (pose === 'set') { R(o + 7, top - 1, 2, 7, sk); R(o + 8, top - 2, 2, 2, sk); R(o - 2, top + 5, 2, 2, sk); R(o - 2, top + 1, 2, 4, sk); R(o - 1, top, 2, 2, sk); }   // shooting hand under the ball above his head, guide hand up at the side
+      else if (pose === 'release') { R(o + 7, top + 1, 2, 5, sk); R(o + 8, top - 2, 2, 4, sk); R(o + 9, top - 4, 2, 3, sk); R(o + 11, top - 4, 1, 2, sk); R(o - 1, top + 6, 2, 3, sk); R(o - 2, top + 8, 2, 3, sk); }   // follow-through: arm up and out, wrist snapped, guide hand comes off
       else if (pose === 'cock') { R(o - 3, top - 4, 2, 4, sk); R(o - 2, top - 1, 2, 3, sk); R(o - 1, top + 2, 2, 5, sk); R(o + 7, top - 2, 2, 8, sk); }   // ball cocked behind the head
       else if (pose === 'reach') { R(o + 9, top - 6, 2, 4, sk); R(o + 8, top - 2, 2, 4, sk); R(o + 7, top + 2, 2, 5, sk); R(o - 2, top + 6, 2, 4, sk); R(o - 3, top + 9, 2, 3, sk); }   // one arm stretched up and over the rim
       else if (pose === 'windup') { R(o - 1, top + 6, 2, 4, sk); R(o - 3, top + 9, 2, 3, sk); R(o - 5, top + 11, 2, 2, sk); R(o + 7, top - 3, 2, 9, sk); }   // arm swinging down and back
@@ -7522,12 +7525,13 @@ const ARC = (() => {
       const now = performance.now() / 1000, dtS = Math.min(0.1, now - (pl.phT || now)); pl.phT = now;
       if (moving && !paused) pl.ph = (pl.ph == null ? pl.i * 1.7 : pl.ph) + dtS * (4.5 + spd2 * 0.55) * clamp(0.86 + (pl.r.height - 6.25) * 0.2, 0.84, 1);   // stride rate: steady, a bit slower for small players
       const frame = moving ? 1 + Math.floor(pl.ph || 0) % 6 : 0;
-      const hasB = game.ball.holder === pl; let faceL = Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);
+      const hasB = game.ball.holder === pl, atRim = pl.shooting || (pl.relT != null && game.t - pl.relT < 0.45) || (pl.anim && (pl.anim.k === 'dunk' || pl.anim.k === 'layup' || pl.anim.k === 'oopup'));
+      let faceL = atRim ? game.hoopOf(pl.side).x < pl.x : Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);   // shooters and dunkers always face the basket
       if (pl.anim && pl.anim.k === 'spin') faceL = Math.floor(pl.anim.t / 0.1) % 2 === 0;
       const an = pl.anim && pl.anim.k;
       const DS = an === 'dunk' && pl.anim.style, dh = DS ? DS.hold : 0.15, dq = DS ? clamp(pl.anim.t / dh, 0, 1) : 0;
       if (DS && pl.anim.t < dh) { if (DS.spin) faceL = Math.floor(pl.anim.t / 0.07) % 2 === 0; else if (DS.flip && DS.flip(dq)) faceL = !faceL; }
-      const pose = an === 'oopup' ? 'dunk' : an === 'dunk' ? (pl.anim.t < dh ? (DS && DS.pose ? DS.pose(dq) : 'dunk') : pl.anim.t < dh + 0.16 ? 'slam' : pl.z > 0.3 ? (Math.floor((pl.anim.t - dh) / 0.18) % 2 ? 'swing' : 'hang') : 'land') : an === 'layup' ? 'lay' : an === 'pump' || an === 'charge' ? 'up' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
+      const pose = an === 'oopup' ? 'dunk' : an === 'dunk' ? (pl.anim.t < 0.09 && pl.z < 0.6 ? 'land' : pl.anim.t < dh ? (DS && DS.pose ? DS.pose(dq) : 'dunk') : pl.anim.t < dh + 0.16 ? 'slam' : pl.z > 0.3 ? (Math.floor((pl.anim.t - dh) / 0.18) % 2 ? 'swing' : 'hang') : 'land') : an === 'layup' ? 'lay' : an === 'pump' || an === 'charge' ? 'up' : pl.shooting && !pl.shooting.oop ? (pl.shooting.t < pl.shooting.apex * 0.45 ? 'gather' : 'set') : pl.relT != null && game.t - pl.relT < 0.45 && !hasB ? 'release' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
       const sp = sprite(pl, an === 'fall' ? 0 : frame, an === 'fall' ? 'down' : pose, faceL);
       px.fillStyle = 'rgba(0,0,0,.28)'; px.beginPath(); px.ellipse(fx, fy, an === 'fall' ? 11 : 6, 2, 0, 0, Math.PI * 2); px.fill();
       if (an === 'fall') {   // knocked to the floor: the sprite lies on its side, then pops back up
@@ -7540,6 +7544,10 @@ const ARC = (() => {
           const [mx, my] = toScr(m.x, m.y, 0), a = Math.atan2(my - fy, mx - fx0), ca = Math.cos(a), sa = Math.sin(a), bx = fx + ca * 10, by = fy + 1 + sa * 4;
           px.fillStyle = '#ffd34d'; px.strokeStyle = 'rgba(0,0,0,.6)'; px.lineWidth = 0.5; px.beginPath(); px.moveTo(bx + ca * 6, by + sa * 6); px.lineTo(bx - sa * 3.5, by + ca * 3.5); px.lineTo(bx + sa * 3.5, by - ca * 3.5); px.closePath(); px.fill(); px.stroke(); } } }
       const x0 = Math.round(fx - sp.c.width / RS / 2), y0 = Math.round(hy - sp.foot / RS);
+      if (an === 'dunk' && pl.z > 0.4) {   // dunks leave a short motion trail
+        const tr = pl._tr || (pl._tr = []); tr.push([fx, hy]); if (tr.length > 7) tr.shift();
+        px.save(); px.setTransform(1, 0, 0, 1, 0, 0); [[0, 0.16], [3, 0.3]].forEach(([k, al]) => { const q = tr[k]; if (q && tr.length >= 5) { px.globalAlpha = al; px.drawImage(sp.c, Math.round(q[0] * RS - sp.c.width / 2), Math.round(q[1] * RS - sp.foot)); } }); px.restore();
+      } else if (pl._tr) pl._tr = null;
       px.save(); px.setTransform(1, 0, 0, 1, 0, 0); px.drawImage(sp.c, Math.round(fx * RS - sp.c.width / 2), Math.round(hy * RS - sp.foot) - (frame === 2 || frame === 5 ? 2 : frame === 3 || frame === 6 ? 1 : 0)); px.restore();
       if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 2, y0 - 5, 5, 1); px.fillRect(fx - 1, y0 - 4, 3, 1); px.fillRect(fx, y0 - 3, 1, 1);
         // name tag under your player, with the make chance when he has the ball
@@ -7610,6 +7618,8 @@ const ARC = (() => {
       const b = game.ball, [sx2, sy2] = toScr(b.x, b.y, 0), [bx0, by] = toScr(b.x, b.y, b.z), bx = bx0 + sh;
       const hb = b.holder; let x = bx, y = by;
       if (hb && hb.oob) { const [hx2, hy2] = toScr(hb.x, hb.y, 0); const sp = sprite(hb, 0, 'up', game.hoopOf(hb.side).x < hb.x); x = hx2 + sh; y = hy2 - sp.foot / RS + 1; }
+      else if (hb && hb.shooting && !hb.shooting.oop) { const faceL = game.hoopOf(hb.side).x < hb.x, [hx2, hy2] = toScr(hb.x, hb.y, hb.z), sp = sprite(hb, 0, 'set', faceL), topY = hy2 - sp.foot / RS, g2 = hb.shooting.t < hb.shooting.apex * 0.45;
+        x = hx2 + sh + (faceL ? -1 : 1) * (g2 ? 1 : 3); y = topY + (g2 ? 15 : 1); }
       else if (hb && !hb.shooting && hb.z <= 0.3) { const faceL = Math.abs(hb.vx) > 0.5 ? hb.vx < 0 : (game.hoopOf(hb.side).x < hb.x); const [hx2, hy2] = toScr(hb.x, hb.y, 0); const an2 = hb.anim && hb.anim.k, side2 = (faceL ? -1 : 1) * (hb.hand || 1);
         if (an2 === 'cross') { const k3 = hb.anim.t / hb.anim.T; x = hx2 + sh + side2 * 7 * (2 * k3 - 1); y = hy2 - 2; }
         else if (an2 === 'hesi' || an2 === 'pump') { x = hx2 + sh + side2 * 6; y = hy2 - (an2 === 'pump' ? 22 : 9); }
@@ -7945,7 +7955,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24o';
+const APP_VERSION = '2026-11-24p';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
