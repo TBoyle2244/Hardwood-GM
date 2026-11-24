@@ -361,6 +361,37 @@ details.more summary { cursor: pointer; font-family: var(--cond); font-weight: 6
 
 .arc-score { display: none !important; }
 .arc-msg { top: calc(max(8px, env(safe-area-inset-top)) + 64px) !important; }
+/* arcade: controller-style pad, player card, tips, pause menu (blue pixel-arcade panels) */
+.arc-pad { position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(26px, env(safe-area-inset-bottom)); width: 230px; height: 230px; pointer-events: none; }
+.arc-pad .pb { position: absolute; width: 86px; height: 86px; border-radius: 50%; pointer-events: auto; background: rgba(255,255,255,.08); border: 3px dashed rgba(255,255,255,.55); color: rgba(255,255,255,.85); font: 800 17px/1 system-ui, -apple-system, sans-serif; text-shadow: 0 2px 0 rgba(0,0,0,.45); touch-action: none; }
+.arc-pad .pb.top { left: 72px; top: 0; } .arc-pad .pb.left { left: 0; top: 72px; } .arc-pad .pb.right { right: 0; top: 72px; } .arc-pad .pb.bottom { left: 72px; bottom: 0; }
+.arc-pad .pb.on { background: rgba(255,255,255,.3); transform: scale(.94); }
+.arc-card { position: absolute; left: max(14px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); min-width: 200px; background: #0f3f8f; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; padding: 6px 10px 6px; font-family: system-ui, -apple-system, sans-serif; pointer-events: none; }
+.arc-card:empty { display: none; }
+.arc-card .nm { font-weight: 700; font-size: 14px; } .arc-card .nm span { color: #9fd0ff; font-weight: 600; }
+.arc-card .en { height: 4px; background: rgba(0,0,0,.4); margin: 4px 0 5px; } .arc-card .en i { display: block; height: 100%; }
+.arc-card .rt { display: flex; gap: 14px; justify-content: space-between; } .arc-card .rt div { text-align: center; font-weight: 700; font-size: 14px; } .arc-card .rt b { display: block; font-size: 11px; color: #cfe6ff; font-weight: 700; }
+.arc-tip { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(12px, env(safe-area-inset-bottom)); max-width: min(520px, 46vw); background: #0f3f8f; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; padding: 8px 14px; text-align: center; font: 600 14px/1.35 system-ui, -apple-system, sans-serif; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.arc-tip.on { opacity: 1; }
+.arc-pause { position: absolute; right: max(14px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top)); width: 44px; height: 40px; background: #0f3f8f; border: 3px solid #36a3ff; color: #fff; font: 900 16px/1 system-ui, sans-serif; letter-spacing: 1px; }
+.arc-menu { position: absolute; inset: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); display: flex; flex-direction: column; gap: 8px; pointer-events: auto; font-family: system-ui, -apple-system, sans-serif; z-index: 5; }
+.arc-menu .mh { background: #120f1c; border: 3px solid #36a3ff; color: #fff; font: 900 26px/1 "Courier New", monospace; letter-spacing: 6px; text-align: center; padding: 8px; }
+.arc-menu .mb { flex: 1; min-height: 0; display: flex; gap: 10px; background: #1150a8; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; padding: 10px; }
+.arc-menu .tabs { display: flex; flex-direction: column; gap: 8px; width: 170px; flex: none; }
+.arc-menu button { background: #1659b8; border: 3px solid #2b7fe0; color: #fff; font: 800 15px/1.1 system-ui, sans-serif; padding: 12px 10px; }
+.arc-menu .tabs button.on { border-color: #6ff3ff; background: #1a64cc; }
+.arc-menu .pane { flex: 1; min-width: 0; overflow: auto; -webkit-overflow-scrolling: touch; }
+.arc-menu table { width: 100%; border-collapse: separate; border-spacing: 0 3px; font-size: 13px; }
+.arc-menu td, .arc-menu th { padding: 6px 7px; background: #1557b4; text-align: left; white-space: nowrap; }
+.arc-menu tr.h th { background: #0a2a66; font-weight: 800; }
+.arc-menu table.subs td, .arc-menu table.subs th { text-align: center; } .arc-menu table.subs td.n, .arc-menu table.subs th:first-child { text-align: left; }
+.arc-menu table.subs tr[data-sub] { cursor: pointer; } .arc-menu table.subs tr.sel td { background: #2a7be6; } .arc-menu table.subs tr.out td { opacity: .5; }
+.arc-menu td.hi { color: #ffd34d; font-weight: 800; }
+.arc-menu .subhead { display: flex; align-items: center; gap: 12px; justify-content: center; margin-bottom: 4px; } .arc-menu .subhead button { padding: 6px 14px; }
+.arc-menu .note { margin: 4px 2px 8px; font-size: 13px; color: #d7ebff; }
+.arc-menu .set { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.arc-menu .mf { display: flex; justify-content: space-between; } .arc-menu .mf button { min-width: 130px; } .arc-menu .mf .go { background: #1a8f4a; border-color: #4ade80; }
+@media (max-width: 700px), (max-height: 500px) { .arc-pad { width: 180px; height: 180px; } .arc-pad .pb { width: 68px; height: 68px; font-size: 14px; } .arc-pad .pb.top, .arc-pad .pb.bottom { left: 56px; } .arc-pad .pb.left, .arc-pad .pb.right { top: 56px; } .arc-menu .tabs { width: 120px; } .arc-card { min-width: 160px; } .arc-card .rt { gap: 8px; } }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -5846,6 +5877,8 @@ const ARC = (() => {
     };
   }
   function color(tid) { return JERSEY[tid % JERSEY.length]; }
+  const R4 = a => a[Math.floor(Math.random() * a.length)];
+  function mkPl(p, i, side, year) { return { p, i, side, r: rate(p, year), x: 47, y: 25, z: 0, vz: 0, vx: 0, vy: 0, en: 1, hand: 1, st: { pts: 0, fga: 0, fgm: 0, tpa: 0, tpm: 0, fta: 0, ftm: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, sec: 0 } }; }
   // Team colors for the pixel court and uniforms (primary, secondary), by franchise key.
   const TC = { atl: ['#e03a3e', '#c1d32f'], bos: ['#007a33', '#ba9653'], bkn: ['#1a1a1a', '#c4ced4'], nyk: ['#006bb6', '#f58426'], phi: ['#006bb6', '#ed174c'],
     tor: ['#ce1141', '#1a1a1a'], chi: ['#ce1141', '#1a1a1a'], cle: ['#860038', '#fdbb30'], det: ['#c8102e', '#1d42ba'], ind: ['#002d62', '#fdbb30'],
@@ -5863,8 +5896,11 @@ const ARC = (() => {
       this.sp = clamp((this.year - 1979) / 35, 0, 1); // how spread out the offense plays (posts early, corners later)
       this.three = this.year >= 1979;
       this.T = o.teams.map((t, side) => ({ side, tid: t.tid, key: t.key, city: t.city, nick: t.nick, abbr: t.abbr, name: t.name, pri: tcol(t.key, t.tid)[0], sec: tcol(t.key, t.tid)[1], color: side === 0 ? '#f4f1ea' : tcol(t.key, t.tid)[0], trim: side === 0 ? tcol(t.key, t.tid)[0] : tcol(t.key, t.tid)[1], score: 0,
-        P: t.players.slice(0, 5).map((p, i) => ({ p, i, side, r: rate(p, this.year), x: 47, y: 25, z: 0, vz: 0, vx: 0, vy: 0, st: { pts: 0, fga: 0, fgm: 0, tpa: 0, tpm: 0, fta: 0, ftm: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0 } })) }));
-      this.T.forEach(T => { const used = new Set(); T.P.forEach(pl => { let n = pl.p.num != null ? +pl.p.num : null, k = 0; while (n == null || used.has(n)) { const hv = Math.abs(Math.sin((pl.p.id || pl.i + 1) * 12.9898 + k++ * 78.233)) * 43758.5453; n = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 40, 41, 42, 44, 45, 50, 52, 54, 55][Math.floor((hv % 1) * 37)]; } used.add(n); pl.num = n; }); });
+        P: t.players.slice(0, 5).map((p, i) => mkPl(p, i, side, this.year)), B: t.players.slice(5, 13).map(p => mkPl(p, null, side, this.year)) }));
+      this.T.forEach(T => T.P.forEach(pl => { pl.home = pl.i; pl.starter = true; }));
+      this.k = 720 / this.qsec;   // each game second stands for this many real-game seconds (energy, minutes)
+      this.autoSub = [true, true];
+      this.T.forEach(T => { const used = new Set(); T.P.concat(T.B).forEach(pl => { let n = pl.p.num != null ? +pl.p.num : null, k = 0; while (n == null || used.has(n)) { const hv = Math.abs(Math.sin((pl.p.id || pl.i + 1) * 12.9898 + k++ * 78.233)) * 43758.5453; n = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 40, 41, 42, 44, 45, 50, 52, 54, 55][Math.floor((hv % 1) * 37)]; } used.add(n); pl.num = n; }); });
       this.q = 1; this.clock = this.qsec; this.shot = 24; this.poss = 0; this.state = 'inbound'; this.wait = 1.2;
       this.ball = { x: 47, y: 25, z: 4, holder: null, flight: null, lastPasser: null };
       this.ctrl = [null, null]; this.log = []; this.msg = ''; this.msgT = 0; this.over = false; this.t = 0; this.jumpHold = null;
@@ -5888,6 +5924,7 @@ const ARC = (() => {
     }
     setupInbound(side, start) {
       this.poss = side; this.shot = 24; this.state = 'inbound'; this.wait = start ? 1.2 : 0.9;
+      this.deadBall();
       const own = this.hoopOf(1 - side), d = this.dir(side);
       this.T[side].P.forEach((pl, i) => { pl.x = own.x + d * (8 + i * 6); pl.y = 10 + i * 7; pl.z = 0; pl.vz = 0; });
       this.T[1 - side].P.forEach((pl, i) => { pl.x = own.x + d * (30 + i * 3); pl.y = 12 + i * 6.5; pl.z = 0; pl.vz = 0; });
@@ -5928,6 +5965,7 @@ const ARC = (() => {
       if (this.state === 'ft') { this.wait -= dt; if (this.wait <= 0) this.shootFTs(); return; }
       // clocks run while the ball is live
       this.clock -= dt; if (this.state === 'live' || this.state === 'shot') this.shot -= (this.state === 'live' ? dt : 0);
+      this.tire(dt);
       if (this.clock <= 0) { this.clock = 0; if (this.state !== 'shot') return this.endQuarter(); }
       if (this.shot <= 0 && this.state === 'live') { this.turnover(this.ball.holder, 'Shot clock violation'); return; }
       this.moveAll(dt, inp);
@@ -5966,6 +6004,13 @@ const ARC = (() => {
           tx = man.x + (h.x - man.x) * k; ty = man.y + (HY - man.y) * k;
           if (this.state === 'shot' && dist(pl, h) < 14) { tx = (tx + h.x) / 2; ty = (ty + HY) / 2; } // box out near the rim
         }
+        sp *= this.eff(pl);
+        for (const k2 of ['moveCd', 'pumpCd', 'chargeCd', 'stun', 'burst', 'charge']) if (pl[k2] > 0) pl[k2] = Math.max(0, pl[k2] - dt);
+        if (pl.stun > 0) sp *= 0.15;
+        if (pl.burst > 0) sp *= 1.3;
+        if (pl.anim && pl.anim.k === 'hesi') sp *= 0.3;
+        if (pl.charge > 0) { tx = pl.x; ty = pl.y; }
+        if (pl.stepTo) { pl.stepTo.t -= dt; tx = pl.stepTo.x; ty = pl.stepTo.y; sp = 14; if (pl.stepTo.t <= 0) pl.stepTo = null; }
         if (pl.glide) { tx = pl.glide.x; ty = pl.glide.y; sp = pl.glide.sp; }
         else if (pl.z > 0) sp *= 0.25; // little control in the air
         if ((pl.anim && pl.anim.k === 'fall') || (pl.oob && this.ball.holder === pl)) { tx = pl.x; ty = pl.y; }
@@ -5974,6 +6019,12 @@ const ARC = (() => {
         pl.vx = d > 0 ? dx / d * v : 0; pl.vy = d > 0 ? dy / d * v : 0;
         pl.x = clamp(pl.x + pl.vx * dt, pl.oob ? -3 : 1, pl.oob ? LEN + 3 : LEN - 1); pl.y = clamp(pl.y + pl.vy * dt, 1, W - 1);
         if (pl.oob && pl.x > 1 && pl.x < LEN - 1 && this.ball.holder !== pl) pl.oob = false;
+      }
+      // charges: a ball handler who runs into a planted defender
+      const hb = this.ball.holder;
+      if (hb && this.state === 'live' && Math.hypot(hb.vx, hb.vy) > 4) for (const d of this.T[1 - hb.side].P) if (d.charge > 0 && dist(d, hb) < 1.6) {
+        d.charge = 0; if (Math.random() < 0.45 + d.r.def * 0.25) { this.foul(hb); hb.st.tov++; hb.anim = { k: 'fall', t: 0, T: 1 }; this.say(`Charge! ${short(d.p)} takes it`); this.setupInbound(1 - hb.side); return; }
+        this.foul(d); this.say(`Blocking foul on ${short(d.p)}`, 1.4); break;
       }
       // keep players from standing on each other
       const A = this.all();
@@ -5989,9 +6040,20 @@ const ARC = (() => {
         if (clockUrgent || sq > rnd(0.42, 0.62)) { this.startShot(pl); return { x: pl.x, y: pl.y }; }
         if (Math.random() < 0.4) { const t = this.bestPass(pl); if (t && this.openness(t) > open + 2) { this.pass(pl, t); return { x: pl.x, y: pl.y }; } }
         pl.drive = (open > 4 || this.shot < 7) && d > 4 && Math.random() < (this.shot < 7 ? 0.9 : 0.55) ? 1.4 : 0;
+        if (open < 3.5 && Math.random() < 0.25) this.dribbleMove(pl, R4(['cross', 'hesi', 'spin', 'step']), Math.random() < 0.5 ? 1 : -1);
+        else if (open < 4 && d < 22 && Math.random() < 0.06) this.pumpFake(pl);
       }
       if (pl.drive > 0) { pl.drive -= dt; return { x: h.x - this.dir(off) * 2, y: HY + (pl.y < HY ? -2 : 2) }; }
       const s = this.spots(off)[pl.i]; return { x: (s.x + pl.x) / 2 + this.dir(off) * 3, y: s.y };
+    }
+    // the make chance shown under your shooter: a well-timed shot from here, against this defense, on these legs
+    chance(pl) {
+      const h = this.hoopOf(pl.side), d = dist(pl, h), three = this.isThree(pl), dfn = this.nearestDef(pl), open = dfn ? dist(dfn, pl) : 20;
+      const dunk = d < 4 && pl.r.dunk;
+      let p = dunk ? 0.86 : d < 5 ? 0.58 + (pl.r.fg2 - 0.45) : three ? pl.r.fg3 : d < 16 ? pl.r.fg2 : pl.r.fg2 - 0.06;
+      if (d > 27) p *= clamp(1 - (d - 27) / 20, 0.05, 1);
+      p *= clamp(0.62 + open / (9 * (dfn ? dfn.r.def : 1)), 0.5, 1.1) * (dunk ? 1 : 1.12) * (0.82 + 0.18 * pl.en);
+      return clamp(p, 0.02, 0.95);
     }
     nearestDef(pl) { return this.T[1 - pl.side].P.slice().sort((a, b) => dist(a, pl) - dist(b, pl))[0]; }
     openness(pl) { const d = this.nearestDef(pl); return d ? dist(d, pl) : 20; }
@@ -6016,10 +6078,10 @@ const ARC = (() => {
       if (Math.abs(jx) + Math.abs(jy) < 0.2) return this.bestPass(pl);
       return mates.map(m => { const dx = m.x - pl.x, dy = m.y - pl.y, d = Math.hypot(dx, dy) || 1; return { m, s: (dx * jx + dy * jy) / d - d / 120 }; }).sort((a, b) => b.s - a.s)[0].m;
     }
-    pass(from, to) {
-      const d = dist(from, to), t = clamp(d / 42, 0.18, 0.9);
+    pass(from, to, lob) {
+      const d = dist(from, to), t = lob ? clamp(d / 26, 0.45, 1.2) : clamp(d / 42, 0.18, 0.9);
       this.ball.holder = null; this.ball.lastPasser = from;
-      this.ball.flight = { kind: 'pass', from: { x: from.x, y: from.y }, to, t: 0, T: t, by: from };
+      this.ball.flight = { kind: 'pass', from: { x: from.x, y: from.y }, to, t: 0, T: t, by: from, lob: !!lob };
       this.state = 'live';
     }
     startShot(pl, userTimed) {
@@ -6031,14 +6093,15 @@ const ARC = (() => {
       const s = pl.shooting; if (!s || this.ball.holder !== pl) return;
       const h = this.hoopOf(pl.side), d = dist(pl, h), three = this.isThree(pl), dfn = this.nearestDef(pl), open = dfn ? dist(dfn, pl) : 20;
       const timing = clamp(1 - Math.abs(s.t - s.apex) / (s.apex * 1.1), 0, 1);       // 1 = released right at the top
-      const close = d < 5, dunk = close && pl.r.dunk && d < 4;
+      const close = d < 5 || (s.oop && d < 9), dunk = (close && pl.r.dunk && d < 4) || (s.oop && d < 9);
       let p = dunk ? 0.86 : close ? 0.58 + (pl.r.fg2 - 0.45) : three ? pl.r.fg3 : d < 16 ? pl.r.fg2 : pl.r.fg2 - 0.06;
       if (d > 27) p *= clamp(1 - (d - 27) / 20, 0.05, 1);
       p *= clamp(0.62 + open / (9 * (dfn ? dfn.r.def : 1)), 0.5, 1.1);                   // contested shots go in less, more so against good defenders
       p *= dunk ? 1 : 0.62 + 0.5 * timing;                                              // your timing: about half the story
+      p *= 0.82 + 0.18 * (pl.en == null ? 1 : pl.en);                                      // tired legs, short shots
       let blocked = false;
       if (dfn && open < 3.2 && dfn.z > 0.8 && !dunk) blocked = Math.random() < 0.2 + dfn.r.blk * 0.35;
-      if (dfn && open < 3 && !dfn.blocking && Math.random() < 0.1) { this.foulShot(pl, three ? 3 : 2, Math.random() < p * 0.6); delete pl.shooting; return; }
+      if (dfn && open < 3 && !dfn.blocking && Math.random() < 0.1) { this.foul(dfn); this.foulShot(pl, three ? 3 : 2, Math.random() < p * 0.6); delete pl.shooting; return; }
       p = clamp(p, 0.02, 0.95);
       const make = !blocked && Math.random() < p;
       pl.st.fga++; if (three) pl.st.tpa++;
@@ -6077,15 +6140,22 @@ const ARC = (() => {
         const me = this.ctrl[user];
         if (this.poss === user && b.holder === me && me) {
           if (inp.pass) this.pass(me, this.passDir(me, inp.jx || 0, inp.jy || 0));
+          if (inp.lob) this.pass(me, this.passDir(me, inp.jx || 0, inp.jy || 0), true);
           if (inp.shootDown && me.z === 0) this.startShot(me, true);
+          if (inp.pump) this.pumpFake(me);
+          if (inp.cross) this.dribbleMove(me, 'cross', typeof inp.cross === 'number' ? inp.cross : -me.hand);
+          if (inp.hesi) this.dribbleMove(me, 'hesi', me.hand);
+          if (inp.spin) this.dribbleMove(me, 'spin', me.hand);
+          if (inp.step) this.dribbleMove(me, 'step', me.hand);
         } else if (this.poss !== user && me) {
           if (inp.switch) this.switchDef();
+          if (inp.charge) this.takeCharge(me);
           if (inp.jump && me.z === 0) { me.vz = 12; me.z = 0.01; me.blocking = true; me.landing = () => { me.blocking = false; }; }
           if (inp.steal && b.holder && dist(me, b.holder) < 4 && !me.stealCd) {
             me.stealCd = 0.8; const h = b.holder;
             const pS = 0.08 + me.r.stl * 0.18 - h.r.pass * 0.06;
             if (Math.random() < pS) { me.st.stl++; h.st.tov++; this.say(`Steal by ${short(me.p)}!`); this.give(me); this.poss = me.side; this.shot = 24; this.pickCtrl(); return; }
-            if (Math.random() < 0.12) this.say('Reach-in foul');
+            if (Math.random() < 0.12) { this.foul(me); this.say(`Reach-in foul on ${short(me.p)}`); }
           }
         }
         for (const pl of this.all()) if (pl.stealCd) pl.stealCd = Math.max(0, pl.stealCd - dt);
@@ -6108,13 +6178,14 @@ const ARC = (() => {
       const f = b.flight;
       if (f && f.kind === 'pass') {
         f.t += dt; const k = clamp(f.t / f.T, 0, 1);
-        b.x = f.from.x + (f.to.x - f.from.x) * k; b.y = f.from.y + (f.to.y - f.from.y) * k; b.z = 4 + Math.sin(k * Math.PI) * 2.5;
+        b.x = f.from.x + (f.to.x - f.from.x) * k; b.y = f.from.y + (f.to.y - f.from.y) * k; b.z = 4 + Math.sin(k * Math.PI) * (f.lob ? 9 : 2.5);
         // defenders in the passing lane can pick it off
         f.tried = f.tried || new Set();
-        if (k > 0.2 && k < 0.85) for (const d of this.T[1 - f.by.side].P) if (dist(d, b) < 1.5 && !f.tried.has(d) && (f.tried.add(d), Math.random() < (0.04 + d.r.stl * 0.1) * (1.3 - f.by.r.pass) * d.r.def)) {
+        if (k > (f.lob ? 0.8 : 0.2) && k < (f.lob ? 0.95 : 0.85)) for (const d of this.T[1 - f.by.side].P) if (dist(d, b) < 1.5 && !f.tried.has(d) && (f.tried.add(d), Math.random() < (0.04 + d.r.stl * 0.1) * (1.3 - f.by.r.pass) * d.r.def * (f.lob ? 0.5 : 1))) {
           d.st.stl++; f.by.st.tov++; this.say(`Picked off by ${short(d.p)}!`); this.give(d); this.poss = d.side; this.shot = 24; this.pickCtrl(true); return;
         }
-        if (k >= 1) { this.give(f.to); this.pickCtrl(); }
+        if (k >= 1) { this.give(f.to); this.pickCtrl();
+          const h2 = this.hoopOf(f.to.side); if (f.lob && f.to.r.dunk && dist(f.to, h2) < 9 && f.to.z === 0) { this.startShot(f.to, false); if (f.to.shooting) { f.to.shooting.oop = true; f.to.shooting.rel = 0.12; this.say('Alley-oop!', 1); } } }
         return;
       }
       if (f && f.kind === 'shot') {
@@ -6155,7 +6226,7 @@ const ARC = (() => {
       this.state = 'break'; this.wait = 2.2; this.say(this.q >= 4 ? 'Tied! Overtime' : `End of Q${this.q}`, 2.2);
     }
     // Quarters 2 and 3 go to the team that lost the opening tip, the 4th to the team that won it; overtime starts with a new jump ball.
-    nextQuarter() { this.q++; this.clock = this.q > 4 ? Math.round(this.qsec / 2) : this.qsec; if (this.q > 4) return this.setupJump(); const w = this.tipWin || 0; this.setupInbound(this.q === 4 ? w : 1 - w); }
+    nextQuarter() { for (const T of this.T) for (const pl of T.P.concat(T.B)) pl.en = clamp(pl.en + (this.q === 2 ? 0.3 : 0.12), 0, 1); this.q++; this.clock = this.q > 4 ? Math.round(this.qsec / 2) : this.qsec; if (this.q > 4) return this.setupJump(); const w = this.tipWin || 0; this.setupInbound(this.q === 4 ? w : 1 - w); }
     /* ----- jump ball: centers face off in the center circle; the ref tosses it; time your JUMP as it comes down ----- */
     setupJump() {
       this.state = 'jump'; this.jt = 0; this.poss = -1; this.shot = 24; this.tipDone = false;
@@ -6192,7 +6263,73 @@ const ARC = (() => {
         this.say(`${this.T[win].abbr} win the tip`, 1.4);
       }
     }
-    box() { return this.T.map(t => ({ abbr: t.abbr, score: t.score, rows: t.P.map(pl => ({ name: pl.p.name, pos: pl.p.pos, ...pl.st })) })); }
+    box() { return this.T.map(t => ({ abbr: t.abbr, score: t.score, rows: t.P.concat(t.B).filter(pl => pl.st.sec > 0 || t.P.includes(pl)).map(pl => ({ name: pl.p.name, pos: pl.p.pos, min: Math.round(pl.st.sec / 60), ...pl.st })) })); }
+    /* ----- energy: players on the floor tire (faster when running hard), the bench gets its legs back ----- */
+    tire(dt) {
+      const k = this.k * dt;
+      for (const T of this.T) {
+        for (const pl of T.P) { const run = clamp(Math.hypot(pl.vx, pl.vy) / pl.r.spd, 0, 1.2); pl.en = clamp(pl.en - (0.00042 + 0.00055 * run) * k * (1.15 - (pl.r.def - 0.65) * 0.3), 0.05, 1); pl.st.sec += k; }
+        for (const pl of T.B) pl.en = clamp(pl.en + 0.0016 * k, 0, 1);
+      }
+    }
+    eff(pl) { return 0.7 + 0.3 * (pl.en == null ? 1 : pl.en); }   // how much of his speed and touch a tired player keeps
+    // Swap a bench player in for the player in a slot. Returns an error string or null.
+    sub(side, slot, bi) {
+      const T = this.T[side], out = T.P[slot], inn = T.B[bi];
+      if (!out || !inn) return 'Pick a player on the floor and one on the bench.';
+      if (inn.fouledOut) return `${inn.p.name} has fouled out.`;
+      if (out.shooting || (this.fts && this.fts.pl === out && this.state === 'ft')) return `${out.p.name} can't come out right now.`;
+      Object.assign(inn, { i: slot, x: out.x, y: out.y, z: 0, vz: 0, vx: 0, vy: 0, oob: out.oob, anim: null, glide: null, hang: 0, cut: null, drive: 0, stun: 0, burst: 0 });
+      Object.assign(out, { i: null, z: 0, vz: 0, oob: false, anim: null, glide: null, hang: 0, blocking: false, landing: null, shooting: null });
+      T.P[slot] = inn; T.B[bi] = out;
+      const b = this.ball; if (b.holder === out) this.give(inn); if (b.flight && b.flight.to === out) b.flight.to = inn;
+      if (this.ctrl[side] === out) this.ctrl[side] = inn;
+      if (this.user === side) this.pickCtrl();
+      return null;
+    }
+    // Computer coaches (and yours, if auto subs is on) sub at dead balls: tired or fouled-out players come out, rested starters go back in.
+    autoSubs(side) {
+      const T = this.T[side], grp = pos => pos === 'PG' || pos === 'SG' ? 'G' : pos === 'C' ? 'C' : 'F';
+      for (let slot = 0; slot < 5; slot++) {
+        const pl = T.P[slot]; let best = -1, bs = -1;
+        const back = T.B.findIndex(b => b.starter && b.home === slot && !b.fouledOut && b.en >= 0.9);
+        if (back >= 0 && !pl.starter && pl.en < 0.9) { this.sub(side, slot, back); continue; }
+        if (!(pl.fouledOut || pl.en < 0.62)) continue;
+        T.B.forEach((b, bi) => { if (b.fouledOut || b.en < Math.max(0.8, pl.en + 0.2)) return; const v = (b.p.ovr || 50) * b.en + (grp(b.p.pos) === grp(pl.p.pos) ? 8 : 0); if (v > bs) { bs = v; best = bi; } });
+        if (best >= 0) this.sub(side, slot, best);
+      }
+    }
+    foul(pl, kind) {
+      if (!pl) return; pl.st.pf++;
+      if (pl.st.pf >= 6 && !pl.fouledOut) { pl.fouledOut = true; this.say(`${short(pl.p)} has fouled out`, 2); }
+    }
+    deadBall() { for (const side of [0, 1]) if (this.user !== side || this.autoSub[side] || this.T[side].P.some(p => p.fouledOut)) this.autoSubs(side); }
+    /* ----- ball-handler moves ----- */
+    // crossover / hesitation / spin / step-back: beat the man guarding you. Better handlers and quicker players win more often.
+    dribbleMove(pl, kind, dir) {
+      if (this.ball.holder !== pl || pl.z > 0 || pl.oob || (pl.moveCd || 0) > 0 || this.state !== 'live') return;
+      const dfn = this.nearestDef(pl), guarded = dfn && dist(dfn, pl) < 5;
+      if (kind === 'spin' && !guarded) kind = 'step';
+      pl.moveCd = kind === 'spin' ? 1.0 : 0.7;
+      if (kind === 'cross') pl.hand = dir || -pl.hand;
+      pl.anim = { k: kind, t: 0, T: kind === 'spin' ? 0.4 : kind === 'hesi' ? 0.45 : kind === 'step' ? 0.35 : 0.25, dir: dir || pl.hand };
+      if (kind === 'step') { const h = this.hoopOf(pl.side), d = dist(pl, h) || 1; pl.glide = null; pl.stepTo = { x: pl.x - (h.x - pl.x) / d * 4, y: pl.y - (h.y - pl.y) / d * 4, t: 0.3 }; }
+      if (!guarded) return;
+      const handle = clamp(0.3 + pl.r.pass * 0.35 + (pl.r.spd - 17) * 0.05, 0.2, 0.85) * this.eff(pl);
+      const base = { cross: 0.55, hesi: 0.5, spin: 0.62, step: 0.5 }[kind];
+      const p = clamp(base * (0.7 + handle) / (dfn.r.def * this.eff(dfn)), 0.12, 0.85);
+      if (Math.random() < p) { dfn.stun = kind === 'spin' ? 0.75 : 0.55; pl.burst = kind === 'step' ? 0 : 0.6; if (Math.random() < 0.35) this.say(kind === 'step' ? 'Step-back!' : kind === 'spin' ? 'Spin move!' : 'Shook him!', 0.9); }
+      else if (kind === 'cross' && Math.random() < 0.1 * dfn.r.stl + 0.02) { dfn.st.stl++; pl.st.tov++; this.say(`Stripped by ${short(dfn.p)}!`); this.give(dfn); this.poss = dfn.side; this.shot = 24; this.pickCtrl(); }
+    }
+    // pump fake: a defender close by may leave his feet, worse defenders more often
+    pumpFake(pl) {
+      if (this.ball.holder !== pl || pl.z > 0 || pl.oob || (pl.pumpCd || 0) > 0) return;
+      pl.pumpCd = 0.6; pl.anim = { k: 'pump', t: 0, T: 0.3 };
+      const dfn = this.nearestDef(pl); if (!dfn || dist(dfn, pl) > 6 || dfn.z > 0 || (this.user != null && dfn === this.ctrl[this.user])) return;
+      if (Math.random() < clamp(0.3 + (1.1 - dfn.r.def) * 0.8, 0.1, 0.7)) { dfn.vz = 11 + dfn.r.blk * 2; dfn.z = 0.01; dfn.stun = 0.5; this.say('He bit on the fake!', 0.9); }
+    }
+    // take a charge: plant your feet; if the ball handler runs into you, it's an offensive foul
+    takeCharge(pl) { if (pl.z > 0 || (pl.chargeCd || 0) > 0) return; pl.charge = 0.8; pl.chargeCd = 1.4; pl.anim = { k: 'charge', t: 0, T: 0.8 }; }
   }
   function short(p) { const n = p.name.split(' '); return n.length > 1 ? n.slice(1).join(' ') : p.name; }
 
@@ -6219,65 +6356,176 @@ const ARC = (() => {
     ui.className = 'arc-ui';
     ui.innerHTML = `<div class="arc-score"></div><div class="arc-msg"></div>
       <div class="arc-stick"><div class="arc-knob"></div></div>
-      <div class="arc-btns"></div>
-      <button class="arc-quit">Quit</button>`;
-    const scoreEl = ui.querySelector('.arc-score'), msgEl = ui.querySelector('.arc-msg'), stick = ui.querySelector('.arc-stick'), knob = ui.querySelector('.arc-knob'), btns = ui.querySelector('.arc-btns');
-    let mode = '';
+      <div class="arc-pad"></div><div class="arc-card"></div><div class="arc-tip"></div>
+      <button class="arc-pause" aria-label="Pause">II</button><button class="arc-quit" style="display:none">Quit</button>`;
+    const scoreEl = ui.querySelector('.arc-score'), msgEl = ui.querySelector('.arc-msg'), stick = ui.querySelector('.arc-stick'), knob = ui.querySelector('.arc-knob'), pad = ui.querySelector('.arc-pad'), card = ui.querySelector('.arc-card'), tipEl = ui.querySelector('.arc-tip');
+    let paused = false, showTips = true, mode = '', cardKey = '';
+    const tipSeen = { off: 0, def: 0, jump: 0 }; let tipT = 0;
+    const TIPS = { off: ['Hold Shoot and let go at the top of the jump. A quick tap is a pump fake.', 'Tap Pass to pass toward the stick; hold it for a lob. Lob to a dunker near the rim for an alley-oop.', 'Tap Cross for a crossover; hold it to hesitate. Tap Step for a step-back; hold it to spin.'],
+      def: ['Tap Steal to swipe at the ball. Tap Block to jump.', 'Charge: plant your feet in the driver\'s path. Switch: take the defender nearest the ball.'], jump: ['Jump ball! Tap Block (or tap the right side) just before the ball peaks.'] };
+    // the right-side pad: four buttons in a diamond, like a controller's face buttons
+    const PADS = { off: [['top', 'step', 'Step'], ['left', 'cross', 'Cross'], ['right', 'shoot', 'Shoot'], ['bottom', 'pass', 'Pass']],
+      def: [['top', 'block', 'Block'], ['left', 'steal', 'Steal'], ['right', 'charge', 'Charge'], ['bottom', 'switch', 'Switch']] };
     function setButtons() {
-      const off = game.user != null && game.poss === game.user, m = game.over ? 'end' : off ? 'off' : 'def';
+      const off = game.user != null && game.poss === game.user && game.state !== 'jump', m = game.over ? 'end' : game.state === 'jump' ? 'jump' : off ? 'off' : 'def';
       if (m === mode) return; mode = m;
-      btns.innerHTML = m === 'off' ? `<button data-b="pass">PASS</button><button data-b="shoot" class="big">SHOOT</button>`
-        : m === 'def' ? `<button data-b="switch">SWITCH</button><button data-b="steal">STEAL</button><button data-b="jump" class="big">JUMP</button>` : '';
+      pad.innerHTML = m === 'end' ? '' : (PADS[m === 'jump' ? 'def' : m]).map(([pos, b, label]) => `<button class="pb ${pos}" data-b="${b}">${label}</button>`).join('');
+      if (showTips && TIPS[m] && tipSeen[m] < TIPS[m].length) { tipEl.textContent = TIPS[m][tipSeen[m]++]; tipEl.classList.add('on'); tipT = 6; }
+    }
+    // ratings on a 1-10 scale (half points), for the player card and the substitution screen
+    const r10 = v => Math.round(clamp(v, 0.5, 10) * 2) / 2;
+    function rat(pl) {
+      const r = pl.r, ovr = pl.p.ovr || 60;
+      const mid = (r.fg2 - 0.36) / 0.32 * 10;
+      return { LAY: r10(mid + (r.big ? 1.5 : 0.5)), DNK: r10(r.dunk ? 4 + (r.height - 6.2) * 4 + (ovr - 60) / 8 : 1 + (r.height - 6.2) * 2), MID: r10(mid), '3PT': r10((r.fg3 - 0.2) / 0.28 * 10), FTS: r10((r.ft - 0.5) / 0.42 * 10),
+        DRB: r10(((r.pass - 0.3) / 0.7 * 6) + (r.spd - 16.5) * 1.3), PAS: r10((r.pass - 0.3) / 0.65 * 10), REB: r10(10 * Math.pow(clamp((r.reb - 0.25) / 0.95, 0, 1), 0.6)), DEF: r10((r.def - 0.65) / 0.65 * 10), STL: r10(r.stl * 10), BLK: r10(r.blk * 10), SPD: r10((r.spd - 15.5) / 5 * 10) };
+    }
+    const enCol = e => e >= 0.8 ? '#4ade80' : e >= 0.6 ? '#facc15' : '#f87171';
+    function updCard() {
+      const me = game.user != null ? game.ctrl[game.user] : null; if (!me || game.over) { card.innerHTML = ''; return; }
+      const R2 = rat(me), keys2 = mode === 'off' ? ['LAY', 'MID', '3PT', 'DRB', 'PAS'] : ['REB', 'STL', 'BLK', 'DEF'], k = me.p.id + mode;
+      if (k !== cardKey) { cardKey = k; card.innerHTML = `<div class="nm">${me.p.name}, ${me.p.pos}${me.num != null ? ` <span>#${me.num}</span>` : ''}</div><div class="en"><i></i></div><div class="rt">${keys2.map(x => `<div><b>${x}</b>${R2[x]}</div>`).join('')}</div>`; }
+      const bar = card.querySelector('.en i'); if (bar) { bar.style.width = Math.round(me.en * 100) + '%'; bar.style.background = enCol(me.en); }
     }
     // joystick: touch anywhere on the left half
     let stickId = null, sx = 0, sy = 0;
     const R = 46;
     function stickMove(cx, cy) { let dx = cx - sx, dy = cy - sy; const d = Math.hypot(dx, dy); if (d > R) { dx = dx / d * R; dy = dy / d * R; } knob.style.transform = `translate(${dx}px, ${dy}px)`; inp.jx = dx / R; inp.jy = dy / R / 0.75; }
+    /* presses: every touch on the right (a pad button or a swipe anywhere) becomes one of these, resolved by hold time and direction */
+    const presses = {};
+    const offMode = () => mode === 'off';
+    function pressDown(id, b, x, y) { presses[id] = { b, t0: performance.now(), x, y, fired: false, kind: null }; if (b === 'block') edge.jump = true; if (b === 'steal') edge.steal = true; if (b === 'charge') edge.charge = true; if (b === 'switch') edge.switch = true; if (b && mode === 'jump') edge.jump = true; }
+    function pressMove(id, x, y) {
+      const P = presses[id]; if (!P || P.b || P.kind) return; const dx = x - P.x, dy = y - P.y; if (Math.hypot(dx, dy) < 26) return;
+      P.kind = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'); P.tk = performance.now();
+      if (!offMode()) { if (P.kind === 'up' || mode === 'jump') edge.jump = true; else edge.steal = true; P.fired = true; }
+    }
+    function holdCheck(now) {   // runs every frame: hold-to-act controls
+      for (const id in presses) { const P = presses[id], held = now - P.t0;
+        if (!offMode()) continue;
+        if ((P.b === 'shoot' || P.kind === 'down') && !P.fired && now - (P.tk || P.t0) >= 110) { edge.shootDown = true; P.fired = 'shot'; }
+        if ((P.b === 'cross' || P.kind === 'left' || P.kind === 'right') && !P.fired && now - (P.tk || P.t0) >= 280) { edge.hesi = true; P.fired = 'hesi'; }
+        if (P.b === 'step' && !P.fired && held >= 280) { edge.spin = true; P.fired = 'spin'; }
+      }
+    }
+    function pressUp(id) {
+      const P = presses[id]; delete presses[id]; if (!P) return; const held = performance.now() - P.t0;
+      if (mode === 'jump') { if (!P.b && !P.kind) edge.jump = true; return; }
+      if (!offMode()) { if (!P.b && !P.kind) edge.switch = true; return; }
+      const sh = P.b === 'shoot' || P.kind === 'down', cr = P.b === 'cross' || P.kind === 'left' || P.kind === 'right';
+      if (sh) { if (P.fired === 'shot') edge.shootUp = true; else edge.pump = true; return; }
+      if (cr) { if (!P.fired) edge.cross = P.kind === 'left' ? -1 : P.kind === 'right' ? 1 : (inp.jx > 0.3 ? 1 : inp.jx < -0.3 ? -1 : 0) || null; return; }
+      if (P.b === 'step') { if (!P.fired) edge.step = true; return; }
+      if (P.kind === 'up') { edge.spin = true; return; }
+      if (P.b === 'pass' || (!P.b && !P.kind)) { if (held >= 300) edge.lob = true; else edge.pass = true; }
+    }
     root.addEventListener('touchstart', e => {
+      if (paused) return;
       for (const t of e.changedTouches) {
         const b = t.target.closest && t.target.closest('[data-b]');
-        if (b) { press(b.dataset.b, true); b.classList.add('on'); continue; }
-        if (t.target.closest && t.target.closest('.arc-quit')) continue;
-        if (t.clientX < w * 0.55 && stickId == null) { stickId = t.identifier; sx = t.clientX; sy = t.clientY; stick.style.left = (sx - 60) + 'px'; stick.style.top = (sy - 60) + 'px'; stick.classList.add('on'); stickMove(sx, sy); }
+        if (b) { b.classList.add('on'); pressDown(t.identifier, b.dataset.b, t.clientX, t.clientY); continue; }
+        if (t.target.closest && t.target.closest('.arc-pause, .arc-menu, .arc-end')) continue;
+        if (t.clientX < w * 0.5 && stickId == null) { stickId = t.identifier; sx = t.clientX; sy = t.clientY; stick.style.left = (sx - 60) + 'px'; stick.style.top = (sy - 60) + 'px'; stick.classList.add('on'); stickMove(sx, sy); }
+        else pressDown(t.identifier, null, t.clientX, t.clientY);
       }
       e.preventDefault();
     }, { passive: false });
-    root.addEventListener('touchmove', e => { for (const t of e.changedTouches) if (t.identifier === stickId) stickMove(t.clientX, t.clientY); e.preventDefault(); }, { passive: false });
+    root.addEventListener('touchmove', e => { for (const t of e.changedTouches) { if (t.identifier === stickId) stickMove(t.clientX, t.clientY); else pressMove(t.identifier, t.clientX, t.clientY); } if (!paused) e.preventDefault(); }, { passive: false });
     const end = e => {
       for (const t of e.changedTouches) {
         if (t.identifier === stickId) { stickId = null; inp.jx = inp.jy = 0; knob.style.transform = ''; stick.classList.remove('on'); }
-        const b = t.target.closest && t.target.closest('[data-b]'); if (b) { press(b.dataset.b, false); b.classList.remove('on'); }
+        else pressUp(t.identifier);
+        const b = t.target.closest && t.target.closest('[data-b]'); if (b) b.classList.remove('on');
       }
     };
     root.addEventListener('touchend', end); root.addEventListener('touchcancel', end);
-    function press(b, down) { if (b === 'shoot') { if (down) edge.shootDown = true; else edge.shootUp = true; } else if (down) edge[b] = true; }
-    // keyboard for testing on a computer: arrows or WASD, J shoot (hold and release), K pass / steal, L switch, Space jump
-    const kd = e => { if (e.repeat) return; keys[e.key.toLowerCase()] = true; const k = e.key.toLowerCase(); if (k === 'j') press(game.poss === game.user ? 'shoot' : 'jump', true); if (k === 'k') press(game.poss === game.user ? 'pass' : 'steal', true); if (k === 'l') press('switch', true); if (k === ' ') press('jump', true); };
-    const ku = e => { keys[e.key.toLowerCase()] = false; if (e.key.toLowerCase() === 'j') press('shoot', false); };
+    // mouse on a computer: press and release the pad buttons
+    pad.addEventListener('mousedown', e => { const b = e.target.closest('[data-b]'); if (b && !('ontouchstart' in window)) pressDown('m', b.dataset.b, e.clientX, e.clientY); });
+    window.addEventListener('mouseup', () => { if (presses.m) pressUp('m'); });
+    // keyboard: arrows/WASD move · J hold shoot (tap = pump fake) · K pass (hold = lob) / steal · Q E crossover · H hesitate · F step-back · R spin · L switch · C charge · Space jump/block · P or Esc pause
+    const kd = e => {
+      if (e.repeat) return; const k = e.key.toLowerCase(); keys[k] = true;
+      if (k === 'p' || k === 'escape') { paused ? resume() : pause(); return; }
+      if (paused) return;
+      if (k === 'j') pressDown('kj', mode === 'off' ? 'shoot' : 'block');
+      if (k === 'k') pressDown('kk', mode === 'off' ? 'pass' : 'steal');
+      if (k === 'q') edge.cross = -1; if (k === 'e') edge.cross = 1; if (k === 'h') edge.hesi = true; if (k === 'f') edge.step = true; if (k === 'r') edge.spin = true;
+      if (k === 'l') edge.switch = true; if (k === 'c') edge.charge = true; if (k === ' ') edge.jump = true;
+    };
+    const ku = e => { const k = e.key.toLowerCase(); keys[k] = false; if (k === 'j') pressUp('kj'); if (k === 'k') pressUp('kk'); };
     window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
     ui.querySelector('.arc-quit').addEventListener('click', () => stop(true));
-    ui.addEventListener('click', e => { const b = e.target.closest('[data-b]'); if (b && !('ontouchstart' in window)) { press(b.dataset.b, true); if (b.dataset.b === 'shoot') setTimeout(() => press('shoot', false), 380); } const a = e.target.closest('[data-x]'); if (a) { if (a.dataset.x === 'again') { stop(false); onExit('again'); } else stop(true); } });
+    ui.querySelector('.arc-pause').addEventListener('click', () => paused ? resume() : pause());
+    ui.addEventListener('click', e => { const a = e.target.closest('[data-x]'); if (a) { if (a.dataset.x === 'again') { stop(false); onExit('again'); } else stop(true); } });
+    /* ---------- pause menu: controls, substitutions, settings ---------- */
+    let menu = null, tab = 'controls', subSide = 0, subSel = null, subMsg = '';
+    function pause() { if (game.over) return; paused = true; for (const id in presses) delete presses[id]; inp.jx = inp.jy = 0; renderMenu(); }
+    function resume() { paused = false; subSel = null; subMsg = ''; if (menu) { menu.remove(); menu = null; } }
+    const CTRL = [['Offense', null, null], ['Move', 'Drag on the left side', 'Arrows / WASD'], ['Pass', 'Tap Pass (or tap the right side)', 'Tap K'], ['Lob pass', 'Hold Pass (or hold the right side)', 'Hold K'],
+      ['Shoot', 'Hold Shoot or swipe down and hold; let go at the top', 'Hold J'], ['Pump fake', 'Quick tap of Shoot, or swipe down and let go', 'Tap J'], ['Crossover / switch hands', 'Tap Cross, or swipe left/right', 'Q / E'],
+      ['Hesitation', 'Hold Cross, or swipe and hold left/right', 'H'], ['Step-back', 'Tap Step', 'F'], ['Spin move', 'Hold Step, or swipe up (when guarded)', 'R'],
+      ['Defense', null, null], ['Move', 'Drag on the left side', 'Arrows / WASD'], ['Steal', 'Tap Steal, or swipe left/right/down', 'K'], ['Block / contest', 'Tap Block, or swipe up', 'Space or J'], ['Take a charge', 'Tap Charge in the driver\'s path', 'C'],
+      ['Switch player', 'Tap Switch (or tap the right side)', 'L'], ['Jump ball', 'Tap Block just before the ball peaks', 'Space'], ['Pause', 'II button', 'P or Esc']];
+    const COLS = ['LAY', 'DNK', 'MID', '3PT', 'FTS', 'DRB', 'PAS', 'REB', 'DEF', 'STL', 'BLK', 'SPD'];
+    const mmss = sec => { const m2 = Math.floor(sec / 60), s2 = Math.floor(sec % 60); return m2 + ':' + String(s2).padStart(2, '0'); };
+    function subRows(T, list, bench) {
+      return list.map((pl, k) => { const R2 = rat(pl), on = !bench && subSel === k && T.side === game.user;
+        return `<tr class="${on ? 'sel' : ''} ${pl.fouledOut ? 'out' : ''}" data-sub="${bench ? 'b' : 's'}${k}"><td>${bench ? 'B' + (k + 6) : ['PG', 'SG', 'SF', 'PF', 'C'][k]}</td><td class="n">${pl.p.name}, ${pl.p.pos}${pl.num != null ? ' #' + pl.num : ''}</td>
+          <td style="color:${enCol(pl.en)}">${pl.fouledOut ? 'OUT' : Math.round(pl.en * 100) + '%'}</td><td>${mmss(pl.st.sec)}</td><td>${pl.st.pts}</td><td>${pl.st.pf}</td>${COLS.map(c => `<td class="${R2[c] >= 8 ? 'hi' : ''}">${R2[c]}</td>`).join('')}</tr>`; }).join('');
+    }
+    function renderMenu() {
+      if (!menu) { menu = document.createElement('div'); menu.className = 'arc-menu'; ui.appendChild(menu);
+        menu.addEventListener('click', e => {
+          const t = e.target.closest('[data-m]'); if (t) { const v = t.dataset.m;
+            if (v === 'resume') return resume(); if (v === 'quit') return stop(true);
+            if (v === 'prev' || v === 'next') { subSide = 1 - subSide; subSel = null; subMsg = ''; }
+            else if (v === 'auto') game.autoSub[game.user] = !game.autoSub[game.user];
+            else if (v === 'tips') { showTips = !showTips; if (!showTips) tipEl.classList.remove('on'); }
+            else tab = v;
+            return renderMenu(); }
+          const r = e.target.closest('[data-sub]'); if (r && subSide === game.user) { const k = +r.dataset.sub.slice(1);
+            if (r.dataset.sub[0] === 's') { subSel = subSel === k ? null : k; subMsg = subSel == null ? '' : `Now tap a bench player to bring in for ${game.T[subSide].P[k].p.name}.`; }
+            else if (subSel != null) { const out = game.T[subSide].P[subSel].p.name, inn = game.T[subSide].B[k].p.name, err = game.sub(subSide, subSel, k); subMsg = err || `${inn} checks in for ${out}.`; subSel = null; cardKey = ''; }
+            else subMsg = 'Tap a starter first, then the bench player to bring in.';
+            renderMenu(); }
+        });
+      }
+      const T = game.T[subSide];
+      let body;
+      if (tab === 'controls') body = `<table class="ctl">${CTRL.map(([a, b2, c]) => b2 == null ? `<tr class="h"><th>${a}</th><th>Touch</th><th>Keyboard</th></tr>` : `<tr><td>${a}</td><td>${b2}</td><td>${c}</td></tr>`).join('')}</table>`;
+      else if (tab === 'subs') body = `<div class="subhead"><button data-m="prev">◀</button><b>${T.side === game.user ? 'Your team' : 'Opponent'} · ${T.abbr}</b><button data-m="next">▶</button></div>
+        <p class="note">${T.side === game.user ? (subMsg || 'Tap a starter, then a bench player to swap them. Energy drops while a player is on the floor (faster when he runs hard) and comes back on the bench. Tired players are slower and miss more.') : 'The other coach makes his own changes.'}</p>
+        <div class="scroll"><table class="subs"><tr class="h"><th colspan="2">Starters</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${subRows(T, T.P, false)}
+        <tr class="h"><th colspan="2">Bench</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${T.B.length ? subRows(T, T.B, true) : '<tr><td colspan="18">No bench players.</td></tr>'}</table></div>`;
+      else body = `<div class="set"><button data-m="auto">Auto substitutions for your team: <b>${game.autoSub[game.user] ? 'On' : 'Off'}</b></button><p class="note">On: your coach rests tired players and brings starters back at dead balls. Off: you make every change yourself (fouled-out players still come out).</p>
+        <button data-m="tips">Control tips: <b>${showTips ? 'On' : 'Off'}</b></button></div>`;
+      menu.innerHTML = `<div class="mh">PAUSED</div><div class="mb"><div class="tabs">${[['controls', 'Controls'], ['subs', 'Substitutions'], ['settings', 'Settings']].map(([k2, n]) => `<button data-m="${k2}" class="${tab === k2 ? 'on' : ''}">${n}</button>`).join('')}</div><div class="pane">${body}</div></div>
+        <div class="mf"><button data-m="quit">Quit</button><button data-m="resume" class="go">Resume</button></div>`;
+    }
     let last = performance.now(), raf = 0, alive = true;
     function frame(now) {
       if (!alive) return;
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
-      const kx = (keys.arrowright || keys.d ? 1 : 0) - (keys.arrowleft || keys.a ? 1 : 0), ky = (keys.arrowdown || keys.s ? 1 : 0) - (keys.arrowup || keys.w ? 1 : 0);
-      const I = Object.assign({}, inp, edge); if (kx || ky) { I.jx = kx; I.jy = ky; }
-      for (const k in edge) delete edge[k];
-      game.step(dt, I);
-      draw(); hud(); setButtons();
+      if (!paused) {
+        holdCheck(now);
+        const kx = (keys.arrowright || keys.d ? 1 : 0) - (keys.arrowleft || keys.a ? 1 : 0), ky = (keys.arrowdown || keys.s ? 1 : 0) - (keys.arrowup || keys.w ? 1 : 0);
+        const I = Object.assign({}, inp, edge); if (kx || ky) { I.jx = kx; I.jy = ky; }
+        for (const k in edge) delete edge[k];
+        game.step(dt, I);
+        if (tipT > 0) { tipT -= dt; if (tipT <= 0) tipEl.classList.remove('on'); }
+      }
+      draw(); hud(); setButtons(); updCard();
       raf = requestAnimationFrame(frame);
     }
     function hud() {
       const T = game.T, q = game.q > 4 ? 'OT' : 'Q' + game.q, c = Math.ceil(game.clock), mm = Math.floor(c / 60), ss = String(c % 60).padStart(2, '0');
       scoreEl.innerHTML = `<span class="t" style="--c:${T[0].trim}">${T[0].abbr}</span><b>${T[0].score}</b><span class="mid">${q} ${mm}:${ss}<small>${Math.max(0, Math.ceil(game.shot))}</small></span><b>${T[1].score}</b><span class="t" style="--c:${T[1].color}">${T[1].abbr}</span>`;
-      const me = game.user != null ? game.ctrl[game.user] : null;
-      msgEl.textContent = game.msgT > 0 ? game.msg : me ? `${me.p.pos} ${me.p.name}` : '';
+      msgEl.textContent = game.msgT > 0 ? game.msg : '';
       if (game.over && !ui.querySelector('.arc-end')) showEnd();
     }
     function showEnd() {
       const B = game.box(), won = B[0].score > B[1].score;
-      const tbl = b => `<table><tr><th>${b.abbr}</th><th>PTS</th><th>FG</th><th>3P</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th></tr>${b.rows.map(r => `<tr><td>${r.pos} ${r.name}</td><td>${r.pts}</td><td>${r.fgm}-${r.fga}</td><td>${r.tpm}-${r.tpa}</td><td>${r.reb}</td><td>${r.ast}</td><td>${r.stl}</td><td>${r.blk}</td></tr>`).join('')}</table>`;
+      const tbl = b => `<table><tr><th>${b.abbr}</th><th>MIN</th><th>PTS</th><th>FG</th><th>3P</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>PF</th></tr>${b.rows.map(r => `<tr><td>${r.pos} ${r.name}</td><td>${r.min}</td><td>${r.pts}</td><td>${r.fgm}-${r.fga}</td><td>${r.tpm}-${r.tpa}</td><td>${r.reb}</td><td>${r.ast}</td><td>${r.stl}</td><td>${r.blk}</td><td>${r.pf}</td></tr>`).join('')}</table>`;
       const d = document.createElement('div'); d.className = 'arc-end';
       d.innerHTML = `<h2>${won ? 'You win' : 'You lose'}, ${B[0].score}-${B[1].score}</h2><p>Exhibition game: it doesn't count in the standings.</p>${tbl(B[0])}${tbl(B[1])}<div class="arc-row"><button data-x="again">Play again</button><button data-x="quit">Back to the office</button></div>`;
       ui.appendChild(d);
@@ -6439,7 +6687,7 @@ const ARC = (() => {
       items.push({ y: HY - 1.5, f: () => { drawHoop(0, shift); drawHoop(1, shift); } });
       if (game.state === 'jump') items.push({ y: HY + 3, f: () => drawRef(shift) });
       items.sort((a, bb) => a.y - bb.y).forEach(it => it.f());
-      drawMeter();
+      drawMeter(); for (const L2 of labels) { const tw = L2.t.length * 4 + 4; px.fillStyle = 'rgba(10,12,20,.72)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 4, tw, 9); pixText(px, L2.t, L2.x, L2.y, 7, '#ffffff'); } labels = [];
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
       if (game.rimShake > 0) game.rimShake -= 1 / 60;
       scoreboard();
@@ -6471,9 +6719,10 @@ const ARC = (() => {
       const [fx0, fy] = toScr(pl.x, pl.y, 0), [, hy] = toScr(pl.x, pl.y, pl.z), fx = fx0 + sh;
       const me = game.user != null && game.ctrl[game.user] === pl, moving = Math.hypot(pl.vx, pl.vy) > 2 && pl.z === 0;
       const frame = moving ? (Math.floor(game.t * 8 + pl.i) % 4 === 1 ? 1 : Math.floor(game.t * 8 + pl.i) % 4 === 3 ? 2 : 0) : 0;
-      const hasB = game.ball.holder === pl, faceL = Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);
+      const hasB = game.ball.holder === pl; let faceL = Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);
+      if (pl.anim && pl.anim.k === 'spin') faceL = Math.floor(pl.anim.t / 0.1) % 2 === 0;
       const an = pl.anim && pl.anim.k;
-      const pose = an === 'dunk' ? 'dunk' : an === 'layup' ? 'lay' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
+      const pose = an === 'dunk' ? 'dunk' : an === 'layup' ? 'lay' : an === 'pump' || an === 'charge' ? 'up' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
       const sp = sprite(pl, an === 'fall' ? 0 : frame, an === 'fall' ? 'down' : pose, faceL);
       px.fillStyle = 'rgba(0,0,0,.28)'; px.beginPath(); px.ellipse(fx, fy, an === 'fall' ? 11 : 6, 2, 0, 0, Math.PI * 2); px.fill();
       if (an === 'fall') {   // knocked to the floor: the sprite lies on its side, then pops back up
@@ -6484,7 +6733,10 @@ const ARC = (() => {
       if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 5, fy + 2, 11, 1); px.fillRect(fx - 6, fy + 1, 1, 1); px.fillRect(fx + 6, fy + 1, 1, 1); }
       const x0 = Math.round(fx - sp.c.width / 2), y0 = Math.round(hy - sp.foot);
       px.drawImage(sp.c, x0, y0);
-      if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 2, y0 - 5, 5, 1); px.fillRect(fx - 1, y0 - 4, 3, 1); px.fillRect(fx, y0 - 3, 1, 1); }
+      if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 2, y0 - 5, 5, 1); px.fillRect(fx - 1, y0 - 4, 3, 1); px.fillRect(fx, y0 - 3, 1, 1);
+        // name tag under your player, with the make chance when he has the ball
+        const nm = pl.p.name.split(' '), tag = (nm.length > 1 ? nm[0][0] + '. ' + nm.slice(1).join(' ') : pl.p.name) + (hasB && !pl.oob && game.state === 'live' ? ' ' + Math.round(game.chance(pl) * 100) + '%' : '');
+        labels.push({ x: fx, y: fy + 7, t: tag }); }
       // shot meter beside your shooter: fills as you rise, green at the top of the jump
       const userSide = game.user != null && pl.side === game.user;
       let mv = null, mcol = null;
@@ -6492,7 +6744,7 @@ const ARC = (() => {
       else if (meter && meter.pl === pl && meter.t < 0.6) { mv = meter.v; mcol = meter.col; }
       if (mv != null) meterAt = { x: Math.round(fx + (faceL ? -13 : 10)), y: y0 + 2, v: mv, col: mcol };
     }
-    let meterAt = null;
+    let meterAt = null, labels = [];
     function drawMeter() {
       if (!meterAt) return; const { x: mx, y: my, v: mv, col: mcol } = meterAt; meterAt = null; const mh = 16;
       {
@@ -6535,7 +6787,10 @@ const ARC = (() => {
       const b = game.ball, [sx2, sy2] = toScr(b.x, b.y, 0), [bx0, by] = toScr(b.x, b.y, b.z), bx = bx0 + sh;
       const hb = b.holder; let x = bx, y = by;
       if (hb && hb.oob) { const [hx2, hy2] = toScr(hb.x, hb.y, 0); const sp = sprite(hb, 0, 'up', game.hoopOf(hb.side).x < hb.x); x = hx2 + sh; y = hy2 - sp.foot + 1; }
-      else if (hb && !hb.shooting && hb.z <= 0.3) { const faceL = Math.abs(hb.vx) > 0.5 ? hb.vx < 0 : (game.hoopOf(hb.side).x < hb.x); const [hx2, hy2] = toScr(hb.x, hb.y, 0); x = hx2 + sh + (faceL ? -7 : 7); y = hy2 - 4 - Math.abs(Math.sin(game.t * 9)) * 7; }
+      else if (hb && !hb.shooting && hb.z <= 0.3) { const faceL = Math.abs(hb.vx) > 0.5 ? hb.vx < 0 : (game.hoopOf(hb.side).x < hb.x); const [hx2, hy2] = toScr(hb.x, hb.y, 0); const an2 = hb.anim && hb.anim.k, side2 = (faceL ? -1 : 1) * (hb.hand || 1);
+        if (an2 === 'cross') { const k3 = hb.anim.t / hb.anim.T; x = hx2 + sh + side2 * 7 * (2 * k3 - 1); y = hy2 - 2; }
+        else if (an2 === 'hesi' || an2 === 'pump') { x = hx2 + sh + side2 * 6; y = hy2 - (an2 === 'pump' ? 22 : 9); }
+        else { x = hx2 + sh + side2 * 7; y = hy2 - 4 - Math.abs(Math.sin(game.t * 9)) * 7; } }
       px.fillStyle = 'rgba(0,0,0,.3)'; px.fillRect(sx2 + sh - 3, sy2, 7, 2);
       x = Math.round(x); y = Math.round(y);
       // a 7-pixel ball: dark outline, orange body, seams and a highlight
@@ -6605,8 +6860,11 @@ const HELP = [
 <p>Play a game yourself, five on five on a pixel-art court seen from above, with your starting five against any team. It's an exhibition for now: it doesn't count in the standings or player stats. Start it from the Office tab, pick an opponent and the quarter length (1, 2, 3 or 5 minutes). Best with the iPad turned sideways.</p>
 <ul>
 <li><b>Move</b>: put a finger anywhere on the left side and drag; the stick follows your thumb.</li>
-<li><b>Offense</b>: you control whoever has the ball. <b>Pass</b> goes to the teammate in the direction you're pushing (or the most open man if you aren't pushing). <b>Shoot</b>: hold it to jump and let go at the top of the jump. The better your timing, the better the shot; close to the rim, strong players dunk.</li>
-<li><b>Defense</b>: you control one defender (ringed in yellow). <b>Switch</b> to the defender nearest the ball, <b>Steal</b> when you're close to the ball handler, <b>Jump</b> to contest or block a shot.</li>
+<li><b>Offense pad</b> (bottom right): <b>Shoot</b>: hold, let go at the top of the jump (a quick tap is a pump fake). <b>Pass</b>: tap to pass toward where you're pushing, hold for a lob; lob to a dunker near the rim for an alley-oop. <b>Cross</b>: tap for a crossover, hold to hesitate. <b>Step</b>: tap for a step-back, hold to spin. Swipes on the right side work too: swipe down and hold to shoot, left/right to cross, up to spin, tap to pass, hold to lob.</li>
+<li><b>Defense pad</b>: <b>Steal</b> swipes at the ball, <b>Block</b> jumps to contest, <b>Charge</b> plants your feet (if the driver runs into you it's an offensive foul, but a late slide is a blocking foul), <b>Switch</b> takes the defender nearest the ball.</li>
+<li><b>Moves beat defenders</b>: a crossover, hesitation, spin or step-back freezes the man guarding you for a moment. Good ball handlers and quick players win more often; a sloppy crossover against a good thief can get stripped.</li>
+<li><b>Energy and substitutions</b>: players tire on the floor (faster when they run hard) and recover on the bench. Tired players are slower and miss more. Pause (II) and open Substitutions to see each player's energy, minutes, points, fouls and ratings, and to swap players (tap a starter, then a bench player). Auto substitutions are on unless you turn them off in Settings. Six fouls and a player is out.</li>
+<li><b>Player card</b> (bottom left): your player's name, energy bar and key ratings. The tag under him shows his make chance with a well-timed shot from where he stands.</li>
 <li><b>Ratings matter about as much as your play</b>: speed, shooting, passing, steals, blocks and rebounding all come from the players' real numbers. Good defenders make shots harder, and the three-point line appears from 1979-80.</li>
 <li><b>Jump ball</b>: the game and each overtime start with a tip-off. You control your center: tap <b>Jump</b> just before the ball peaks. Timing matters most; height and leaping help. The team that loses the opening tip gets the ball to start the 2nd and 3rd quarters, the winner the 4th.</li>
 <li><b>Inbounds</b>: every possession starts with a pass in from under the basket. Tap <b>Pass</b> to inbound right away.</li>
@@ -6838,7 +7096,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23d';
+const APP_VERSION = '2026-11-23e';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7327,7 +7585,7 @@ function waivedMsg(p, stretched) {
   return d.length ? `Player released. You still owe him ${G.money(d.reduce((a, x) => a + Object.values(x.pay).reduce((b, c) => b + c, 0), 0))} in dead money${stretched ? ', stretched' : ''}.` : 'Player released.';
 }
 /* ---------- Arcade mode ---------- */
-function arcTeam(tid) { const t = L.teams[tid], st = G.ratings(L, tid).mins.filter(x => x.start).map(x => x.p); const five = st.length >= 5 ? st : G.roster(L, tid).filter(p => !p.inj).sort((a, b) => b.ovr - a.ovr).slice(0, 5); return { tid, key: t.key, city: t.city, nick: t.name, abbr: t.abbr, name: tname(t), players: five }; }
+function arcTeam(tid) { const t = L.teams[tid], st = G.ratings(L, tid).mins.filter(x => x.start).map(x => x.p); const five = st.length >= 5 ? st : G.roster(L, tid).filter(p => !p.inj).sort((a, b) => b.ovr - a.ovr).slice(0, 5); const mins = {}; G.ratings(L, tid).mins.forEach(x => mins[x.p.id] = x.min || 0); const bench = G.roster(L, tid).filter(p => !p.inj && !five.includes(p)).sort((a, b) => (mins[b.id] || 0) - (mins[a.id] || 0) || b.ovr - a.ovr).slice(0, 8); return { tid, key: t.key, city: t.city, nick: t.name, abbr: t.abbr, name: tname(t), players: five.concat(bench) }; }
 function arcadeCard() {
   if (typeof ARC === 'undefined' || G.roster(L, L.user).length < 5) return '';
   const others = L.teams.filter(t => t.id !== L.user).sort((a, b) => tname(a).localeCompare(tname(b))), opp = others.find(t => t.id === ui.arcOpp) || others[0], q = ui.arcQ || 120;
