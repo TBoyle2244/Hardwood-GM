@@ -5971,7 +5971,10 @@ const ARC = (() => {
       this.T[side].P.forEach((pl, i) => { pl.x = own.x + d * (8 + i * 6); pl.y = 10 + i * 7; pl.z = 0; pl.vz = 0; });
       this.T[1 - side].P.forEach((pl, i) => { pl.x = own.x + d * (30 + i * 3); pl.y = 12 + i * 6.5; pl.z = 0; pl.vz = 0; });
       // the ball is passed in from out of bounds under your own basket: a forward takes it out, the point guard comes to get it
-      const pg = this.T[side].P[0], inb = this.T[side].P[3]; this.all().forEach(p => { p.anim = null; p.glide = null; p.hang = 0; p.oob = false; p.blocking = false; p.landing = null; p.shooting = null; p.stepTo = null; p.charge = 0; });
+      // the point guard (or the best ball handler on the floor) brings it up; a big man takes it out of bounds
+      const P5 = this.T[side].P, pg = P5.find(p => p.p.pos === 'PG') || P5.slice().sort((a, b) => b.r.pass - a.r.pass)[0];
+      const inb = P5.filter(p => p !== pg).sort((a, b) => (b.p.pos === 'C' || b.p.pos === 'PF' ? 1 : 0) - (a.p.pos === 'C' || a.p.pos === 'PF' ? 1 : 0) || a.r.pass - b.r.pass)[0];
+      this.T[side].handler = pg; this.all().forEach(p => { p.anim = null; p.glide = null; p.hang = 0; p.oob = false; p.blocking = false; p.landing = null; p.shooting = null; p.stepTo = null; p.charge = 0; });
       const base = side === 0 ? 0 : LEN;
       inb.x = base - d * 1.8; inb.y = HY + 7; inb.oob = true;
       pg.x = own.x + d * 9; pg.y = HY - 3;
@@ -6004,7 +6007,7 @@ const ARC = (() => {
         if (this.wait <= 0) { const side = this.madeBy; this.madeBy = null; this.setupInbound(1 - side); }
         return;
       }
-      if (this.state === 'inbound') { this.wait -= dt; this.moveAll(dt, inp); const hb = this.ball.holder; if (hb) { this.ball.x = hb.x + this.dir(hb.side) * 0.8; this.ball.y = hb.y + 0.4; this.ball.z = hb.oob ? 6 : 3.5; } if (this.wait <= 0) { if (hb && hb.oob) this.pass(hb, this.T[hb.side].P[0]); else this.state = 'live'; } return; }
+      if (this.state === 'inbound') { this.wait -= dt; this.moveAll(dt, inp); const hb = this.ball.holder; if (hb) { this.ball.x = hb.x + this.dir(hb.side) * 0.8; this.ball.y = hb.y + 0.4; this.ball.z = hb.oob ? 6 : 3.5; } if (this.wait <= 0) { if (hb && hb.oob) this.pass(hb, this.T[hb.side].handler && this.T[hb.side].P.includes(this.T[hb.side].handler) ? this.T[hb.side].handler : this.T[hb.side].P[0]); else this.state = 'live'; } return; }
       if (this.state === 'break') { this.wait -= dt; if (this.wait <= 0) this.nextQuarter(); return; }
       if (this.state === 'ft') { this.wait -= dt; if (this.wait <= 0) this.shootFTs(); return; }
       // clocks run while the ball is live
@@ -6049,7 +6052,7 @@ const ARC = (() => {
             if (!pl.cut || pl.cut.t <= 0) pl.cut = Math.random() < 0.12 * dt && pl.i !== 0 ? { t: 1.6, x: h.x - this.dir(off) * rnd(3, 8), y: HY + rnd(-6, 6) } : null;
             if (this.state === 'shot' && (pl.r.big || pl.i >= 3)) { tx = h.x - this.dir(off) * 5; ty = HY + (pl.i % 2 ? 4 : -4); } // crash the glass
             else if (pl.cut) { pl.cut.t -= dt; tx = pl.cut.x; ty = pl.cut.y; } else { tx = s.x + Math.sin(this.t * 0.7 + pl.i) * 1.5; ty = s.y + Math.cos(this.t * 0.6 + pl.i * 2) * 1.5; }
-            if (this.state === 'inbound') { tx = (pl.x + tx) / 2; const ib = this.ball.holder; if (ib && ib.oob && pl.i === 0) { tx = ib.x + this.dir(off) * 7; ty = ib.y - 5; } }
+            if (this.state === 'inbound') { tx = (pl.x + tx) / 2; const ib = this.ball.holder; if (ib && ib.oob && pl === (this.T[off].handler || this.T[off].P[0])) { tx = ib.x + this.dir(off) * 7; ty = ib.y - 5; } }
           }
         } else {
           // man-to-man: stay between your man and the hoop, closer when he has the ball
@@ -6093,7 +6096,8 @@ const ARC = (() => {
         const sq = this.shotQuality(pl, open), clockUrgent = this.shot < 2.5 || this.clock < 3;
         if (pl.r.dunk && d < 14 && this.laneClear(pl)) { if (d < 7) { this.startShot(pl); return { x: pl.x, y: pl.y }; } pl.drive = 1.2; pl.think = 0.15; return { x: h.x - this.dir(off) * 2, y: HY }; }   // open lane: go dunk it
         if (clockUrgent || sq > rnd(0.42, 0.62)) { this.startShot(pl); return { x: pl.x, y: pl.y }; }
-        if (Math.random() < 0.4) { const t = this.bestPass(pl); if (t && this.openness(t) > open + 2) { this.pass(pl, t); return { x: pl.x, y: pl.y }; } }
+        const brought = this.frontcourt && this.fcSide === pl.side;
+        if ((brought || open < 2.5) && Math.random() < 0.4) { const t = this.bestPass(pl); if (t && this.openness(t) > open + 2) { this.pass(pl, t); return { x: pl.x, y: pl.y }; } }
         pl.drive = (open > 4 || this.shot < 7) && d > 4 && Math.random() < (this.shot < 7 ? 0.9 : 0.55) ? 1.4 : 0;
         if (open < 3.5 && Math.random() < 0.25) this.dribbleMove(pl, R4(['cross', 'hesi', 'spin', 'step']), Math.random() < 0.5 ? 1 : -1);
         else if (open < 4 && d < 22 && Math.random() < 0.06) this.pumpFake(pl);
@@ -6663,12 +6667,12 @@ const ARC = (() => {
     const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255; const t = f < 0 ? 0 : 255, a = Math.abs(f); r = Math.round(r + (t - r) * a); g = Math.round(g + (t - g) * a); b = Math.round(b + (t - b) * a); return `rgb(${r},${g},${b})`; };
     // Text with hard pixel edges: drawn small, then every pixel is either on or off.
     const ptCache = {};
-    function pixText(c, text, x, y, size, col, rot, outline) {
-      const ck = text + '|' + size + '|' + col + '|' + (outline || '');
+    function pixText(c, text, x, y, size, col, rot, outline, face) {
+      const FONT = face || `900 ${size}px "Arial Black", Impact, sans-serif`, ck = text + '|' + size + '|' + col + '|' + (outline || '') + '|' + FONT;
       if (ptCache[ck]) { const o = ptCache[ck]; c.save(); c.translate(Math.round(x), Math.round(y)); if (rot) c.rotate(rot); c.drawImage(o, Math.round(-o.width / 2), Math.round(-o.height / 2)); c.restore(); return; }
-      const t = document.createElement('canvas'), tc = t.getContext('2d'); tc.font = `900 ${size}px "Arial Black", Impact, sans-serif`;
+      const t = document.createElement('canvas'), tc = t.getContext('2d'); tc.font = FONT;
       const tw = Math.ceil(tc.measureText(text).width) + 4, th = Math.ceil(size * 1.3) + 4; t.width = tw; t.height = th;
-      tc.font = `900 ${size}px "Arial Black", Impact, sans-serif`; tc.textBaseline = 'top'; tc.fillStyle = '#fff'; tc.fillText(text, 2, 2);
+      tc.font = FONT; tc.textBaseline = 'top'; tc.fillStyle = '#fff'; tc.fillText(text, 2, 2);
       const id = tc.getImageData(0, 0, tw, th), d = id.data, on = new Uint8Array(tw * th);
       for (let i = 0; i < tw * th; i++) on[i] = d[i * 4 + 3] > 110 ? 1 : 0;
       const o = document.createElement('canvas'); o.width = tw + 2; o.height = th + 2; const oc = o.getContext('2d');
@@ -6916,7 +6920,7 @@ const ARC = (() => {
         for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
         px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
       } }
-      drawMeter(); for (const L2 of labels) { px.save(); px.setTransform(1, 0, 0, 1, 0, 0); const tw = Math.round(L2.t.length * 6.2) + 8, lx = Math.round(L2.x * RS), ly2 = Math.round(L2.y * RS); px.fillStyle = 'rgba(6,8,16,.72)'; px.fillRect(lx - Math.round(tw / 2), ly2 - 7, tw, 14); pixText(px, L2.t, lx, ly2, 11, L2.c || '#ffffff'); px.restore(); } labels = [];
+      drawMeter(); for (const L2 of labels) { px.save(); px.setTransform(1, 0, 0, 1, 0, 0); const tw = Math.round(L2.t.length * 6.2) + 8, lx = Math.round(L2.x * RS), ly2 = Math.round(L2.y * RS); px.fillStyle = 'rgba(6,8,16,.72)'; px.fillRect(lx - Math.round(tw / 2), ly2 - 7, tw, 14); pixText(px, L2.t, lx, ly2, 11, L2.c || '#ffffff', 0, null, '600 11px system-ui, -apple-system, "Helvetica Neue", sans-serif'); px.restore(); } labels = [];
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
       if (game.rimShake > 0) game.rimShake -= 1 / 60;
       scoreboard(shift);
@@ -7354,7 +7358,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23r';
+const APP_VERSION = '2026-11-23s';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
