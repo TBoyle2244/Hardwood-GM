@@ -469,6 +469,16 @@ svg.chart .mk { fill: #22c55e; stroke: #063; stroke-width: .25; } svg.chart .ms 
   .arc-menu table { font-size: 12px; } .arc-menu td, .arc-menu th { padding: 4px 5px; } .top .pf { width: 38px; height: 43px; } .top .st b { font-size: 14px; }
   .arc-end.pog { inset: 4px 6px; padding: 8px; } .arc-end.pog .mh { font-size: 18px; padding: 5px; } .pog .pf { width: 56px; height: 64px; }
 }
+/* start-of-half lineups */
+.arc-lu { position: absolute; left: 50%; transform: translateX(-50%); bottom: max(8px, env(safe-area-inset-bottom)); background: #1150a8; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; padding: 4px 6px 6px; pointer-events: none; z-index: 4; animation: luIn .25s ease-out; }
+@keyframes luIn { from { transform: translate(-50%, 30px); opacity: 0; } }
+.arc-lu .hd { display: flex; padding-left: 40px; } .arc-lu .hd span { width: 58px; text-align: center; color: #fff; font: 900 11px/1.4 "Courier New", monospace; }
+.arc-lu .rw { display: flex; align-items: center; gap: 0; margin-top: 3px; } .arc-lu .rw i { width: 36px; margin-right: 4px; font: 900 11px/1 "Courier New", monospace; font-style: normal; color: #fff; padding: 14px 2px; text-align: center; text-shadow: 0 1px 0 #000; }
+.arc-lu .pp { width: 58px; display: flex; flex-direction: column; align-items: center; } .arc-lu .pp .ptc { width: 34px; background: #0b0d1e; border: 2px solid #36a3ff; } .arc-lu .pp b { color: #fff; font: 700 10px/1.2 system-ui, sans-serif; max-width: 56px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+@media (max-height: 500px) { .arc-lu .pp, .arc-lu .hd span { width: 46px; } .arc-lu .pp .ptc { width: 26px; } .arc-lu .rw i { padding: 9px 2px; } }
+/* halftime team stats */
+table.ts { width: 100%; border-collapse: separate; border-spacing: 0 3px; margin: 4px 0 8px; font-size: 13px; } table.ts td, table.ts th { background: #1557b4; padding: 5px 8px; text-align: center; font-variant-numeric: tabular-nums; color: #fff; } table.ts tr.h th { background: #0a2a66; font: 900 12px "Courier New", monospace; } table.ts td.m { color: #bfe0ff; font-weight: 700; }
+.arc-half .tops .top .tt { font-size: 11px; }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -6155,7 +6165,7 @@ const ARC = (() => {
         } else {
           // man-to-man: stay between your man and the hoop, closer when he has the ball
           const man = this.markOf(pl), onBall = man === this.ball.holder;
-          const k = onBall ? 0.18 : 0.38 + (dist(man, this.ball) > 20 ? 0.15 : 0);
+          const k = onBall ? 0.16 : 0.25 + (dist(man, this.ball) > 24 ? 0.12 : 0);
           tx = man.x + (h.x - man.x) * k; ty = man.y + (HY - man.y) * k;
           if (this.state === 'shot' && dist(pl, h) < 14) { tx = (tx + h.x) / 2; ty = (ty + HY) / 2; } // box out near the rim
         }
@@ -6366,7 +6376,7 @@ const ARC = (() => {
         if (user != null && pl === this.ctrl[user]) continue;
         const sh = this.T[this.poss].P.find(x => !!x.shooting);
         if (sh && dist(pl, sh) < 3.2 && pl.z === 0 && Math.random() < 0.12 + pl.r.blk * 0.1) { pl.vz = 11 + pl.r.blk * 2; pl.z = 0.01; }
-        if (b.holder && b.holder.side !== pl.side && dist(pl, b.holder) < 2.6 && Math.random() < 0.0018 * (0.5 + pl.r.stl) * (1.35 - b.holder.r.pass) * pl.r.def) {
+        if (b.holder && b.holder.side !== pl.side && dist(pl, b.holder) < 2.6 && Math.random() < 0.0012 * (0.5 + pl.r.stl) * (1.35 - b.holder.r.pass) * pl.r.def) {
           pl.st.stl++; b.holder.st.tov++; this.reach = (this.reach || 0) + 1; this.say(`Steal by ${short(pl.p)}!`); this.give(pl); this.poss = pl.side; this.shot = 24; this.pickCtrl(); return;
         }
       }
@@ -6382,7 +6392,7 @@ const ARC = (() => {
         else { b.x = f.from.x + (f.to.x - f.from.x) * k; b.y = f.from.y + (f.to.y - f.from.y) * k; b.z = 4 + Math.sin(k * Math.PI) * (f.lob ? 9 : 2.5); }
         // defenders in the passing lane can pick it off
         f.tried = f.tried || new Set();
-        if (k > (f.lob ? 0.8 : 0.2) && k < (f.lob ? 0.95 : 0.85)) for (const d of this.T[1 - f.by.side].P) if (dist(d, b) < 1.5 && !f.tried.has(d) && (f.tried.add(d), Math.random() < (0.04 + d.r.stl * 0.1) * (1.3 - f.by.r.pass) * d.r.def * (f.lob ? 0.5 : 1))) {
+        if (k > (f.lob ? 0.8 : 0.2) && k < (f.lob ? 0.95 : 0.85)) for (const d of this.T[1 - f.by.side].P) if (dist(d, b) < 1.5 && !f.tried.has(d) && (f.tried.add(d), Math.random() < 0.7 * (0.04 + d.r.stl * 0.1) * (1.3 - f.by.r.pass) * d.r.def * (f.lob ? 0.5 : 1))) {
           d.st.stl++; f.by.st.tov++; this.say(`Picked off by ${short(d.p)}!`); this.give(d); this.poss = d.side; this.shot = 24; this.pickCtrl(true); return;
         }
         if (k >= 1) { this.give(f.to); this.pickCtrl();
@@ -6406,6 +6416,7 @@ const ARC = (() => {
           if (f.make) {
             const pts = f.three ? 3 : 2; f.by.st.fgm++; f.by.st.pts += pts; if (f.three) f.by.st.tpm++; this.T[f.by.side].score += pts; this.qpts(f.by.side, pts);
             const a = this.ball.lastPasser; if (a && a.side === f.by.side && a !== f.by && Math.random() < 0.7) a.st.ast++;
+            this.lastScore = { pl: f.by, t: this.t };
             this.say(f.dunk ? `${short(f.by.p)}: ${f.style ? f.style.name : 'slam'}!` : f.three ? `${short(f.by.p)} hits the three!` : `${short(f.by.p)} scores`);
             b.flight = null; this.ball.lastPasser = null;
             if (this.clock <= 0) return this.endQuarter();
@@ -6445,7 +6456,8 @@ const ARC = (() => {
     loose(x, y) { this.state = 'loose'; this.ball.holder = null; this.ball.flight = null; this.ball.x = x; this.ball.y = y; this.ball.z = 6; this.pickCtrl(true); }
     endQuarter() {
       if (this.q >= 4 && this.T[0].score !== this.T[1].score) { this.over = true; this.state = 'end'; this.say('Final', 99); return; }
-      this.state = 'break'; this.wait = 2.2; this.say(this.q >= 4 ? 'Tied! Overtime' : `End of Q${this.q}`, 2.2);
+      this.state = 'break'; this.wait = 2.2; this.say(this.q >= 4 ? 'Tied! Overtime' : this.q === 2 ? 'Halftime' : `End of Q${this.q}`, 2.2);
+      if (this.q === 2 && this.user != null) { this.half = true; this.wait = 9999; }   // halftime: the screen waits for Continue
     }
     // Quarters 2 and 3 go to the team that lost the opening tip, the 4th to the team that won it; overtime starts with a new jump ball.
     nextQuarter() { for (const T of this.T) for (const pl of T.P.concat(T.B)) pl.en = clamp(pl.en + (this.q === 2 ? 0.3 : 0.12), 0, 1); this.q++; this.clock = this.q > 4 ? Math.round(this.qsec / 2) : this.qsec; if (this.q > 4) return this.setupJump(); const w = this.tipWin || 0; this.setupInbound(this.q === 4 ? w : 1 - w); }
@@ -6614,6 +6626,13 @@ const ARC = (() => {
       if (game.state === 'ft' && game.fts && !game.over) {   // free throws: the shooter's card, like the TV graphic
         const pl = game.fts.pl, s = pl.st, T = game.T[pl.side], k = 'ft' + pl.p.id + s.ftm + '/' + s.fta;
         if (k !== cardKey) { cardKey = k; card.classList.add('ftc'); card.innerHTML = `<div class="fh" style="background:${T.pri}">${T.abbr} · FREE THROW${game.fts.n > 1 ? 'S' : ''}</div><div class="fb"><div class="pf"></div><div class="fi"><div class="nm">${pl.p.name}${pl.num != null ? ` <span>#${pl.num}</span>` : ''}</div><div class="rt"><div><b>FTS</b>${rat(pl).FTS}</div><div><b>GAME</b>${s.ftm}/${s.fta}</div><div><b>PTS</b>${s.pts}</div></div></div></div>`;
+          const c = portrait(pl); c.className = 'ptc'; card.querySelector('.pf').appendChild(c); }
+        return;
+      }
+      const LS = game.lastScore;
+      if (LS && game.t - LS.t < 3 && ['made', 'inbound'].includes(game.state) && !game.over) {   // after a basket: the scorer's card
+        const pl = LS.pl, s = pl.st, T = game.T[pl.side], k = 'sc' + pl.p.id + s.pts + s.reb;
+        if (k !== cardKey) { cardKey = k; card.classList.add('ftc'); card.innerHTML = `<div class="fh" style="background:${T.pri}">${T.abbr} · ${pl.p.pos}${pl.num != null ? ' · #' + pl.num : ''}</div><div class="fb"><div class="pf"></div><div class="fi"><div class="nm">${pl.p.name}</div><div class="rt"><div><b>PTS</b>${s.pts}</div><div><b>FGM</b>${s.fgm}/${s.fga}</div><div><b>REB</b>${s.reb}</div></div></div></div>`;
           const c = portrait(pl); c.className = 'ptc'; card.querySelector('.pf').appendChild(c); }
         return;
       }
@@ -6830,6 +6849,30 @@ const ARC = (() => {
       scoreEl.innerHTML = `<span class="t" style="--c:${T[0].trim}">${T[0].abbr}</span><b>${T[0].score}</b><span class="mid">${q} ${mm}:${ss}<small>${Math.max(0, Math.ceil(game.shot))}</small></span><b>${T[1].score}</b><span class="t" style="--c:${T[1].color}">${T[1].abbr}</span>`;
       msgEl.textContent = game.msgT > 0 ? game.msg : '';
       if (game.over && !ui.querySelector('.arc-end')) showEnd();
+      if (game.half && !ui.querySelector('.arc-half')) showHalf();
+      const lq = game.q === 1 ? 1 : game.q === 3 ? 3 : 0;
+      if (lq && lq !== lineupQ && (game.state === 'jump' || game.state === 'inbound')) { lineupQ = lq; showLineups(); }
+    }
+    let lineupQ = 0;
+    // Start of each half: both starting fives across the bottom, like a TV graphic.
+    function showLineups() {
+      const old = ui.querySelector('.arc-lu'); if (old) old.remove();
+      const d = document.createElement('div'); d.className = 'arc-lu';
+      d.innerHTML = `<div class="hd">${['PG', 'SG', 'SF', 'PF', 'C'].map(x => `<span>${x}</span>`).join('')}</div>${game.T.map((T, i) => `<div class="rw"><i style="background:${T.pri}">${T.abbr}</i>${T.P.map((pl, k) => `<div class="pp" data-pt="${i}:${k}"><b>${(pl.p.name.split(' ').slice(-1)[0] || '').slice(0, 10)}</b></div>`).join('')}</div>`).join('')}`;
+      d.querySelectorAll('[data-pt]').forEach(el => { const [sd, k] = el.dataset.pt.split(':').map(Number), c = portrait(game.T[sd].P[k]); c.className = 'ptc'; el.prepend(c); });
+      ui.appendChild(d); setTimeout(() => d.remove(), 4200);
+    }
+    // Halftime: score, line score, team stats side by side, top performers. Waits for Continue.
+    function showHalf() {
+      const B = game.box(), tot = b => b.rows.reduce((a, r) => { for (const k of ['fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'reb', 'ast', 'stl', 'blk', 'tov']) a[k] = (a[k] || 0) + (r[k] || 0); return a; }, {});
+      const A = tot(B[0]), H = tot(B[1]), pc = (m, a) => `${m}/${a}${a ? ' (' + Math.round(m / a * 100) + '%)' : ''}`;
+      const rows = [['Field goals', pc(A.fgm, A.fga), pc(H.fgm, H.fga)], ['3-pointers', pc(A.tpm, A.tpa), pc(H.tpm, H.tpa)], ['Free throws', pc(A.ftm, A.fta), pc(H.ftm, H.fta)], ['Rebounds', A.reb, H.reb], ['Assists', A.ast, H.ast], ['Steals', A.stl, H.stl], ['Blocks', A.blk, H.blk], ['Turnovers', A.tov, H.tov]];
+      const d = document.createElement('div'); d.className = 'arc-end pog arc-half';
+      d.innerHTML = `<div class="mh">HALFTIME</div>${teamHead()}${lineScore()}<table class="ts"><tr class="h"><th>${game.T[0].abbr}</th><th>TEAM STATS</th><th>${game.T[1].abbr}</th></tr>${rows.map(r => `<tr><td>${r[1]}</td><td class="m">${r[0]}</td><td>${r[2]}</td></tr>`).join('')}</table>
+        <div class="tops">${topCard(game.T[0])}${topCard(game.T[1])}</div><div class="arc-row"><button class="go" data-y="half">Start 2nd half</button></div>`;
+      fillPortraits(d);
+      d.querySelector('[data-y="half"]').addEventListener('click', () => { game.half = false; game.wait = 0.4; d.remove(); });
+      ui.appendChild(d);
     }
     // Player of the Game: final score, line score, the best player's line and his shot chart.
     function showEnd() {
@@ -7341,6 +7384,7 @@ const HELP = [
 <li><b>Movement</b>: players speed up and slow down instead of snapping to full speed. In the half court your teammates swap spots every few seconds and the big man comes up to set a screen for the ball handler, then rolls to the rim. A defender caught on the screen slows down.</li>
 <li><b>Auto defense</b> (Settings, on by default): your defender guards his man by himself until you move the joystick. You still press Block, Steal and Charge yourself.</li>
 <li><b>Who to guard</b>: on defense, a small yellow arrow on the circle under your player points at the man you're guarding.</li>
+<li><b>TV graphics</b>: both starting fives show at the start of each half, the scorer's card pops up after a basket, and halftime shows team stats and top performers until you tap Start 2nd half.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7582,7 +7626,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23z';
+const APP_VERSION = '2026-11-24a';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
