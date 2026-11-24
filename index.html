@@ -480,6 +480,17 @@ svg.chart .mk { fill: #22c55e; stroke: #063; stroke-width: .25; } svg.chart .ms 
 table.ts { width: 100%; border-collapse: separate; border-spacing: 0 3px; margin: 4px 0 8px; font-size: 13px; } table.ts td, table.ts th { background: #1557b4; padding: 5px 8px; text-align: center; font-variant-numeric: tabular-nums; color: #fff; } table.ts tr.h th { background: #0a2a66; font: 900 12px "Courier New", monospace; } table.ts td.m { color: #bfe0ff; font-weight: 700; }
 .arc-half .tops .top .tt { font-size: 11px; }
 .thd .tp small { font: 800 10px/1.3 "Courier New", monospace; color: #ffe9a8; }
+/* free-throw meter */
+.arc-ftm { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); width: min(340px, 70vw); background: #120f1c; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; padding: 6px 10px 8px; pointer-events: none; z-index: 4; text-align: center; color: #fff; }
+.arc-ftm .lb { font: 900 13px/1.2 "Courier New", monospace; letter-spacing: 1px; margin-bottom: 5px; }
+.arc-ftm .bar { position: relative; height: 16px; background: #b3202a; border: 2px solid #fff; }
+.arc-ftm .z { position: absolute; top: 0; bottom: 0; background: #22c55e; }
+.arc-ftm .bar b { position: absolute; top: -6px; bottom: -6px; width: 4px; margin-left: -2px; background: #fff; box-shadow: 0 0 0 1px #000; }
+.arc-ftm .hn { font: 600 11px/1.2 system-ui, sans-serif; color: #bfe0ff; margin-top: 5px; }
+/* overlays: the buttons stay on screen even when the content needs scrolling */
+.arc-end.pog .arc-row { position: sticky; bottom: -18px; background: #1150a8; padding: 8px 0 4px; margin-bottom: -4px; z-index: 2; }
+@media (max-height: 500px) { .arc-end.pog .arc-row { bottom: -8px; } }
+.arc-half .arc-row { justify-content: center; } .arc-half .arc-row button { min-width: 220px; }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -6104,7 +6115,7 @@ const ARC = (() => {
       }
       if (this.state === 'inbound') { this.wait -= dt; this.moveAll(dt, inp); const hb = this.ball.holder; if (hb) { this.ball.x = hb.x + this.dir(hb.side) * 0.8; this.ball.y = hb.y + 0.4; this.ball.z = hb.oob ? 6 : 3.5; } if (this.wait <= 0) { if (hb && hb.oob) this.pass(hb, this.T[hb.side].handler && this.T[hb.side].P.includes(this.T[hb.side].handler) ? this.T[hb.side].handler : this.T[hb.side].P[0]); else this.state = 'live'; } return; }
       if (this.state === 'break') { this.wait -= dt; if (this.wait <= 0) this.nextQuarter(); return; }
-      if (this.state === 'ft') { this.wait -= dt; if (this.wait <= 0) this.shootFTs(); return; }
+      if (this.state === 'ft') return this.ftStep(dt, inp);
       // clocks run while the ball is live
       this.clock -= dt; if (this.state === 'live' || this.state === 'shot') this.shot -= (this.state === 'live' ? dt : 0);
       this.tire(dt);
@@ -6326,16 +6337,57 @@ const ARC = (() => {
     foulShot(pl, n, and1, quiet) {
       if (and1) { const pts = n === 3 ? 3 : 2; pl.st.fga++; pl.st.fgm++; if (n === 3) { pl.st.tpa++; pl.st.tpm++; } this.T[pl.side].score += pts; this.qpts(pl.side, pts); pl.st.pts += pts; n = 1; this.say('And one!'); }
       else if (!quiet) { pl.st.fga += 0; this.say('Shooting foul'); }
-      this.state = 'ft'; this.wait = 1.3; this.fts = { pl, n }; this.ball.holder = pl; pl.anim = { k: 'fall', t: 0, T: 1.2 }; pl.glide = null;
+      this.state = 'ft'; this.wait = 1.3; this.poss = pl.side; this.fts = { pl, n, i: 0, lined: false, mt: 0, fly: null }; this.ball.holder = pl; pl.anim = { k: 'fall', t: 0, T: 1.2 }; pl.glide = null;
     }
-    shootFTs() {
-      const { pl, n } = this.fts; let made = 0;
-      for (let i = 0; i < n; i++) { pl.st.fta++; if (Math.random() < pl.r.ft) { made++; pl.st.ftm++; } }
-      pl.st.pts += made; this.T[pl.side].score += made; this.qpts(pl.side, made);
-      if (made) { const hh = this.hoopOf(pl.side); this.netSwish = { side: hh.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; }
-      this.say(`${short(pl.p)} makes ${made} of ${n} free throw${n > 1 ? 's' : ''}`);
-      this.setupInbound(1 - pl.side);
+    // Free throws, one at a time. Everyone lines up on the lane; the shooter's team gets the ball back only by rebounding a missed last free throw.
+    ftLine() {
+      const F = this.fts, pl = F.pl, h = this.hoopOf(pl.side), d = this.dir(pl.side), off = this.T[pl.side].P.filter(p => p !== pl), def = this.T[1 - pl.side].P.slice();
+      this.all().forEach(p => { p.anim = null; p.glide = null; p.hang = 0; p.oob = false; p.blocking = false; p.shooting = null; p.stepTo = null; p.z = 0; p.vz = 0; p.vx = 0; p.vy = 0; p.screen = null; p.cut = null; });
+      pl.x = h.x - d * 15; pl.y = HY;
+      const lane = (k, sgn) => ({ x: h.x - d * (7 + k * 3), y: HY + sgn * 8.5 });
+      // defense gets the spots nearest the rim, the shooter's team the next ones, the rest wait behind the arc
+      const byBig = a => a.slice().sort((x, y) => y.r.reb - x.r.reb);
+      const D = byBig(def), O = byBig(off);
+      const put = (p, s2) => { p.x = s2.x; p.y = s2.y; };
+      if (D[0]) put(D[0], lane(0, -1)); if (D[1]) put(D[1], lane(0, 1)); if (O[0]) put(O[0], lane(1, -1)); if (O[1]) put(O[1], lane(1, 1)); if (D[2]) put(D[2], lane(2, -1));
+      [O[2], O[3], D[3], D[4]].forEach((p, k) => { if (p) put(p, { x: h.x - d * 27, y: HY + [-14, 14, -8, 8][k] }); });
+      this.give(pl); this.pickCtrl();
     }
+    ftStep(dt, inp) {
+      const F = this.fts, pl = F.pl, b = this.ball, h = this.hoopOf(pl.side);
+      if (F.fly) {   // the ball in the air
+        const f = F.fly; f.t += dt; const k = clamp(f.t / f.T, 0, 1);
+        b.x = f.x0 + (h.x - f.x0) * k; b.y = HY; b.z = f.z0 + (RIM_Z + 0.4 - f.z0) * k + Math.sin(k * Math.PI) * 6;
+        if (k < 1) return;
+        F.fly = null; pl.st.fta++; const last = F.i >= F.n - 1;
+        if (f.make) { pl.st.ftm++; pl.st.pts++; this.T[pl.side].score++; this.qpts(pl.side, 1); this.netSwish = { side: h.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; }
+        else this.rimHit = { side: h.x > 47 ? 1 : 0, t: 0.25 };
+        F.made = (F.made || 0) + (f.make ? 1 : 0);
+        if (!last) { this.say(`${short(pl.p)} ${f.make ? 'makes' : 'misses'} free throw ${F.i + 1} of ${F.n}`, 1.2); F.i++; F.mt = 0; this.wait = 0.8; this.give(pl); return; }
+        this.say(`${short(pl.p)} makes ${F.made} of ${F.n} free throw${F.n > 1 ? 's' : ''}`);
+        if (f.make) { b.x = h.x; b.y = h.y; b.z = RIM_Z - 0.5; this.state = 'made'; this.madeBy = pl.side; this.wait = 0.6; return; }
+        // a missed last free throw is a live ball: it comes off the rim and both teams fight for it
+        const ang = Math.atan2(0, -this.dir(pl.side)) + rnd(-1.2, 1.2), sp2 = rnd(5, 9);
+        this.fcSide = pl.side; this.frontcourt = true; this.backT = 0; this.shot = 24;
+        this.looseV(h.x + Math.cos(ang) * 0.8, h.y + Math.sin(ang) * 0.8, RIM_Z + 0.3, Math.cos(ang) * sp2, Math.sin(ang) * sp2, rnd(5, 10), pl.side);
+        return;
+      }
+      this.wait -= dt; if (this.wait > 0) return;
+      if (!F.lined) { F.lined = true; this.ftLine(); this.wait = 0.8; return; }
+      const userShoots = this.user != null && this.user === pl.side;
+      let make;
+      if (userShoots) {   // the meter: tap SHOOT when the marker is in the green
+        F.mt += dt; const m = this.ftMeter(), pressed = inp.pump || inp.shootDown || inp.shootUp || inp.pass;
+        if (!pressed && F.mt < 8) return;
+        const off2 = Math.abs(m.pos - 0.5);
+        make = Math.random() < (off2 <= m.zone ? clamp(pl.r.ft + 0.2, 0.6, 0.97) : clamp(pl.r.ft * (1 - (off2 - m.zone) * 2.2), 0.04, 0.9));
+        F.last = { pos: m.pos, zone: m.zone, t: this.t };
+      } else make = Math.random() < pl.r.ft;
+      b.holder = null; pl.anim = { k: 'pump', t: 0, T: 0.45 };
+      F.fly = { t: 0, T: 0.85, make, x0: pl.x, z0: pl.r.height + 1 };
+    }
+    // where the meter marker is (0..1, sweeping back and forth) and how wide the green zone is (good shooters get more)
+    ftMeter() { const F = this.fts, ph = (F.mt * 1.15) % 2; return { pos: ph < 1 ? ph : 2 - ph, zone: clamp(0.05 + (F.pl.r.ft - 0.45) * 0.3, 0.05, 0.2) }; }
     turnover(pl, why) {
       if (pl) pl.st.tov++;
       this.say(why); this.setupInbound(1 - this.poss);
@@ -6710,7 +6762,7 @@ const ARC = (() => {
       }
       e.preventDefault();
     }, { passive: false });
-    root.addEventListener('touchmove', e => { for (const t of e.changedTouches) { if (t.identifier === stickId) stickMove(t.clientX, t.clientY); else pressMove(t.identifier, t.clientX, t.clientY); } if (!paused) e.preventDefault(); }, { passive: false });
+    root.addEventListener('touchmove', e => { for (const t of e.changedTouches) { if (t.identifier === stickId) stickMove(t.clientX, t.clientY); else pressMove(t.identifier, t.clientX, t.clientY); } if (!paused && !(e.target.closest && e.target.closest('.arc-menu, .arc-end, .arc-match'))) e.preventDefault(); }, { passive: false });
     const end = e => {
       for (const t of e.changedTouches) {
         if (t.identifier === stickId) { stickId = null; inp.jx = inp.jy = 0; knob.style.transform = ''; stick.classList.remove('on'); }
@@ -6875,10 +6927,17 @@ const ARC = (() => {
       msgEl.textContent = game.msgT > 0 ? game.msg : '';
       if (game.over && !ui.querySelector('.arc-end')) showEnd();
       if (game.half && !ui.querySelector('.arc-half')) showHalf();
+      const F = game.fts, ftOn = game.state === 'ft' && F && F.lined && !F.fly && game.wait <= 0 && game.user != null && F.pl.side === game.user;
+      if (ftOn) { const m = game.ftMeter();
+        if (!ftEl) { ftEl = document.createElement('div'); ftEl.className = 'arc-ftm'; ftEl.innerHTML = '<div class="lb"></div><div class="bar"><i class="z"></i><b></b></div><div class="hn">Tap SHOOT when the marker is in the green</div>'; ui.appendChild(ftEl); }
+        ftEl.querySelector('.lb').textContent = `FREE THROW ${F.i + 1} OF ${F.n}`;
+        const z = ftEl.querySelector('.z'); z.style.left = ((0.5 - m.zone) * 100) + '%'; z.style.width = (m.zone * 200) + '%';
+        ftEl.querySelector('b').style.left = (m.pos * 100) + '%';
+      } else if (ftEl) { ftEl.remove(); ftEl = null; }
       const lq = game.q === 1 ? 1 : game.q === 3 ? 3 : 0;
       if (lq && lq !== lineupQ && (game.state === 'jump' || game.state === 'inbound')) { lineupQ = lq; showLineups(); }
     }
-    let lineupQ = 0;
+    let lineupQ = 0, ftEl = null;
     // Start of each half: both starting fives across the bottom, like a TV graphic.
     function showLineups() {
       const old = ui.querySelector('.arc-lu'); if (old) old.remove();
@@ -7411,6 +7470,7 @@ const HELP = [
 <li><b>Who to guard</b>: on defense, a small yellow arrow on the circle under your player points at the man you're guarding.</li>
 <li><b>TV graphics</b>: both starting fives show at the start of each half, the scorer's card pops up after a basket, and halftime shows team stats and top performers until you tap Start 2nd half.</li>
 <li><b>Fouls and the bonus</b>: a reach-in or blocking foul stops play. The other team inbounds from the sideline at the spot of the foul (shot clock back to at least 14). Every foul counts as a team foul for the quarter; after 4 team fouls in a quarter (5 in quarters of 10 minutes or more, 3 in overtime), every non-shooting foul gives the fouled player 2 free throws. Team fouls and BONUS show in the pause menu.</li>
+<li><b>Free throws</b>: players line up on the lane and the shots go one at a time. When you shoot, a meter sweeps back and forth: tap Shoot while the marker is in the green (better shooters get a wider green). A missed last free throw is a live rebound.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7652,7 +7712,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24b';
+const APP_VERSION = '2026-11-24c';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
