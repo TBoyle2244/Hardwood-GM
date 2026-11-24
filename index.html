@@ -6011,13 +6011,32 @@ const ARC = (() => {
       const h = this.hoopOf(side), d = -this.dir(side), sp = this.sp, mix = (a, b) => a + (b - a) * sp;
       return [
         { x: h.x + d * mix(20, 27), y: HY },                                     // point
-        { x: h.x + d * mix(14, 20), y: HY - mix(13, 17) },                        // wing
-        { x: h.x + d * mix(16, 3), y: HY + mix(14, 22) },                         // wing / corner
-        { x: h.x + d * mix(7, 16), y: HY - mix(7, 19) },                          // block / other wing-corner
+        { x: h.x + d * mix(16, 20), y: HY - mix(15, 17) },                        // wing
+        { x: h.x + d * mix(16, 3), y: HY + mix(16, 22) },                         // wing / corner
+        { x: h.x + d * mix(9, 16), y: HY - mix(10, 19) },                         // short corner / other wing
         { x: h.x + d * 6, y: HY + 5 }                                             // the big on the block
       ];
     }
+    spotOf(pl) { const M = this.smap ? this.smap[pl.side] : null; return this.spots(pl.side)[M ? M[pl.i] : pl.i]; }
+    // Off-ball motion like Hoop Land: shooters swap spots every few seconds, the big comes up to set a screen and rolls to the rim.
+    motion(dt) {
+      const off = this.poss, T = this.T[off], hb = this.ball.holder, me = this.user != null ? this.ctrl[this.user] : null;
+      if (!this.smap) this.smap = [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]];
+      if (this.state !== 'live' || !hb || hb.side !== off || !(this.frontcourt && this.fcSide === off)) return;
+      const M = this.smap[off];
+      this.swapT = (this.swapT == null ? rnd(1.2, 2.5) : this.swapT) - dt;
+      if (this.swapT <= 0) { this.swapT = rnd(1.8, 3.4);
+        const c = T.P.filter(p => p !== hb && p !== me && !p.screen && M[p.i] !== 4 && p.z === 0);
+        if (c.length >= 2) { const a = R4(c), b = R4(c.filter(p => p !== a)); const t = M[a.i]; M[a.i] = M[b.i]; M[b.i] = t; }
+      }
+      this.scrT = (this.scrT == null ? rnd(2, 4) : this.scrT) - dt;
+      if (this.scrT <= 0) { this.scrT = rnd(5, 8);
+        const h = this.hoopOf(off), big = T.P.filter(p => p !== hb && p !== me && p.z === 0).sort((a, b) => b.r.height - a.r.height)[0];
+        if (big && dist(hb, h) > 15 && dist(big, hb) < 30) big.screen = { t: 2.8, side: hb.y > HY ? -1 : 1 };
+      }
+    }
     setupInbound(side, start) {
+      for (const p0 of this.all()) { p0.screen = null; p0.cut = null; } this.swapT = this.scrT = null;
       this.poss = side; this.shot = 24; this.state = 'inbound'; this.wait = start ? 1.2 : 0.9; this.fcSide = side; this.frontcourt = false; this.backT = 0;
       this.deadBall();
       const own = this.hoopOf(1 - side), d = this.dir(side);
@@ -6095,7 +6114,7 @@ const ARC = (() => {
           else if (this.frontcourt && Math.abs(hb.x - 47) > 0.6) { this.turnover(hb, 'Backcourt violation'); return; }
           else { this.backT += dt; if (this.backT > (this.year >= 2001 ? 8 : 10)) { this.turnover(hb, `${this.year >= 2001 ? 8 : 10}-second violation`); return; } }
         } }
-      this.moveAll(dt, inp);
+      this.motion(dt); this.moveAll(dt, inp);
       this.ballStep(dt, inp);
     }
     /* ----- movement ----- */
@@ -6115,14 +6134,21 @@ const ARC = (() => {
         } else if (this.state === 'loose') {
           const near = this.all().slice().sort((a, b) => dist(a, this.ball) - dist(b, this.ball)).slice(0, 4);
           if (near.includes(pl)) { const bb = this.ball, lead = bb.z > 4 ? 0.45 : 0.15; tx = bb.x + (bb.vx || 0) * lead; ty = bb.y + (bb.vy || 0) * lead; sp *= 1.1; }
-          else { const s = spots[pl.i]; tx = pl.side === off ? s.x : (s.x + h.x) / 2; ty = pl.side === off ? s.y : (s.y + HY) / 2; }
+          else { const s = this.spotOf(pl); tx = pl.side === off ? s.x : (s.x + h.x) / 2; ty = pl.side === off ? s.y : (s.y + HY) / 2; }
         } else if (pl.side === off) {
           if (pl === this.ball.holder) { const a = this.aiHandler(pl, dt); tx = a.x; ty = a.y; if (this.frontcourt && this.fcSide === pl.side) tx = pl.side === 0 ? Math.max(tx, 49) : Math.min(tx, 45); }
           else {
-            const s = spots[pl.i];
-            if (!pl.cut || pl.cut.t <= 0) pl.cut = Math.random() < 0.12 * dt && pl.i !== 0 ? { t: 1.6, x: h.x - this.dir(off) * rnd(3, 8), y: HY + rnd(-6, 6) } : null;
+            const s = this.spotOf(pl);
+            if (pl.screen) {   // pick and roll: set the screen beside the ball handler's man, then roll to the rim
+              pl.screen.t -= dt; const hb = this.ball.holder, dfn = hb && hb.side === off ? this.nearestDef(hb) : null;
+              if (pl.screen.t <= 0 || !dfn) pl.screen = null;
+              else if (pl.screen.t > 1.3) { const ux = h.x - dfn.x, uy = HY - dfn.y, ud = Math.hypot(ux, uy) || 1; tx = dfn.x - uy / ud * 1.7 * pl.screen.side; ty = dfn.y + ux / ud * 1.7 * pl.screen.side; pl.screen.set = dist(pl, { x: tx, y: ty }) < 1.2; }
+              else { pl.screen.set = false; tx = h.x - this.dir(off) * 4; ty = HY + pl.screen.side * 3; }
+            }
+            if (pl.screen) {}
+            else if (!pl.cut || pl.cut.t <= 0) pl.cut = Math.random() < 0.12 * dt && pl.i !== 0 ? { t: 1.6, x: h.x - this.dir(off) * rnd(3, 8), y: HY + rnd(-6, 6) } : null;
             if (this.state === 'shot' && (pl.r.big || pl.i >= 3)) { tx = h.x - this.dir(off) * 5; ty = HY + (pl.i % 2 ? 4 : -4); } // crash the glass
-            else if (pl.cut) { pl.cut.t -= dt; tx = pl.cut.x; ty = pl.cut.y; } else { tx = s.x + Math.sin(this.t * 0.7 + pl.i) * 1.5; ty = s.y + Math.cos(this.t * 0.6 + pl.i * 2) * 1.5; }
+            else if (pl.screen) {} else if (pl.cut) { pl.cut.t -= dt; tx = pl.cut.x; ty = pl.cut.y; } else { tx = s.x + Math.sin(this.t * 0.7 + pl.i) * 1.5; ty = s.y + Math.cos(this.t * 0.6 + pl.i * 2) * 1.5; }
             if (this.state === 'inbound') { tx = (pl.x + tx) / 2; const ib = this.ball.holder; if (ib && ib.oob && pl === (this.T[off].handler || this.T[off].P[0])) { tx = ib.x + this.dir(off) * 7; ty = ib.y - 5; } }
           }
         } else {
@@ -6133,6 +6159,8 @@ const ARC = (() => {
           if (this.state === 'shot' && dist(pl, h) < 14) { tx = (tx + h.x) / 2; ty = (ty + HY) / 2; } // box out near the rim
         }
         sp *= this.eff(pl);
+        if (pl.side === def) for (const m of this.T[off].P) if (m.screen && m.screen.set && dist(m, pl) < 2.4) { sp *= 0.5; break; }   // caught on a screen
+        if (pl !== ctrl && Math.hypot(tx - pl.x, ty - pl.y) > 16) sp *= 1.1;   // sprint in transition
         for (const k2 of ['moveCd', 'pumpCd', 'chargeCd', 'stun', 'burst', 'charge']) if (pl[k2] > 0) pl[k2] = Math.max(0, pl[k2] - dt);
         if (pl.stun > 0) sp *= 0.15;
         if (pl.burst > 0) sp *= 1.3;
@@ -6144,8 +6172,10 @@ const ARC = (() => {
         else if (pl.z > 0) sp *= 0.25; // little control in the air
         if ((pl.anim && pl.anim.k === 'fall') || (pl.oob && this.ball.holder === pl)) { tx = pl.x; ty = pl.y; }
         const dx = tx - pl.x, dy = ty - pl.y, d = Math.hypot(dx, dy);
-        const v = d > 0.05 ? Math.min(sp, d / dt) : 0;
-        pl.vx = d > 0 ? dx / d * v : 0; pl.vy = d > 0 ? dy / d * v : 0;
+        // momentum: players speed up and slow down instead of snapping to full speed, and ease into their spot
+        const v = d > 0.05 ? Math.min(sp, d * 3 + 0.6, d / dt) : 0, wx2 = d > 0 ? dx / d * v : 0, wy2 = d > 0 ? dy / d * v : 0;
+        const snap = pl.glide || pl.stepTo || pl.charge > 0 || (pl.anim && pl.anim.k === 'fall') || this.state === 'jump', kk = snap ? 1 : 1 - Math.exp(-dt * (pl === ctrl ? 12 : 7));
+        pl.vx += (wx2 - pl.vx) * kk; pl.vy += (wy2 - pl.vy) * kk;
         pl.x = clamp(pl.x + pl.vx * dt, pl.oob ? -3 : 1, pl.oob ? LEN + 3 : LEN - 1); pl.y = clamp(pl.y + pl.vy * dt, 1, W - 1);
         if (pl.oob && pl.x > 1 && pl.x < LEN - 1 && this.ball.holder !== pl) pl.oob = false;
       }
@@ -6174,8 +6204,9 @@ const ARC = (() => {
         if (open < 3.5 && Math.random() < 0.25) this.dribbleMove(pl, R4(['cross', 'hesi', 'spin', 'step']), Math.random() < 0.5 ? 1 : -1);
         else if (open < 4 && d < 22 && Math.random() < 0.06) this.pumpFake(pl);
       }
-      if (pl.drive > 0) { pl.drive -= dt; return { x: h.x - this.dir(off) * 2, y: HY + (pl.y < HY ? -2 : 2) }; }
-      const s = this.spots(off)[pl.i]; return { x: (s.x + pl.x) / 2 + this.dir(off) * 3, y: s.y };
+      const scr = this.T[off].P.find(p => p.screen && p.screen.set); if (scr && this.state === 'live' && !pl.drive && dfn && dist(scr, dfn) < 2.6) { pl.drive = 1.1; pl.rub = scr.screen.side; }
+      if (pl.drive > 0) { pl.drive -= dt; if (pl.rub && pl.drive > 0.6) return { x: pl.x - this.dir(off) * -6, y: pl.y - pl.rub * 6 }; pl.rub = 0; return { x: h.x - this.dir(off) * 2, y: HY + (pl.y < HY ? -2 : 2) }; }
+      const s = this.spotOf(pl); return { x: (s.x + pl.x) / 2 + this.dir(off) * 3, y: s.y };
     }
     // Timeout: your team catches its breath. Allowed when you have the ball or it's dead.
     callTimeout(side) {
@@ -7073,7 +7104,7 @@ const ARC = (() => {
     function draw() {
       if (!world) world = buildWorld();
       const b = game.ball;
-      camX += (clamp(b.x, 0, LEN) - camX) * 0.12; camY += (clamp(b.y, 0, W) - camY) * 0.1;
+      const lead = (game.state === 'live' || game.state === 'inbound') ? game.dir(game.poss) * 7 : 0; camX += (clamp(b.x + lead, 0, LEN) - camX) * 0.07; camY += (clamp(b.y, 0, W) - camY) * 0.07;
       px.imageSmoothingEnabled = false;
       px.setTransform(RS, 0, 0, RS, 0, 0); px.fillStyle = '#1c1f2e'; px.fillRect(0, 0, PW, PH);
       const cp = Math.round(camPx()), off = world.width < PW ? Math.round((PW - world.width) / 2) : 0;
@@ -7297,6 +7328,7 @@ const HELP = [
 <li><b>Defense pad</b>: <b>Steal</b> swipes at the ball, <b>Block</b> jumps to contest, <b>Charge</b> plants your feet (if the driver runs into you it's an offensive foul, but a late slide is a blocking foul), <b>Switch</b> takes the defender nearest the ball.</li>
 <li><b>Moves beat defenders</b>: a crossover, hesitation, spin or step-back freezes the man guarding you for a moment. Good ball handlers and quick players win more often; a sloppy crossover against a good thief can get stripped.</li>
 <li><b>Pause menu</b>: Call Timeout (7 a game; only when you have the ball or play is dead; it gives your whole team a breather), Team Stats (line score by quarter and each team's top performer), Box Score, Shot Chart (made and missed shots for either team), Play by Play, Substitutions, Controls and Settings. Sim / Quit lets you sim the rest of the game or leave it.</li>
+<li><b>Movement</b>: players speed up and slow down instead of snapping to full speed. In the half court your teammates swap spots every few seconds and the big man comes up to set a screen for the ball handler, then rolls to the rim. A defender caught on the screen slows down.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7538,7 +7570,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23v';
+const APP_VERSION = '2026-11-23w';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
