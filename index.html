@@ -6679,13 +6679,24 @@ const ARC = (() => {
       if (kind === 'spin' && !guarded) kind = 'step';
       pl.moveCd = kind === 'spin' ? 1.0 : 0.7;
       if (kind === 'cross') pl.hand = dir || -pl.hand;
+      const hh = this.hoopOf(pl.side), hd = dist(pl, hh) || 1, ux = (hh.x - pl.x) / hd, uy = (hh.y - pl.y) / hd;
+      if (kind === 'cross') {   // a hard jab to the new side and a quick burst out of it, guarded or not
+        pl.glide = null; pl.stepTo = { x: clamp(pl.x - uy * pl.hand * 3.5 + ux * 1.2, 2, LEN - 2), y: clamp(pl.y + ux * pl.hand * 3.5 + uy * 1.2, 2, W - 2), t: 0.22 }; pl.burst = 0.5;
+      }
       pl.anim = { k: kind, t: 0, T: kind === 'spin' ? 0.4 : kind === 'hesi' ? 0.45 : kind === 'step' ? 0.35 : 0.25, dir: dir || pl.hand };
       if (kind === 'step') { const h = this.hoopOf(pl.side), d = dist(pl, h) || 1; pl.glide = null; let sx2 = pl.x - (h.x - pl.x) / d * 4; if (pl !== this.ctrl[this.user] && this.frontcourt) sx2 = pl.side === 0 ? Math.max(sx2, 49) : Math.min(sx2, 45); pl.stepTo = { x: sx2, y: pl.y - (h.y - pl.y) / d * 4, t: 0.3 }; }
       if (!guarded) return;
       const handle = clamp(0.3 + pl.r.pass * 0.35 + (pl.r.spd - 17) * 0.05, 0.2, 0.85) * this.eff(pl);
-      const base = { cross: 0.55, hesi: 0.5, spin: 0.62, step: 0.5 }[kind];
+      const base = { cross: 0.45, hesi: 0.5, spin: 0.62, step: 0.5 }[kind];
       const p = clamp(base * (0.7 + handle) / (dfn.r.def * this.eff(dfn)), 0.12, 0.85);
-      if (Math.random() < p) { dfn.stun = kind === 'spin' ? 0.75 : 0.55; pl.burst = kind === 'step' ? 0 : 0.6; if (Math.random() < 0.35) this.say(kind === 'step' ? 'Step-back!' : kind === 'spin' ? 'Spin move!' : 'Shook him!', 0.9); }
+      if (Math.random() < p) {
+        dfn.stun = kind === 'spin' ? 0.75 : kind === 'cross' ? 0.9 : 0.55; pl.burst = kind === 'step' ? 0 : kind === 'cross' ? 0.95 : 0.6;
+        if (kind === 'cross') {   // he bites the wrong way; a great handle can put him on the floor
+          dfn.stepTo = { x: clamp(dfn.x + uy * pl.hand * 2.5, 1, LEN - 1), y: clamp(dfn.y - ux * pl.hand * 2.5, 1, W - 1), t: 0.25 };
+          if (Math.random() < 0.03 + handle * 0.09) { dfn.anim = { k: 'fall', t: 0, T: 1.0 }; dfn.stun = 1.3; this.say(`Crossed up! ${short(dfn.p)} hits the floor`, 1.4); }
+          else this.say('Crossed him up!', 0.9);
+        } else if (Math.random() < 0.35) this.say(kind === 'step' ? 'Step-back!' : kind === 'spin' ? 'Spin move!' : 'Shook him!', 0.9);
+      }
       else if (kind === 'cross' && Math.random() < 0.1 * dfn.r.stl + 0.02) { dfn.st.stl++; pl.st.tov++; this.say(`Stripped by ${short(dfn.p)}!`); this.give(dfn); this.poss = dfn.side; this.shot = 24; this.pickCtrl(); }
     }
     // pump fake: a defender close by may leave his feet, worse defenders more often
@@ -6766,7 +6777,7 @@ const ARC = (() => {
       if (game.pop && game.pop !== sndSeen.pop) { sndSeen.pop = game.pop; SFX.play('cheer', game.pop.pts >= 3 ? 1.3 : game.pop.pts === 1 ? 0.4 : 0.9); }
       if ((game.msgN || 0) !== sndSeen.msgN) { sndSeen.msgN = game.msgN || 0; const m = game.msg || '';
         if (/foul|violation|Out of bounds|Timeout|Charge!/i.test(m)) SFX.play('whistle');
-        else if (/Steal|Picked off|Blocked|Stripped/.test(m)) SFX.play('ooh');
+        else if (/Steal|Picked off|Blocked|Stripped|Crossed/.test(m)) SFX.play('ooh');
         else if (/slam|Alley-oop/i.test(m)) SFX.play('cheer', 1.4); }
       if (game.state !== sndSeen.state) { if ((game.state === 'break' || game.state === 'end') && sndSeen.state !== '') SFX.play('buzzer'); sndSeen.state = game.state; }
       const hb = game.ball.holder; dribT -= dt;
@@ -7617,6 +7628,7 @@ const HELP = [
 <li><b>Sound</b>: swish, rim and backboard, dribbles, sneaker squeaks, whistles, the buzzer and the crowd (Settings → Sound to turn it off). All sounds are made by the game itself.</li>
 <li><b>Rebounding</b>: defenders box out their man when a shot goes up, and a boxed-out player has a harder time getting the ball. Offensive rebounds right at the rim are often tipped back in.</li>
 <li><b>Tips</b>: control tips show in your first arcade game only (Settings → Control tips to turn them back on). After a basket, +1/+2/+3 floats over the rim in the scoring team's color.</li>
+<li><b>Crossover</b>: tap Cross and your ball handler jabs about 3 feet to the other side and bursts out of it, guarded or not. Against a close defender it works about half the time (better handlers more often): he bites the wrong way and is frozen for a moment, and once in a while he ends up on the floor. A failed cross can get stripped.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7858,7 +7870,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24j';
+const APP_VERSION = '2026-11-24k';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
