@@ -6866,6 +6866,19 @@ const ARC = (() => {
         R(kx, ly, 2, kl, sk); R(kx + (faceL ? -1 : 0), ly + kl - 1, 3, 2, shoe);
         if (pose === 'dunk' || pose === 'slam') { R(sx, ly, 2, kl, sk); R(sx + (faceL ? 0 : -1), ly + kl - 1, 3, 2, shoe); }
         else { R(sx, ly, 2, ll, sk); R(sx, ly + ll - 2, 2, 1, '#f4f4f4'); R(sx - (faceL ? 0 : 1), ly + ll, 3, 2, shoe); }
+      } else if (frame >= 1) {
+        // running: a 6-frame cycle. Legs swing forward and back from the hip, the knee bends and the foot lifts on the
+        // forward swing, socks and shoes follow the foot. Drawn facing right; the sprite is mirrored for facing left.
+        const ph = (frame - 1) / 6 * Math.PI * 2, L = ll * K, hy = ly * K, sockR = (LK.sock ? Math.min(ll, 4) : 1) * K;
+        const leg = (hx, a) => {   // a = phase of this leg
+          const off = Math.round(Math.sin(a) * 5), lift = Math.round(Math.max(0, Math.cos(a)) * 5), knee = Math.round(L * 0.5);
+          const kx = hx + Math.round(off * 0.7) + (lift ? 2 : 0), fx = hx + off - (lift ? 2 : 0), fy = hy + L - lift;
+          for (let r = 0; r <= fy - hy; r++) { const x = r <= knee ? hx + (kx - hx) * r / knee : kx + (fx - kx) * (r - knee) / Math.max(1, fy - hy - knee); P(Math.round(x) - 2, hy + r, 4, 1, r >= fy - hy - sockR ? '#f4f4f4' : sk); }
+          P(fx - 2, fy + 1, 6, 3, shoe); P(fx - 2, fy + 3, 6, 1, shoe === '#f4f4f4' ? '#c9c9c9' : '#f4f4f4');
+        };
+        // the back leg first so the front leg draws over it
+        const A = ph, B = ph + Math.PI, hxA = (o + 2) * K, hxB = (o + 6) * K;
+        if (Math.cos(A) > Math.cos(B)) { leg(hxB, B); leg(hxA, A); } else { leg(hxA, A); leg(hxB, B); }
       } else {
         R(o + 1 + s1, ly, 2, ll, sk); R(o + 5 - s1, ly, 2, ll, sk);
         const sh2 = LK.sock ? Math.min(ll, 4) : 1; R(o + 1 + s1, ly + ll - sh2 - 1, 2, sh2, '#f4f4f4'); R(o + 5 - s1, ly + ll - sh2 - 1, 2, sh2, '#f4f4f4');
@@ -6889,6 +6902,12 @@ const ARC = (() => {
       else if (pose === 'slam') { const fx2 = faceL ? o - 4 : o + 7; R(fx2, top + 1, 5, 2, sk); R(faceL ? o - 1 : o + 7, top + 2, 2, 5, sk); R(faceL ? o + 7 : o - 1, top + 6, 2, 5, sk); }
       else if (pose === 'lay') { R(faceL ? o - 1 : o + 7, top - 3, 2, 9, sk); R(faceL ? o + 7 : o - 1, top + 6, 2, 5, sk); }
       else if (pose === 'drib') { R(faceL ? o + 7 : o - 1, top + 6, 2, 6, sk); R(faceL ? o - 2 : o + 7, top + 7, 3, 2, sk); R(faceL ? o - 3 : o + 9, top + 8, 2, 3, sk); }
+      else if (frame >= 1) {   // arms pump opposite the legs: the forward arm bends up at the elbow, the back arm hangs and swings out a little
+        const ph = (frame - 1) / 6 * Math.PI * 2, AL = (6 + tor) * K;
+        const arm = (sx2, a, out) => { const f2 = Math.max(0, Math.sin(a)), b2 = Math.max(0, -Math.sin(a)), el = Math.round(AL * 0.5), len = AL - Math.round(f2 * AL * 0.35);
+          for (let r = 0; r < len; r++) { const x = sx2 + out * Math.round(b2 * 2 * r / AL) + (r >= el ? out * Math.round(f2 * 3 * (r - el) / Math.max(1, len - el)) : 0); P(x, (top + 6) * K + r, 4, 1, sk); } };
+        arm((o - 1) * K, ph + Math.PI, -1); arm((o + 7) * K, ph, 1);
+      }
       else { R(o - 1, top + 6, 2, 6 + tor, sk); R(o + 7, top + 6, 2, 6 + tor, sk); }
       if (lk.bands) { R(o - 1, top + 10 + tor, 2, 1, trim); R(o + 7, top + 10 + tor, 2, 1, trim); }   // wristbands
       if (LK.acc === 3 && pose !== 'up' && pose !== 'dunk') R(o - 1, top + 6, 2, 5 + tor, '#1f1f1f');   // shooting sleeve
@@ -6970,7 +6989,8 @@ const ARC = (() => {
     function drawPlayer(pl, sh) {
       const [fx0, fy] = toScr(pl.x, pl.y, 0), [, hy] = toScr(pl.x, pl.y, pl.z), fx = fx0 + sh;
       const me = game.user != null && game.ctrl[game.user] === pl, moving = Math.hypot(pl.vx, pl.vy) > 2 && pl.z === 0;
-      const frame = moving ? (Math.floor(game.t * 8 + pl.i) % 4 === 1 ? 1 : Math.floor(game.t * 8 + pl.i) % 4 === 3 ? 2 : 0) : 0;
+      const spd2 = Math.hypot(pl.vx, pl.vy);
+      const frame = moving ? 1 + Math.floor(game.t * (6 + spd2 * 0.9) + pl.i * 1.7) % 6 : 0;   // faster runners take quicker strides
       const hasB = game.ball.holder === pl; let faceL = Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);
       if (pl.anim && pl.anim.k === 'spin') faceL = Math.floor(pl.anim.t / 0.1) % 2 === 0;
       const an = pl.anim && pl.anim.k;
@@ -6986,7 +7006,7 @@ const ARC = (() => {
       }
       if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 5, fy + 2, 11, 1); px.fillRect(fx - 6, fy + 1, 1, 1); px.fillRect(fx + 6, fy + 1, 1, 1); }
       const x0 = Math.round(fx - sp.c.width / RS / 2), y0 = Math.round(hy - sp.foot / RS);
-      px.save(); px.setTransform(1, 0, 0, 1, 0, 0); px.drawImage(sp.c, Math.round(fx * RS - sp.c.width / 2), Math.round(hy * RS - sp.foot)); px.restore();
+      px.save(); px.setTransform(1, 0, 0, 1, 0, 0); px.drawImage(sp.c, Math.round(fx * RS - sp.c.width / 2), Math.round(hy * RS - sp.foot) - (frame === 2 || frame === 5 ? 2 : frame === 3 || frame === 6 ? 1 : 0)); px.restore();
       if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 2, y0 - 5, 5, 1); px.fillRect(fx - 1, y0 - 4, 3, 1); px.fillRect(fx, y0 - 3, 1, 1);
         // name tag under your player, with the make chance when he has the ball
         // colored by the make chance when he has the ball: green above 50%, yellow 33-50%, red below 33%
@@ -7066,6 +7086,7 @@ const ARC = (() => {
       for (let r = 0; r < 7; r++) for (let q = 0; q < 7; q++) { const ch = BALL[r][q]; if (ch !== '.') { px.fillStyle = BC[ch]; px.fillRect(x - 3 + q, y - 3 + r, 1, 1); } }
     }
     function stop(exit) { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', size); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); root.remove(); if (exit) onExit('quit'); }
+    if (typeof window !== 'undefined') window.__arcSprite = (pl, frame, pose, faceL) => sprite(pl, frame, pose, faceL).c.toDataURL();   // for tests
     if (game.user != null) showMatchup();
     raf = requestAnimationFrame(frame);
     return { stop, game };
@@ -7371,7 +7392,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23t';
+const APP_VERSION = '2026-11-23u';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
