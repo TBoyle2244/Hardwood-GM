@@ -5906,6 +5906,19 @@ const ARC = (() => {
   }
   function color(tid) { return JERSEY[tid % JERSEY.length]; }
   const R4 = a => a[Math.floor(Math.random() * a.length)];
+  /* ten dunks. hold = seconds he carries the ball before it goes through; ball(t) = where the ball is, as
+     [ahead, up] in sprite heights (0 = feet, 1 = top of the head), t from 0 to 1 over the hold. */
+  const DUNKS = [
+    { name: 'two-hand slam', hold: 0.25, ball: t => [0.15, 1.15] },
+    { name: 'tomahawk', hold: 0.35, ball: t => t < 0.6 ? [-0.25, 1.15 + t * 0.2] : [0.25, 1.25 - (t - 0.6) * 0.6], pose: t => t < 0.6 ? 'up' : 'slam' },
+    { name: 'windmill', hold: 0.45, ball: t => { const a = -Math.PI / 2 - t * Math.PI * 1.6; return [Math.cos(a) * 0.45, 0.7 + Math.sin(a) * -0.5]; }, pose: t => t < 0.5 ? 'slam' : 'up' },
+    { name: 'reverse jam', hold: 0.4, ball: t => [-0.2, 1.2], flip: t => t > 0.45 },
+    { name: '360', hold: 0.5, ball: t => [Math.cos(t * Math.PI * 2) * 0.25, 0.85 + t * 0.35], spin: true },
+    { name: 'cradle dunk', hold: 0.45, ball: t => t < 0.5 ? [0.35 - t * 0.6, 0.45 + t * 0.2] : [0.1, 0.6 + (t - 0.5) * 1.3], pose: t => t < 0.5 ? 'slam' : 'up' },
+    { name: 'double-pump', hold: 0.45, ball: t => [0.1, 0.75 + Math.abs(Math.sin(t * Math.PI * 2)) * 0.5], pose: t => Math.sin(t * Math.PI * 2) > 0.3 ? 'up' : 'slam' },
+    { name: 'cock-back slam', hold: 0.4, ball: t => t < 0.7 ? [-0.4, 1.0 + t * 0.3] : [0.3, 1.2], pose: t => t < 0.7 ? 'up' : 'slam' },
+    { name: 'hanging dunk', hold: 0.3, ball: t => [0.15, 1.2], hang: 1.0 },
+    { name: 'one-hand flush', hold: 0.2, ball: t => [0.25, 1.2], pose: t => 'slam' }];
   function mkPl(p, i, side, year) { return { p, i, side, r: rate(p, year), x: 47, y: 25, z: 0, vz: 0, vx: 0, vy: 0, en: 1, hand: 1, st: { pts: 0, fga: 0, fgm: 0, tpa: 0, tpm: 0, fta: 0, ftm: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0, sec: 0 } }; }
   // Team colors for the pixel court and uniforms (primary, secondary), by franchise key.
   const TC = { atl: ['#e03a3e', '#c1d32f'], bos: ['#007a33', '#ba9653'], bkn: ['#1a1a1a', '#c4ced4'], nyk: ['#006bb6', '#f58426'], phi: ['#006bb6', '#ed174c'],
@@ -6076,6 +6089,7 @@ const ARC = (() => {
       if (this.state === 'live' && pl.think <= 0 && pl.z === 0) {
         pl.think = rnd(0.35, 0.7);
         const sq = this.shotQuality(pl, open), clockUrgent = this.shot < 2.5 || this.clock < 3;
+        if (pl.r.dunk && d < 14 && this.laneClear(pl)) { if (d < 7) { this.startShot(pl); return { x: pl.x, y: pl.y }; } pl.drive = 1.2; pl.think = 0.15; return { x: h.x - this.dir(off) * 2, y: HY }; }   // open lane: go dunk it
         if (clockUrgent || sq > rnd(0.42, 0.62)) { this.startShot(pl); return { x: pl.x, y: pl.y }; }
         if (Math.random() < 0.4) { const t = this.bestPass(pl); if (t && this.openness(t) > open + 2) { this.pass(pl, t); return { x: pl.x, y: pl.y }; } }
         pl.drive = (open > 4 || this.shot < 7) && d > 4 && Math.random() < (this.shot < 7 ? 0.9 : 0.55) ? 1.4 : 0;
@@ -6089,7 +6103,7 @@ const ARC = (() => {
     chance(pl) {
       const h = this.hoopOf(pl.side), d = dist(pl, h), three = this.isThree(pl), dfn = this.nearestDef(pl), open = dfn ? dist(dfn, pl) : 20;
       const dunk = d < 4 && pl.r.dunk;
-      let p = dunk ? 0.86 : d < 5 ? 0.58 + (pl.r.fg2 - 0.45) : three ? pl.r.fg3 : d < 16 ? pl.r.fg2 : pl.r.fg2 - 0.06;
+      let p = dunk ? (d < 4 ? 0.86 : 0.8) : d < 5 ? 0.58 + (pl.r.fg2 - 0.45) : three ? pl.r.fg3 : d < 16 ? pl.r.fg2 : pl.r.fg2 - 0.06;
       if (d > 27) p *= clamp(1 - (d - 27) / 20, 0.05, 1);
       p *= clamp(0.62 + open / (9 * (dfn ? dfn.r.def : 1)), 0.5, 1.1) * (dunk ? 1 : 1.12) * (0.82 + 0.18 * pl.en);
       return clamp(p, 0.02, 0.95);
@@ -6098,6 +6112,11 @@ const ARC = (() => {
     oopMates(pl) {
       const h = this.hoopOf(pl.side);
       return this.T[pl.side].P.filter(m => m !== pl && m.r.dunk && m.z === 0 && !m.oob && dist(m, h) < 8 && this.openness(m) > 2.2);
+    }
+    // nobody standing between this player and the rim
+    laneClear(pl) {
+      const h = this.hoopOf(pl.side), d = dist(pl, h) || 1;
+      return !this.T[1 - pl.side].P.some(dd => { const t2 = ((dd.x - pl.x) * (h.x - pl.x) + (dd.y - pl.y) * (h.y - pl.y)) / (d * d); if (t2 < 0 || t2 > 1.1) return false; return Math.hypot(dd.x - (pl.x + (h.x - pl.x) * t2), dd.y - (pl.y + (h.y - pl.y) * t2)) < 2.2; });
     }
     nearestDef(pl) { return this.T[1 - pl.side].P.slice().sort((a, b) => dist(a, pl) - dist(b, pl))[0]; }
     openness(pl) { const d = this.nearestDef(pl); return d ? dist(d, pl) : 20; }
@@ -6143,7 +6162,10 @@ const ARC = (() => {
       const s = pl.shooting; if (!s || this.ball.holder !== pl) return;
       const h = this.hoopOf(pl.side), d = dist(pl, h), three = this.isThree(pl), dfn = this.nearestDef(pl), open = dfn ? dist(dfn, pl) : 20;
       const timing = clamp(1 - Math.abs(s.t - s.apex) / (s.apex * 1.1), 0, 1);       // 1 = released right at the top
-      const close = d < 5 || (s.oop && d < 9), dunk = (close && pl.r.dunk && d < 4) || (s.oop && d < 9);
+      // dunkers throw it down from up to 8 feet when nobody is directly between them and the rim (4 feet when somebody is)
+      const lane = this.laneClear(pl);
+      const dunkR = pl.r.dunk ? (lane ? 8 : 4) : 0;
+      const close = d < 5 || d < dunkR || (s.oop && d < 9), dunk = d < dunkR || (s.oop && d < 9);
       let p = dunk ? 0.86 : close ? 0.58 + (pl.r.fg2 - 0.45) : three ? pl.r.fg3 : d < 16 ? pl.r.fg2 : pl.r.fg2 - 0.06;
       if (d > 27) p *= clamp(1 - (d - 27) / 20, 0.05, 1);
       p *= clamp(0.62 + open / (9 * (dfn ? dfn.r.def : 1)), 0.5, 1.1);                   // contested shots go in less, more so against good defenders
@@ -6156,13 +6178,14 @@ const ARC = (() => {
       const make = !blocked && Math.random() < p;
       pl.st.fga++; if (three) pl.st.tpa++;
       this.ball.holder = null;
-      this.ball.flight = { kind: 'shot', by: pl, from: { x: pl.x, y: pl.y, z: pl.z + pl.r.height }, t: 0, T: dunk ? 0.25 : clamp(0.7 + d / 40, 0.7, 1.5), make, three, blocked, dunk };
+      const DK = dunk ? DUNKS[Math.floor(Math.random() * DUNKS.length)] : null;
+      this.ball.flight = { kind: 'shot', by: pl, from: { x: pl.x, y: pl.y, z: pl.z + pl.r.height }, t: 0, T: dunk ? DK.hold + 0.12 : clamp(0.7 + d / 40, 0.7, 1.5), make, three, blocked, dunk, style: DK, hold: DK ? DK.hold : 0 };
       this.state = 'shot'; delete pl.shooting; this.frontcourt = false; this.backT = 0;   // a shot ends team control
       if (close && !blocked) {   // drive to the rim: dunkers glide in and hang on the rim; layups float in with one hand
         const toward = Math.max(0, d - (dunk ? 0.9 : 1.6)), ux = (h.x - pl.x) / (d || 1), uy = (h.y - pl.y) / (d || 1);
         // the court art draws players small next to the rim, so a dunker is lifted until his hands reach it
-        pl.glide = { x: pl.x + ux * toward, y: pl.y + uy * toward, sp: toward / (dunk ? 0.22 : 0.3) + 1, z: dunk ? RIM_Z + 0.4 - (this.spriteFt || 4.8) : RIM_Z - 1.6 - (this.spriteFt || 4.8) };
-        if (dunk) { pl.hang = 0.75; pl.anim = { k: 'dunk', t: 0, T: 1.05 }; } else { pl.hang = 0.25; pl.anim = { k: 'layup', t: 0, T: 0.6 }; }
+        pl.glide = { x: pl.x + ux * toward, y: pl.y + uy * toward, sp: toward / (dunk ? Math.max(0.22, DK.hold * 0.8) : 0.3) + 1, z: dunk ? RIM_Z + 0.4 - (this.spriteFt || 4.8) : RIM_Z - 1.6 - (this.spriteFt || 4.8) };
+        if (dunk) { pl.hang = DK.hold + 0.45 + (DK.hang || 0); pl.anim = { k: 'dunk', t: 0, T: DK.hold + 0.8 + (DK.hang || 0), style: DK }; } else { pl.hang = 0.25; pl.anim = { k: 'layup', t: 0, T: 0.6 }; }
       }
       if (blocked) { dfn.st.blk++; this.say(`Blocked by ${short(dfn.p)}!`); }
       if (pl.side === this.user && !dunk) this.timingNote = timing;
@@ -6246,15 +6269,21 @@ const ARC = (() => {
         return;
       }
       if (f && f.kind === 'shot') {
-        f.t += dt; const k = clamp(f.t / f.T, 0, 1), h = this.hoopOf(f.by.side);
+        f.t += dt; const h = this.hoopOf(f.by.side);
+        if (f.hold && f.t < f.hold) {   // the dunker carries it through his move
+          const pl = f.by, q = f.style.ball(f.t / f.hold), sf = this.spriteFt || 6, dirx = Math.sign(h.x - pl.x) || this.dir(pl.side);
+          b.x = pl.x + dirx * q[0] * 2; b.y = pl.y; b.z = pl.z + q[1] * sf;
+          f.from = { x: b.x, y: b.y, z: b.z }; return;
+        }
+        const k = clamp((f.t - f.hold) / (f.T - f.hold), 0, 1);
         b.x = f.from.x + (h.x - f.from.x) * k; b.y = f.from.y + (h.y - f.from.y) * k;
-        b.z = f.from.z + (RIM_Z + 0.4 - f.from.z) * k + Math.sin(k * Math.PI) * (f.dunk ? 1 : 7);
+        b.z = f.from.z + (RIM_Z + 0.4 - f.from.z) * k + Math.sin(k * Math.PI) * (f.dunk ? 0.5 : 7);
         if (f.blocked && k > 0.25) { b.flight = null; this.looseV(b.x, b.y, b.z, -this.dir(f.by.side) * rnd(8, 15), rnd(-7, 7), rnd(-1, 5), 1 - f.by.side); return; }
         if (k >= 1) {
           if (f.make) {
             const pts = f.three ? 3 : 2; f.by.st.fgm++; f.by.st.pts += pts; if (f.three) f.by.st.tpm++; this.T[f.by.side].score += pts;
             const a = this.ball.lastPasser; if (a && a.side === f.by.side && a !== f.by && Math.random() < 0.7) a.st.ast++;
-            this.say(f.dunk ? `${short(f.by.p)} throws it down!` : f.three ? `${short(f.by.p)} hits the three!` : `${short(f.by.p)} scores`);
+            this.say(f.dunk ? `${short(f.by.p)}: ${f.style ? f.style.name : 'slam'}!` : f.three ? `${short(f.by.p)} hits the three!` : `${short(f.by.p)} scores`);
             b.flight = null; this.ball.lastPasser = null;
             if (this.clock <= 0) return this.endQuarter();
             b.x = h.x; b.y = h.y; b.z = RIM_Z - 0.5; this.state = 'made'; this.madeBy = f.by.side; this.wait = f.dunk ? 0.9 : 0.6; this.rimShake = f.dunk ? 0.4 : 0; return;
@@ -6857,7 +6886,7 @@ const ARC = (() => {
         for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
         px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
       } }
-      drawMeter(); for (const L2 of labels) { const tw = Math.round(L2.t.length * 4.6) + 6; px.fillStyle = 'rgba(6,8,16,.8)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 5, tw, 10); px.fillStyle = L2.c || '#ffffff'; px.fillRect(Math.round(L2.x - tw / 2), L2.y + 5, tw, 1); pixText(px, L2.t, L2.x, L2.y, 8, L2.c || '#ffffff', 0, '#000000'); } labels = [];
+      drawMeter(); for (const L2 of labels) { const tw = Math.round(L2.t.length * 4) + 4; px.fillStyle = 'rgba(6,8,16,.7)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 4, tw, 8); pixText(px, L2.t, L2.x, L2.y, 7, L2.c || '#ffffff'); } labels = [];
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
       if (game.rimShake > 0) game.rimShake -= 1 / 60;
       scoreboard(shift);
@@ -6896,7 +6925,9 @@ const ARC = (() => {
       const hasB = game.ball.holder === pl; let faceL = Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);
       if (pl.anim && pl.anim.k === 'spin') faceL = Math.floor(pl.anim.t / 0.1) % 2 === 0;
       const an = pl.anim && pl.anim.k;
-      const pose = an === 'oopup' ? 'dunk' : an === 'dunk' ? (pl.anim.t < 0.15 ? 'dunk' : pl.anim.t < 0.38 ? 'slam' : 'hang') : an === 'layup' ? 'lay' : an === 'pump' || an === 'charge' ? 'up' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
+      const DS = an === 'dunk' && pl.anim.style, dh = DS ? DS.hold : 0.15, dq = DS ? clamp(pl.anim.t / dh, 0, 1) : 0;
+      if (DS && pl.anim.t < dh) { if (DS.spin) faceL = Math.floor(pl.anim.t / 0.07) % 2 === 0; else if (DS.flip && DS.flip(dq)) faceL = !faceL; }
+      const pose = an === 'oopup' ? 'dunk' : an === 'dunk' ? (pl.anim.t < dh ? (DS && DS.pose ? DS.pose(dq) : 'dunk') : pl.anim.t < dh + 0.22 ? 'slam' : 'hang') : an === 'layup' ? 'lay' : an === 'pump' || an === 'charge' ? 'up' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
       const sp = sprite(pl, an === 'fall' ? 0 : frame, an === 'fall' ? 'down' : pose, faceL);
       px.fillStyle = 'rgba(0,0,0,.28)'; px.beginPath(); px.ellipse(fx, fy, an === 'fall' ? 11 : 6, 2, 0, 0, Math.PI * 2); px.fill();
       if (an === 'fall') {   // knocked to the floor: the sprite lies on its side, then pops back up
@@ -6910,7 +6941,7 @@ const ARC = (() => {
       if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 2, y0 - 5, 5, 1); px.fillRect(fx - 1, y0 - 4, 3, 1); px.fillRect(fx, y0 - 3, 1, 1);
         // name tag under your player, with the make chance when he has the ball
         // colored by the make chance when he has the ball: green above 50%, yellow 33-50%, red below 33%
-        const nm = pl.p.name.split(' '), tag = nm.length > 1 ? nm[0][0] + '. ' + nm.slice(1).join(' ') : pl.p.name;
+        const nm = pl.p.name.split(' '), tag = nm.length > 1 ? nm.slice(1).join(' ') : pl.p.name;
         let col = '#ffffff'; if (hasB && !pl.oob && game.state === 'live') { const ch = game.chance(pl); col = ch > 0.5 ? '#4ade80' : ch >= 0.33 ? '#facc15' : '#f87171'; }
         labels.push({ x: fx, y: fy + 9, t: tag, c: col }); }
       // shot meter beside your shooter: fills as you rise, green at the top of the jump
@@ -7060,6 +7091,7 @@ const HELP = [
 <li><b>Jump ball</b>: the game and each overtime start with a tip-off. You control your center: tap <b>Jump</b> just before the ball peaks. Timing matters most; height and leaping help. The team that loses the opening tip gets the ball to start the 2nd and 3rd quarters, the winner the 4th.</li>
 <li><b>Inbounds</b>: every possession starts with a pass in from under the basket. Tap <b>Pass</b> to inbound right away.</li>
 <li><b>Shot meter</b>: the bar next to your shooter fills as he rises and turns green at the top of the jump. Close to the rim, players drive in for a layup, and dunkers slam it and hang on the rim.</li>
+<li><b>Dunks</b>: a player who can dunk throws it down from up to 8 feet when nobody is directly between him and the rim (4 feet when someone is). There are ten dunks, picked at random: two-hand slam, tomahawk, windmill, reverse, 360, cradle, double-pump, cock-back, hanging dunk and one-hand flush. The computer's dunkers attack an open lane too.</li>
 <li><b>Rebounds</b>: a miss really bounces, off the rim (it shakes) or off the glass, farther on long shots. It bounces on the floor and rolls; the first player to get a hand on it (close enough, and the ball low enough to reach) gets the rebound. Good rebounders and players crashing the glass get there first more often. Off the court, it goes to the team that didn't touch it last.</li>
 <li><b>Half court</b>: get the ball across half court in 8 seconds (10 before 2001-02), and once it's across you can't take it or pass it back (backcourt violation). Shot clocks sit on top of both backboards and flash in the last 5 seconds.</li>
 <li>The shot clock is 24 seconds. Shooting fouls send a player to the line (and to the floor). Tied after four quarters means overtime.</li>
@@ -7289,7 +7321,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23n';
+const APP_VERSION = '2026-11-23o';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
