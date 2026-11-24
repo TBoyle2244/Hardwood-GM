@@ -392,6 +392,28 @@ details.more summary { cursor: pointer; font-family: var(--cond); font-weight: 6
 .arc-menu .set { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .arc-menu .mf { display: flex; justify-content: space-between; } .arc-menu .mf button { min-width: 130px; } .arc-menu .mf .go { background: #1a8f4a; border-color: #4ade80; }
 @media (max-width: 700px), (max-height: 500px) { .arc-pad { width: 180px; height: 180px; } .arc-pad .pb { width: 68px; height: 68px; font-size: 14px; } .arc-pad .pb.top, .arc-pad .pb.bottom { left: 56px; } .arc-pad .pb.left, .arc-pad .pb.right { top: 56px; } .arc-menu .tabs { width: 120px; } .arc-card { min-width: 160px; } .arc-card .rt { gap: 8px; } }
+/* arcade: tonight's matchup */
+.arc-match { position: absolute; inset: 0; z-index: 6; pointer-events: auto; background: rgba(8,10,22,.88); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: max(10px, env(safe-area-inset-top)) 14px 12px; overflow: auto; font-family: system-ui, -apple-system, sans-serif; }
+.arc-match .mh { width: min(1000px, 100%); background: #120f1c; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; color: #fff; font: 900 clamp(18px, 3.4vw, 30px)/1 "Courier New", monospace; letter-spacing: .3em; text-align: center; padding: 10px; }
+.arc-match .sides { display: flex; gap: 14px; width: min(1000px, 100%); }
+.arc-match .five { flex: 1; display: flex; gap: 4px; background: #0b0d1e; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; padding: 8px 4px; }
+.arc-match .pc { flex: 1; min-width: 0; text-align: center; color: #fff; }
+.arc-match .pc img { width: 100%; max-width: 84px; image-rendering: pixelated; display: block; margin: 0 auto -2px; }
+.arc-match .pc .st { font-size: 11px; letter-spacing: -1px; } .arc-match .pc .st i { font-style: normal; color: #3b3f58; } .arc-match .pc .st i.f { color: #ffc93c; }
+.arc-match .pc .st i.h { background: linear-gradient(90deg, #ffc93c 50%, #3b3f58 50%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.arc-match .pc b { display: block; font-size: 12px; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .arc-match .pc span { font-size: 11px; color: #b9c6e8; font-weight: 700; }
+.arc-match .banner { position: relative; width: min(1000px, 100%); display: flex; border: 3px solid #36a3ff; box-shadow: 0 0 0 3px #08214d; color: #fff; }
+.arc-match .banner .tm { flex: 1; padding: 10px 16px 22px; display: flex; flex-direction: column; font: 900 clamp(16px, 2.8vw, 26px)/1.1 "Courier New", monospace; letter-spacing: .12em; text-shadow: 0 2px 0 rgba(0,0,0,.5); }
+.arc-match .banner .tm.r { text-align: right; } .arc-match .banner .tm span { font-size: .7em; margin-top: 4px; }
+.arc-match .banner .vs { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -60%); font: 900 clamp(22px, 4vw, 38px)/1 "Courier New", monospace; text-shadow: 0 3px 0 rgba(0,0,0,.6); }
+.arc-match .banner .at { position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%); font: 800 12px/1 "Courier New", monospace; letter-spacing: .2em; }
+.arc-match .kits { width: min(1000px, 100%); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #fff; font-weight: 700; }
+.arc-match .kits button { background: #1659b8; border: 3px solid #2b7fe0; color: #fff; font: 800 14px/1 system-ui, sans-serif; padding: 9px 12px; display: flex; gap: 8px; align-items: center; }
+.arc-match .kits button.on { border-color: #6ff3ff; background: #1a64cc; }
+.arc-match .kits .sw { width: 16px; height: 16px; border: 3px solid; display: inline-block; }
+.arc-match .kits .opp { color: #b9c6e8; font-size: 13px; font-weight: 600; } .arc-match .kits .go { margin-left: auto; background: #1a8f4a; border-color: #4ade80; padding: 12px 22px; font-size: 16px; }
+@media (max-width: 760px) { .arc-match .sides { flex-direction: column; gap: 6px; } .arc-match .pc img { max-width: 52px; } }
+@media (max-height: 500px) { .arc-match .sides { flex-direction: row; } .arc-match .pc img { max-width: 46px; } .arc-match .pc b { font-size: 10px; } .arc-match .banner .tm { padding: 6px 10px 16px; } }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -5897,10 +5919,11 @@ const ARC = (() => {
       this.year = o.year || 2000; this.qsec = o.qsec || 120; this.user = o.user == null ? null : o.user;
       this.sp = clamp((this.year - 1979) / 35, 0, 1); // how spread out the offense plays (posts early, corners later)
       this.three = this.year >= 1979;
-      this.T = o.teams.map((t, side) => ({ side, tid: t.tid, key: t.key, city: t.city, nick: t.nick, abbr: t.abbr, name: t.name, pri: tcol(t.key, t.tid)[0], sec: tcol(t.key, t.tid)[1], color: side === 0 ? '#f4f1ea' : tcol(t.key, t.tid)[0], trim: side === 0 ? tcol(t.key, t.tid)[0] : tcol(t.key, t.tid)[1], score: 0,
+      this.T = o.teams.map((t, side) => ({ side, tid: t.tid, key: t.key, city: t.city, nick: t.nick, rec: t.rec, kit: side === 0 ? 'home' : 'away', abbr: t.abbr, name: t.name, pri: tcol(t.key, t.tid)[0], sec: tcol(t.key, t.tid)[1], color: side === 0 ? '#f4f1ea' : tcol(t.key, t.tid)[0], trim: side === 0 ? tcol(t.key, t.tid)[0] : tcol(t.key, t.tid)[1], score: 0,
         P: t.players.slice(0, 5).map((p, i) => mkPl(p, i, side, this.year)), B: t.players.slice(5, 13).map(p => mkPl(p, null, side, this.year)) }));
       this.T.forEach(T => T.P.forEach(pl => { pl.home = pl.i; pl.starter = true; }));
-      this.k = 720 / this.qsec;   // each game second stands for this many real-game seconds (energy, minutes)
+      this.k = 720 / this.qsec;
+      this.setKit(0, 'home');   // each game second stands for this many real-game seconds (energy, minutes)
       this.autoSub = [true, true];
       this.T.forEach(T => { const used = new Set(); T.P.concat(T.B).forEach(pl => { let n = pl.p.num != null ? +pl.p.num : null, k = 0; while (n == null || used.has(n)) { const hv = Math.abs(Math.sin((pl.p.id || pl.i + 1) * 12.9898 + k++ * 78.233)) * 43758.5453; n = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 40, 41, 42, 44, 45, 50, 52, 54, 55][Math.floor((hv % 1) * 37)]; } used.add(n); pl.num = n; }); });
       this.q = 1; this.clock = this.qsec; this.shot = 24; this.poss = 0; this.state = 'inbound'; this.wait = 1.2;
@@ -6285,6 +6308,11 @@ const ARC = (() => {
         for (const pl of T.B) pl.en = clamp(pl.en + 0.0016 * k, 0, 1);
       }
     }
+    // uniforms: home = white with team-color trim, away = team color, alt = the second color. The other team wears the contrast.
+    setKit(side, kit) {
+      const apply = (T, k) => { T.kit = k; if (k === 'home') { T.color = '#f4f1ea'; T.trim = T.pri; } else if (k === 'away') { T.color = T.pri; T.trim = T.sec; } else { T.color = T.sec; T.trim = T.pri; } };
+      apply(this.T[side], kit); apply(this.T[1 - side], kit === 'home' ? 'away' : 'home');
+    }
     eff(pl) { return 0.7 + 0.3 * (pl.en == null ? 1 : pl.en); }   // how much of his speed and touch a tired player keeps
     // Swap a bench player in for the player in a slot. Returns an error string or null.
     sub(side, slot, bi) {
@@ -6515,6 +6543,25 @@ const ARC = (() => {
       menu.innerHTML = `<div class="mh">PAUSED</div><div class="mb"><div class="tabs">${[['controls', 'Controls'], ['subs', 'Substitutions'], ['settings', 'Settings']].map(([k2, n]) => `<button data-m="${k2}" class="${tab === k2 ? 'on' : ''}">${n}</button>`).join('')}</div><div class="pane">${body}</div></div>
         <div class="mf"><button data-m="quit">Quit</button><button data-m="resume" class="go">Resume</button></div>`;
     }
+    /* ---------- tonight's matchup: starting fives with portraits, the records, and your jersey ---------- */
+    let match = null;
+    const stars = ovr => { const v = clamp(Math.round(((ovr || 50) - 40) / 10 * 2) / 2, 1, 5); return [1, 2, 3, 4, 5].map(i => `<i class="${v >= i ? 'f' : v >= i - 0.5 ? 'h' : ''}">★</i>`).join(''); };
+    function showMatchup() {
+      paused = true;
+      if (!match) { match = document.createElement('div'); match.className = 'arc-match'; ui.appendChild(match);
+        match.addEventListener('click', e => { const b2 = e.target.closest('[data-k]'); if (b2) { const k = b2.dataset.k;
+          if (k === 'tip') { match.remove(); match = null; paused = false; return; }
+          game.setKit(game.user != null ? game.user : 0, k); for (const key in cache) delete cache[key]; showMatchup(); } }); }
+      const me = game.user != null ? game.user : 0, T0 = game.T[0], T1 = game.T[1];
+      const five = T => `<div class="five">${T.P.map(pl => { const pc2 = portrait(pl); return `<div class="pc"><img src="${pc2.toDataURL()}" alt=""><div class="st">${stars(pl.p.ovr)}</div><b>${pl.p.name}</b><span>${pl.p.pos} #${pl.num}</span></div>`; }).join('')}</div>`;
+      const sw = (T, k) => { const c1 = k === 'home' ? '#f4f1ea' : k === 'away' ? T.pri : T.sec, c2 = k === 'home' ? T.pri : k === 'away' ? T.sec : T.pri; return `<span class="sw" style="background:${c1};border-color:${c2}"></span>`; };
+      match.innerHTML = `<div class="mh">TONIGHT'S MATCHUP</div>
+        <div class="sides">${five(T0)}${five(T1)}</div>
+        <div class="banner"><div class="tm" style="background:${T0.pri}"><b>${(T0.city || '').toUpperCase()}</b><b>${(T0.nick || T0.name).toUpperCase()}</b><span>${T0.rec || ''}</span></div><div class="vs">VS</div>
+          <div class="tm r" style="background:${T1.pri}"><b>${(T1.city || '').toUpperCase()}</b><b>${(T1.nick || T1.name).toUpperCase()}</b><span>${T1.rec || ''}</span></div><div class="at">${(T0.city || '').toUpperCase()}</div></div>
+        <div class="kits"><span>Your jersey:</span>${['home', 'away', 'alt'].map(k => `<button data-k="${k}" class="${game.T[me].kit === k ? 'on' : ''}">${sw(game.T[me], k)}${k === 'home' ? 'Home' : k === 'away' ? 'Away' : 'Alternate'}</button>`).join('')}
+          <span class="opp">${game.T[1 - me].abbr} wear ${game.T[1 - me].kit === 'home' ? 'white' : 'their colors'}</span><button data-k="tip" class="go">Tip off</button></div>`;
+    }
     let last = performance.now(), raf = 0, alive = true;
     function frame(now) {
       if (!alive) return;
@@ -6629,16 +6676,67 @@ const ARC = (() => {
       }
       return c;
     }
+    // ---- 20 player looks: hair, facial hair and gear, mixed with 7 skin tones and 8 hair colors ----
+    // hair: 0 short, 1 afro, 2 locks, 3 bald, 4 buzz, 5 high-top, 6 cornrows, 7 mohawk, 8 long, 9 curly, 10 man bun, 11 spiky
+    // fac: 0 none, 1 beard, 2 goatee, 3 mustache · acc: 0 none, 1 headband, 2 goggles, 3 arm sleeve · sock: 1 = high socks
+    const LOOKS = [[0, 0, 0, 0], [1, 0, 0, 0], [2, 0, 0, 0], [3, 1, 0, 0], [4, 2, 0, 0], [5, 0, 0, 0], [6, 0, 1, 0], [7, 0, 0, 0], [8, 0, 1, 0], [9, 0, 0, 0],
+      [10, 1, 0, 0], [11, 0, 0, 0], [1, 0, 1, 0], [0, 0, 2, 0], [2, 0, 1, 0], [3, 0, 0, 1], [4, 0, 3, 0], [5, 3, 0, 0], [6, 1, 0, 0], [9, 0, 3, 1]].map(([hair, fac, acc, sock]) => ({ hair, fac, acc, sock }));
+    function lookOf(pl) {
+      const id = pl.p.id || (pl.side * 10 + pl.i), hv = k => hash((id + 1) * 131 + k * 977);
+      const sk = SKIN[Math.floor(hv(1) * SKIN.length)], L = LOOKS[Math.floor(hv(2) * LOOKS.length)];
+      let hc = HAIRC[Math.floor(hv(3) * 6)]; if (hv(6) < 0.08) hc = HAIRC[6 + Math.floor(hv(7) * 2)];   // a few blonds and redheads
+      return { sk, hc, L, shoe: hv(4) < 0.5 ? '#f4f4f4' : '#202020', bands: hv(5) < 0.3 };
+    }
+    // the head in an 8-wide box (face in columns 1-6, rows 0-5), at any pixel scale: sprites use 1, portraits 3
+    function drawHead(g, ox, oy, sc, lk, band, faceL, front) {
+      const { sk, hc, L } = lk, R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(ox + x * sc, oy + y * sc, a * sc, b * sc); };
+      R(1, 0, 6, 6, sk); R(3, 5, 2, 1, shade(sk, -0.15));
+      if (front) { R(0, 2, 1, 2, shade(sk, -0.08)); R(7, 2, 1, 2, shade(sk, -0.08)); }   // ears
+      switch (L.hair) {
+        case 0: R(1, 0, 6, 2, hc); break;
+        case 1: R(0, -2, 8, 4, hc); R(1, -3, 6, 1, hc); break;
+        case 2: R(1, -1, 6, 2, hc); R(0, 0, 1, 6, hc); R(7, 0, 1, 6, hc); if (!front) R(1, 1, 1, 4, hc); break;
+        case 3: R(2, 0, 4, 1, shade(sk, 0.18)); break;
+        case 4: R(1, 0, 6, 1, hc); break;
+        case 5: R(1, -3, 6, 4, hc); break;
+        case 6: R(1, 0, 6, 2, hc); R(2, 0, 1, 2, shade(sk, -0.2)); R(4, 0, 1, 2, shade(sk, -0.2)); R(6, 0, 1, 1, shade(sk, -0.2)); break;
+        case 7: R(3, -2, 2, 3, hc); R(1, 0, 2, 1, shade(sk, -0.1)); R(5, 0, 2, 1, shade(sk, -0.1)); break;
+        case 8: R(1, -1, 6, 2, hc); R(0, 0, 1, 5, hc); R(7, 0, 1, 5, hc); break;
+        case 9: R(1, -1, 6, 2, hc); R(0, 0, 1, 2, hc); R(7, 0, 1, 2, hc); R(2, -2, 1, 1, hc); R(5, -2, 1, 1, hc); break;
+        case 10: R(1, 0, 6, 2, hc); R(3, -2, 2, 2, hc); break;
+        default: R(1, 0, 6, 1, hc); R(1, -1, 1, 1, hc); R(3, -1, 1, 1, hc); R(5, -1, 1, 1, hc); R(2, -2, 1, 1, hc); R(6, -2, 1, 1, hc);
+      }
+      if (L.fac === 1) { R(1, 4, 6, 2, hc); R(3, 4, 2, 1, shade(sk, -0.25)); } else if (L.fac === 2) R(3, 5, 2, 1, hc); else if (L.fac === 3) R(2, 4, 4, 1, hc);
+      if (L.acc === 1) R(1, 1, 6, 1, band);
+      const eyeY = 2;
+      if (L.acc === 2) { R(1, eyeY, 6, 1, '#2a2a2a'); R(2, eyeY, 1, 1, '#8fc8e8'); R(5, eyeY, 1, 1, '#8fc8e8'); }
+      else if (front) { for (const ex of [2, 5]) { R(ex, eyeY, 1, 1, '#ffffff'); g.fillStyle = '#1b1209'; g.fillRect(ox + ex * sc + Math.floor(sc / 3), oy + eyeY * sc + Math.floor(sc / 3), Math.ceil(sc / 2), Math.ceil(sc * 2 / 3)); } R(3, 4, 2, 1, shade(sk, -0.3)); }
+      else if (L.hair !== 1) R(faceL ? 1 : 5, eyeY, 1, 1, '#1b1209');
+    }
+    function outlined(c) {
+      const Wd = c.width, Hh = c.height, d = c.getContext('2d').getImageData(0, 0, Wd, Hh).data, out = document.createElement('canvas'); out.width = Wd; out.height = Hh; const oc = out.getContext('2d');
+      oc.fillStyle = 'rgba(20,14,10,.85)';
+      for (let y = 0; y < Hh; y++) for (let x = 0; x < Wd; x++) { if (d[(y * Wd + x) * 4 + 3]) continue; if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => { const X = x + a, Y = y + b; return X >= 0 && Y >= 0 && X < Wd && Y < Hh && d[(Y * Wd + X) * 4 + 3]; })) oc.fillRect(x, y, 1, 1); }
+      oc.drawImage(c, 0, 0); return out;
+    }
+    // a head-and-shoulders portrait for the matchup screen
+    function portrait(pl) {
+      const T = game.T[pl.side], lk = lookOf(pl), c = document.createElement('canvas'); c.width = 30; c.height = 34; const g = c.getContext('2d');
+      const R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(x, y, a, b); };
+      R(3, 26, 24, 8, T.color); R(3, 26, 24, 1, T.trim); R(11, 26, 8, 3, lk.L.acc === 3 ? T.trim : lk.sk); R(12, 29, 6, 1, T.trim); R(13, 23, 4, 4, lk.sk);
+      drawHead(g, 3, 9, 3, lk, T.trim === '#f4f1ea' ? '#f4f1ea' : T.trim, false, true);
+      return outlined(c);
+    }
     // ---- player sprites (cached per look, frame and pose) ----
     const cache = {};
     function sprite(pl, frame, pose, faceL) {
       const T = game.T[pl.side], id = pl.p.id || (pl.side * 10 + pl.i), key = id + '|' + pl.side + '|' + frame + '|' + pose + '|' + (faceL ? 1 : 0) + '|' + pl.num;
       if (cache[key]) return cache[key];
-      const num = pl.num != null ? pl.num : 0, hv = k => hash((id + 1) * 131 + k * 977), sk = SKIN[Math.floor(hv(1) * SKIN.length)], style = Math.floor(hv(2) * 7), hc = HAIRC[Math.floor(hv(3) * HAIRC.length)];
+      const num = pl.num != null ? pl.num : 0, lk = lookOf(pl), sk = lk.sk, LK = lk.L;
       const tall = (pl.r.height - 6.6) * 12, leg = clamp(Math.round(tall * 0.55), -3, 5), tor = clamp(Math.round(tall * 0.3), -2, 3), H = 27 + leg + tor, Wd = 16, c = document.createElement('canvas'); c.width = Wd; c.height = H + 2;
       const g = c.getContext('2d'), R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(x, y, a, b); };
-      const jer = T.color, trim = T.trim, shorts = T.side === 0 ? '#ece8df' : shade(T.color, -0.12), shoe = hv(4) < 0.5 ? '#f4f4f4' : '#202020';
-      const o = 4, top = 3 + (style === 1 ? 1 : 0);   // head top; afro sits higher
+      const jer = T.color, trim = T.trim, shorts = T.kit === 'home' ? '#ece8df' : shade(T.color, -0.12), shoe = lk.shoe;
+      const o = 4, top = 3;
       // legs and shoes (two run frames)
       const ly = top + 16 + tor, ll = Math.max(3, 6 + leg), s1 = frame === 1 ? 1 : frame === 2 ? -1 : 0;
       if (pose === 'lay' || pose === 'dunk') {   // one knee driving up (layup) or both tucked (dunk)
@@ -6648,7 +6746,7 @@ const ARC = (() => {
         else { R(sx, ly, 2, ll, sk); R(sx, ly + ll - 2, 2, 1, '#f4f4f4'); R(sx - (faceL ? 0 : 1), ly + ll, 3, 2, shoe); }
       } else {
         R(o + 1 + s1, ly, 2, ll, sk); R(o + 5 - s1, ly, 2, ll, sk);
-        R(o + 1 + s1, ly + ll - 2, 2, 1, '#f4f4f4'); R(o + 5 - s1, ly + ll - 2, 2, 1, '#f4f4f4');
+        const sh2 = LK.sock ? Math.min(ll, 4) : 1; R(o + 1 + s1, ly + ll - sh2 - 1, 2, sh2, '#f4f4f4'); R(o + 5 - s1, ly + ll - sh2 - 1, 2, sh2, '#f4f4f4');
         R(o + s1, ly + ll, 3, 2, shoe); R(o + 5 - s1, ly + ll, 3, 2, shoe);
       }
       // shorts
@@ -6665,22 +6763,11 @@ const ARC = (() => {
       else if (pose === 'lay') { R(faceL ? o - 1 : o + 7, top - 3, 2, 9, sk); R(faceL ? o + 7 : o - 1, top + 6, 2, 5, sk); }
       else if (pose === 'drib') { R(faceL ? o + 7 : o - 1, top + 6, 2, 6, sk); R(faceL ? o - 2 : o + 7, top + 7, 3, 2, sk); R(faceL ? o - 3 : o + 9, top + 8, 2, 3, sk); }
       else { R(o - 1, top + 6, 2, 6 + tor, sk); R(o + 7, top + 6, 2, 6 + tor, sk); }
-      if (hv(5) < 0.3) { R(o - 1, top + 10 + tor, 2, 1, trim); R(o + 7, top + 10 + tor, 2, 1, trim); }   // wristbands
+      if (lk.bands) { R(o - 1, top + 10 + tor, 2, 1, trim); R(o + 7, top + 10 + tor, 2, 1, trim); }   // wristbands
+      if (LK.acc === 3 && pose !== 'up' && pose !== 'dunk') R(o - 1, top + 6, 2, 5 + tor, '#1f1f1f');   // shooting sleeve
       // head and hair
-      R(o + 1, top, 6, 6, sk); R(o + 3, top + 5, 2, 1, shade(sk, -0.15));
-      if (style === 0) R(o + 1, top, 6, 2, hc);
-      else if (style === 1) { R(o, top - 2, 8, 4, hc); R(o + 1, top - 3, 6, 1, hc); }
-      else if (style === 2) { R(o + 1, top - 1, 6, 2, hc); R(o, top, 1, 6, hc); R(o + 7, top, 1, 6, hc); R(o + 1, top + 1, 1, 4, hc); }
-      else if (style === 3) { R(o + 1, top, 6, 1, shade(sk, -0.12)); }
-      else if (style === 4) { R(o + 1, top - 1, 6, 2, hc); R(o + 1, top + 1, 6, 1, trim === '#f4f1ea' ? '#f4f1ea' : trim); }
-      else if (style === 5) { R(o + 1, top - 2, 6, 3, hc); }
-      else { R(o + 1, top, 6, 1, hc); }
-      if (style !== 1 && style !== 3) R(faceL ? o + 1 : o + 5, top + 2, 1, 1, '#1b1209');
-      // 1-pixel dark outline around the whole figure
-      const id2 = g.getImageData(0, 0, Wd, H + 2), d = id2.data, out = document.createElement('canvas'); out.width = Wd; out.height = H + 2; const oc = out.getContext('2d');
-      oc.fillStyle = 'rgba(20,14,10,.85)';
-      for (let y = 0; y < H + 2; y++) for (let x = 0; x < Wd; x++) { if (d[(y * Wd + x) * 4 + 3]) continue; if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => { const X = x + a, Y = y + b; return X >= 0 && Y >= 0 && X < Wd && Y < H + 2 && d[(Y * Wd + X) * 4 + 3]; })) oc.fillRect(x, y, 1, 1); }
-      oc.drawImage(c, 0, 0);
+      drawHead(g, o, top, 1, lk, trim === '#f4f1ea' ? '#f4f1ea' : trim, faceL, false);
+      const out = outlined(c);
       let res = out;
       if (faceL) { const f = document.createElement('canvas'); f.width = Wd; f.height = H + 2; const fc = f.getContext('2d'); fc.translate(Wd, 0); fc.scale(-1, 1); fc.drawImage(out, 0, 0); res = f; }
       cache[key] = { c: res, foot: ly + ll + 2 }; return cache[key];
@@ -6818,6 +6905,7 @@ const ARC = (() => {
       for (let r = 0; r < 7; r++) for (let q = 0; q < 7; q++) { const ch = BALL[r][q]; if (ch !== '.') { px.fillStyle = BC[ch]; px.fillRect(x - 3 + q, y - 3 + r, 1, 1); } }
     }
     function stop(exit) { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', size); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); root.remove(); if (exit) onExit('quit'); }
+    if (game.user != null) showMatchup();
     raf = requestAnimationFrame(frame);
     return { stop, game };
   }
@@ -6886,6 +6974,8 @@ const HELP = [
 <li><b>Energy and substitutions</b>: players tire on the floor (faster when they run hard) and recover on the bench. Tired players are slower and miss more. Pause (II) and open Substitutions to see each player's energy, minutes, points, fouls and ratings, and to swap players (tap a starter, then a bench player). Auto substitutions are on unless you turn them off in Settings. Six fouls and a player is out.</li>
 <li><b>Player card</b> (bottom left): your player's name, energy bar and key ratings. The tag under him shows his make chance with a well-timed shot from where he stands.</li>
 <li><b>Ratings matter about as much as your play</b>: speed, shooting, passing, steals, blocks and rebounding all come from the players' real numbers. Good defenders make shots harder, and the three-point line appears from 1979-80.</li>
+<li><b>Tonight's matchup</b>: before tip-off you see both starting fives (portraits, star ratings from overall, positions and numbers), both records and the arena. Pick your jersey: Home (white), Away (your color) or Alternate (your second color); the other team wears the contrast.</li>
+<li><b>Player looks</b>: every player has one of 20 looks (afro, locks, high-top, cornrows, mohawk, man bun and more, some with beards, headbands, goggles, sleeves or high socks), one of 7 skin tones and a hair color, the same every game. Taller players are drawn taller.</li>
 <li><b>Jump ball</b>: the game and each overtime start with a tip-off. You control your center: tap <b>Jump</b> just before the ball peaks. Timing matters most; height and leaping help. The team that loses the opening tip gets the ball to start the 2nd and 3rd quarters, the winner the 4th.</li>
 <li><b>Inbounds</b>: every possession starts with a pass in from under the basket. Tap <b>Pass</b> to inbound right away.</li>
 <li><b>Shot meter</b>: the bar next to your shooter fills as he rises and turns green at the top of the jump. Close to the rim, players drive in for a layup, and dunkers slam it and hang on the rim.</li>
@@ -7116,7 +7206,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23h';
+const APP_VERSION = '2026-11-23i';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7605,7 +7695,7 @@ function waivedMsg(p, stretched) {
   return d.length ? `Player released. You still owe him ${G.money(d.reduce((a, x) => a + Object.values(x.pay).reduce((b, c) => b + c, 0), 0))} in dead money${stretched ? ', stretched' : ''}.` : 'Player released.';
 }
 /* ---------- Arcade mode ---------- */
-function arcTeam(tid) { const t = L.teams[tid], st = G.ratings(L, tid).mins.filter(x => x.start).map(x => x.p); const five = st.length >= 5 ? st : G.roster(L, tid).filter(p => !p.inj).sort((a, b) => b.ovr - a.ovr).slice(0, 5); const mins = {}; G.ratings(L, tid).mins.forEach(x => mins[x.p.id] = x.min || 0); const bench = G.roster(L, tid).filter(p => !p.inj && !five.includes(p)).sort((a, b) => (mins[b.id] || 0) - (mins[a.id] || 0) || b.ovr - a.ovr).slice(0, 8); return { tid, key: t.key, city: t.city, nick: t.name, abbr: t.abbr, name: tname(t), players: five.concat(bench) }; }
+function arcTeam(tid) { const t = L.teams[tid], st = G.ratings(L, tid).mins.filter(x => x.start).map(x => x.p); const five = st.length >= 5 ? st : G.roster(L, tid).filter(p => !p.inj).sort((a, b) => b.ovr - a.ovr).slice(0, 5); const mins = {}; G.ratings(L, tid).mins.forEach(x => mins[x.p.id] = x.min || 0); const bench = G.roster(L, tid).filter(p => !p.inj && !five.includes(p)).sort((a, b) => (mins[b.id] || 0) - (mins[a.id] || 0) || b.ovr - a.ovr).slice(0, 8); return { tid, key: t.key, city: t.city, nick: t.name, abbr: t.abbr, name: tname(t), players: five.concat(bench), rec: (t.w || 0) + '-' + (t.l || 0) }; }
 function arcadeCard() {
   if (typeof ARC === 'undefined' || G.roster(L, L.user).length < 5) return '';
   const others = L.teams.filter(t => t.id !== L.user).sort((a, b) => tname(a).localeCompare(tname(b))), opp = others.find(t => t.id === ui.arcOpp) || others[0], q = ui.arcQ || 120;
