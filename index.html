@@ -516,6 +516,8 @@ table.ts { width: 100%; border-collapse: separate; border-spacing: 0 3px; margin
   .arc-card { left: max(8px, env(safe-area-inset-left)) !important; transform: none !important; top: max(6px, env(safe-area-inset-top)); bottom: auto !important; min-width: 0 !important; zoom: 0.72; opacity: .94; }
   .arc-tip { top: calc(max(6px, env(safe-area-inset-top)) + 96px) !important; }
 }
+.arc-half .mh.mhb span { font-size: 0.85em; }
+@media (max-height: 500px) { .arc-half .mh.mhb span { font-size: 15px; letter-spacing: 2px; } }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -6104,7 +6106,8 @@ const ARC = (() => {
     hoopOf(side) { return { x: side === 0 ? HOOP[1] : HOOP[0], y: HY }; } // the hoop this side attacks: user (side 0) attacks right
     dir(side) { return side === 0 ? 1 : -1; }
     say(m, t) { this.msg = m; this.msgT = t || 1.6; this.msgN = (this.msgN || 0) + 1; if (/Tap JUMP|Hold SHOOT|bit on the fake|^Step-back|^Spin move|^Shook him|^Alley-oop!$/.test(m)) return; const last = this.pbp[this.pbp.length - 1]; if (!last || last.m !== m || this.t - last.t > 2) this.pbp.push({ q: this.q, clock: Math.max(0, Math.ceil(this.clock)), m, t: this.t, s: [this.T[0].score, this.T[1].score] }); }
-    qpts(side, pts) { const T = this.T[side]; T.qs = T.qs || []; T.qs[this.q - 1] = (T.qs[this.q - 1] || 0) + pts; }
+    qpts(side, pts) {
+      { const d = this.T[0].score - this.T[1].score; this.big = this.big || [0, 0]; this.big[0] = Math.max(this.big[0], d); this.big[1] = Math.max(this.big[1], -d); } const T = this.T[side]; T.qs = T.qs || []; T.qs[this.q - 1] = (T.qs[this.q - 1] || 0) + pts; }
     all() { return this.T[0].P.concat(this.T[1].P); }
     // Offensive spots by era: posts on the blocks early, corners and wings later.
     spots(side) {
@@ -6140,16 +6143,17 @@ const ARC = (() => {
       this.poss = side; this.shot = 24; this.state = 'inbound'; this.wait = start ? 1.2 : 0.9; this.fcSide = side; this.frontcourt = false; this.backT = 0;
       this.deadBall();
       const own = this.hoopOf(1 - side), d = this.dir(side);
-      this.T[side].P.forEach((pl, i) => { pl.x = own.x + d * (8 + i * 6); pl.y = 10 + i * 7; pl.z = 0; pl.vz = 0; });
-      this.T[1 - side].P.forEach((pl, i) => { pl.x = own.x + d * (30 + i * 3); pl.y = 12 + i * 6.5; pl.z = 0; pl.vz = 0; });
+      const put = (pl, x, y, oob) => { pl.z = 0; pl.vz = 0; if (start) { pl.x = x; pl.y = y; pl.goTo = null; if (oob) pl.oob = true; } else pl.goTo = { x, y, oob: !!oob }; };
+      this.T[side].P.forEach((pl, i) => put(pl, own.x + d * (8 + i * 6), 10 + i * 7));
+      this.T[1 - side].P.forEach((pl, i) => put(pl, own.x + d * (30 + i * 3), 12 + i * 6.5));
       // the ball is passed in from out of bounds under your own basket: a forward takes it out, the point guard comes to get it
       // the point guard (or the best ball handler on the floor) brings it up; a big man takes it out of bounds
       const P5 = this.T[side].P, pg = P5.find(p => p.p.pos === 'PG') || P5.slice().sort((a, b) => b.r.pass - a.r.pass)[0];
       const inb = P5.filter(p => p !== pg).sort((a, b) => (b.p.pos === 'C' || b.p.pos === 'PF' ? 1 : 0) - (a.p.pos === 'C' || a.p.pos === 'PF' ? 1 : 0) || a.r.pass - b.r.pass)[0];
-      this.T[side].handler = pg; this.all().forEach(p => { p.anim = null; p.glide = null; p.hang = 0; p.oob = false; p.blocking = false; p.landing = null; p.shooting = null; p.stepTo = null; p.charge = 0; });
+      this.T[side].handler = pg; this.all().forEach(p => { p.goTo = null; p.anim = null; p.glide = null; p.hang = 0; p.oob = false; p.blocking = false; p.landing = null; p.shooting = null; p.stepTo = null; p.charge = 0; });
       const base = side === 0 ? 0 : LEN;
-      inb.x = base - d * 1.8; inb.y = HY + 7; inb.oob = true;
-      pg.x = own.x + d * 9; pg.y = HY - 3;
+      put(inb, base - d * 1.8, HY + 7, true);
+      put(pg, own.x + d * 9, HY - 3);
       this.give(inb); this.ball.flight = null;
       this.pickCtrl();
     }
@@ -6180,6 +6184,7 @@ const ARC = (() => {
       this.ctrl[this.user] = order[0] !== cur ? order[0] : order[1];
     }
     step(dt, inp) {
+      for (const p0 of this.all()) if (p0.shooting && !p0.shooting.ft && this.ball.holder !== p0) delete p0.shooting;   // whatever the state, nobody keeps a shot without the ball
       if (this.over) return;
       inp = inp || {}; this.t += dt; if (this.msgT > 0) this.msgT -= dt;
       for (const pl of this.all()) if (pl.anim) { pl.anim.t += dt; if (pl.anim.t >= pl.anim.T) pl.anim = null; }
@@ -6191,7 +6196,7 @@ const ARC = (() => {
         if (this.wait <= 0) { const side = this.madeBy; this.madeBy = null; this.setupInbound(1 - side); }
         return;
       }
-      if (this.state === 'inbound') { this.wait -= dt; this.moveAll(dt, inp); const hb = this.ball.holder; if (hb) { this.ball.x = hb.x + this.dir(hb.side) * 0.8; this.ball.y = hb.y + 0.4; this.ball.z = hb.oob ? 6 : 3.5; } if (this.wait <= 0) { if (hb && hb.oob) this.pass(hb, this.T[hb.side].handler && this.T[hb.side].P.includes(this.T[hb.side].handler) ? this.T[hb.side].handler : this.T[hb.side].P[0]); else this.state = 'live'; } return; }
+      if (this.state === 'inbound') { this.wait -= dt; this.moveAll(dt, inp); const hb = this.ball.holder; if (hb) { this.ball.x = hb.x + this.dir(hb.side) * 0.8; this.ball.y = hb.y + 0.4; this.ball.z = hb.oob ? 6 : 3.5; } if (hb && hb.goTo) { if (this.wait > 0) { this.inT = 0; } else { this.inT = (this.inT || 0) + dt; if (this.inT < 4) return; hb.x = hb.goTo.x; hb.y = hb.goTo.y; if (hb.goTo.oob) hb.oob = true; hb.goTo = null; } } if (this.wait <= 0) { this.inT = 0; if (hb && hb.oob) this.pass(hb, this.T[hb.side].handler && this.T[hb.side].P.includes(this.T[hb.side].handler) ? this.T[hb.side].handler : this.T[hb.side].P[0]); else this.state = 'live'; } return; }
       if (this.state === 'break') { this.wait -= dt; if (this.wait <= 0) this.nextQuarter(); return; }
       if (this.state === 'ft') return this.ftStep(dt, inp);
       // clocks run while the ball is live
@@ -6263,6 +6268,11 @@ const ARC = (() => {
             tx = (bx2 + h.x) / 2; ty = (by2 + HY) / 2; pl.boxing = dist(pl, man) < 4 ? man : null;   // hold the inside position, closer to the rim than your man
           } else if (this.state !== 'loose' && this.state !== 'shot') pl.boxing = null;
         }
+        if (this.state === 'ft') { tx = pl.goTo ? pl.goTo.x : pl.x; ty = pl.goTo ? pl.goTo.y : pl.y; }
+        if (pl.goTo) {   // dead ball: jog to where you set up instead of teleporting there
+          tx = pl.goTo.x; ty = pl.goTo.y;
+          if (Math.hypot(tx - pl.x, ty - pl.y) < 0.6) { pl.x = tx; pl.y = ty; if (pl.goTo.oob) pl.oob = true; pl.goTo = null; }
+        }
         sp *= this.eff(pl);
         if (pl.side === def) for (const m of this.T[off].P) if (m.screen && m.screen.set && dist(m, pl) < 2.4) { sp *= 0.5; break; }   // caught on a screen
         if (pl !== ctrl && Math.hypot(tx - pl.x, ty - pl.y) > 16) sp *= 1.1;   // sprint in transition
@@ -6281,7 +6291,7 @@ const ARC = (() => {
         const v = d > 0.05 ? Math.min(sp, d * 3 + 0.6, d / dt) : 0, wx2 = d > 0 ? dx / d * v : 0, wy2 = d > 0 ? dy / d * v : 0;
         const snap = pl.glide || pl.stepTo || pl.charge > 0 || (pl.anim && pl.anim.k === 'fall') || this.state === 'jump', kk = snap ? 1 : 1 - Math.exp(-dt * (pl === ctrl ? 12 : 7));
         pl.vx += (wx2 - pl.vx) * kk; pl.vy += (wy2 - pl.vy) * kk;
-        pl.x = clamp(pl.x + pl.vx * dt, pl.oob ? -3 : 1, pl.oob ? LEN + 3 : LEN - 1); pl.y = clamp(pl.y + pl.vy * dt, 1, W - 1);
+        const out = pl.oob || (pl.goTo && pl.goTo.oob); pl.x = clamp(pl.x + pl.vx * dt, out ? -3 : 1, out ? LEN + 3 : LEN - 1); pl.y = clamp(pl.y + pl.vy * dt, out ? -1 : 1, out ? W + 1 : W - 1);
         if (pl.oob && pl.x > 1 && pl.x < LEN - 1 && this.ball.holder !== pl) pl.oob = false;
       }
       // charges: a ball handler who runs into a planted defender
@@ -6413,7 +6423,7 @@ const ARC = (() => {
       p *= 0.82 + 0.18 * (pl.en == null ? 1 : pl.en);                                      // tired legs, short shots
       let blocked = false;
       if (dfn && open < 3.2 && dfn.z > 0.8 && !dunk) blocked = Math.random() < 0.2 + dfn.r.blk * 0.35;
-      if (dfn && open < 3 && !dfn.blocking && Math.random() < 0.1) { this.foul(dfn); this.foulShot(pl, three ? 3 : 2, Math.random() < p * 0.6); delete pl.shooting; return; }
+      if (dfn && open < 3 && !dfn.blocking && Math.random() < 0.1) { this.foul(dfn); const a1 = Math.random() < p * 0.6, m0 = this.msg; this.foulShot(pl, three ? 3 : 2, a1); this.say(`Shooting foul on ${short(dfn.p)}${a1 ? ' · And one!' : ` · ${three ? 3 : 2} shots`}`, 3); delete pl.shooting; return; }
       p = clamp(p * this.shotMul(pl), 0.02, 0.95);
       const make = !blocked && Math.random() < p;
       pl.st.fga++; if (three) pl.st.tpa++;
@@ -6440,12 +6450,12 @@ const ARC = (() => {
     ftLine() {
       const F = this.fts, pl = F.pl, h = this.hoopOf(pl.side), d = this.dir(pl.side), off = this.T[pl.side].P.filter(p => p !== pl), def = this.T[1 - pl.side].P.slice();
       this.all().forEach(p => { p.anim = null; p.glide = null; p.hang = 0; p.oob = false; p.blocking = false; p.shooting = null; p.stepTo = null; p.z = 0; p.vz = 0; p.vx = 0; p.vy = 0; p.screen = null; p.cut = null; });
-      pl.x = h.x - d * 15; pl.y = HY;
+      pl.goTo = { x: h.x - d * 15, y: HY };
       const lane = (k, sgn) => ({ x: h.x - d * (7 + k * 3), y: HY + sgn * 8.5 });
       // defense gets the spots nearest the rim, the shooter's team the next ones, the rest wait behind the arc
       const byBig = a => a.slice().sort((x, y) => y.r.reb - x.r.reb);
       const D = byBig(def), O = byBig(off);
-      const put = (p, s2) => { p.x = s2.x; p.y = s2.y; };
+      const put = (p, s2) => { p.goTo = { x: s2.x, y: s2.y }; };
       if (D[0]) put(D[0], lane(0, -1)); if (D[1]) put(D[1], lane(0, 1)); if (O[0]) put(O[0], lane(1, -1)); if (O[1]) put(O[1], lane(1, 1)); if (D[2]) put(D[2], lane(2, -1));
       [O[2], O[3], D[3], D[4]].forEach((p, k) => { if (p) put(p, { x: h.x - d * 27, y: HY + [-14, 14, -8, 8][k] }); });
       this.give(pl); this.pickCtrl();
@@ -6470,7 +6480,9 @@ const ARC = (() => {
         return;
       }
       this.wait -= dt; if (this.wait > 0) return;
-      if (!F.lined) { F.lined = true; this.ftLine(); this.wait = 0.8; return; }
+      if (!F.lined) { F.lined = true; this.ftLine(); this.wait = 0.5; F.walk = 0; return; }
+      if (this.all().some(p => p.goTo) && (F.walk += dt) < 3.5) { this.moveAll(dt, {}); return; }   // everyone jogs to the lane first
+      this.all().forEach(p => { if (p.goTo) { p.x = p.goTo.x; p.y = p.goTo.y; p.goTo = null; } });
       const userShoots = this.user != null && this.user === pl.side;
       let make;
       if (userShoots) {   // same meter as a jump shot: hold SHOOT, it fills; let go at the top
@@ -6618,7 +6630,7 @@ const ARC = (() => {
     endQuarter() {
       if (this.q >= 4 && this.T[0].score !== this.T[1].score) { this.over = true; this.state = 'end'; this.say('Final', 99); return; }
       this.state = 'break'; this.wait = 2.2; this.say(this.q >= 4 ? 'Tied! Overtime' : this.q === 2 ? 'Halftime' : `End of Q${this.q}`, 2.2);
-      if (this.q === 2 && this.user != null) { this.half = true; this.wait = 9999; }   // halftime: the screen waits for Continue
+      if (this.user != null) { this.half = true; this.wait = 9999; }   // end of each quarter: the break screen waits for Continue   // halftime: the screen waits for Continue
     }
     // Quarters 2 and 3 go to the team that lost the opening tip, the 4th to the team that won it; overtime starts with a new jump ball.
     nextQuarter() { for (const T of this.T) for (const pl of T.P.concat(T.B)) pl.en = clamp(pl.en + (this.q === 2 ? 0.3 : 0.12), 0, 1); this.q++; this.clock = this.q > 4 ? Math.round(this.qsec / 2) : this.qsec; if (this.q > 4) return this.setupJump(); const w = this.tipWin || 0; this.setupInbound(this.q === 4 ? w : 1 - w); }
@@ -6710,18 +6722,18 @@ const ARC = (() => {
     // A non-shooting defensive foul (reach-in, blocking): the whistle stops play. In the bonus the fouled player shoots two; otherwise his team inbounds from the sideline.
     defFoul(d, o, why) {
       this.foul(d); const n = this.teamFouls(d.side), bonus = n >= this.bonusAt();
-      if (bonus) { this.foulShot(o, 2, false, true); this.say(`${why} on ${short(d.p)} · Bonus, 2 shots`, 2); }
-      else { this.sideOut(o.side, o.x); this.say(`${why} on ${short(d.p)} · Team foul ${n} of ${this.bonusAt()}`, 2); }
+      if (bonus) { this.foulShot(o, 2, false, true); this.say(`${why} on ${short(d.p)} · Bonus, 2 shots`, 3); }
+      else { this.sideOut(o.side, o.x); this.say(`${why} on ${short(d.p)} · Team foul ${n} of ${this.bonusAt()}`, 3); }
     }
     // Inbound from the sideline at the spot of the foul; the shot clock goes back up to at least 14.
     sideOut(side, x) {
-      for (const p0 of this.all()) { p0.screen = null; p0.cut = null; p0.anim = null; p0.glide = null; p0.hang = 0; p0.oob = false; p0.blocking = false; p0.landing = null; p0.shooting = null; p0.stepTo = null; p0.charge = 0; p0.drive = 0; }
+      for (const p0 of this.all()) { p0.goTo = null; p0.screen = null; p0.cut = null; p0.anim = null; p0.glide = null; p0.hang = 0; p0.oob = false; p0.blocking = false; p0.landing = null; p0.shooting = null; p0.stepTo = null; p0.charge = 0; p0.drive = 0; }
       this.poss = side; this.shot = Math.max(this.shot, 14); this.state = 'inbound'; this.wait = 1.1; this.ball.flight = null;
       this.deadBall();
       const P5 = this.T[side].P, bx = clamp(x, 6, LEN - 6), hd = this.T[side].handler && P5.includes(this.T[side].handler) ? this.T[side].handler : P5[0];
       const inb = P5.filter(p => p !== hd).sort((a, b) => Math.hypot(a.x - bx, a.y) - Math.hypot(b.x - bx, b.y))[0] || P5[0];
-      inb.x = bx; inb.y = 0.5; inb.oob = true; inb.z = 0; inb.vz = 0;
-      if (dist(hd, inb) < 5) { hd.x = bx + this.dir(side) * 4; hd.y = 9; }
+      inb.z = 0; inb.vz = 0; inb.goTo = { x: bx, y: -0.5, oob: true }; this.wait = 2.4;
+      hd.goTo = { x: clamp(bx + this.dir(side) * 5, 3, LEN - 3), y: 9 };
       this.fcSide = side; this.frontcourt = (bx - LEN / 2) * this.dir(side) > 0; this.backT = 0;
       this.give(inb); this.pickCtrl();
     }
@@ -7133,9 +7145,9 @@ const ARC = (() => {
     function showHalf() {
       const B = game.box(), tot = b => b.rows.reduce((a, r) => { for (const k of ['fgm', 'fga', 'tpm', 'tpa', 'ftm', 'fta', 'reb', 'ast', 'stl', 'blk', 'tov']) a[k] = (a[k] || 0) + (r[k] || 0); return a; }, {});
       const A = tot(B[0]), H = tot(B[1]), pc = (m, a) => `${m}/${a}${a ? ' (' + Math.round(m / a * 100) + '%)' : ''}`;
-      const rows = [['Field goals', pc(A.fgm, A.fga), pc(H.fgm, H.fga)], ['3-pointers', pc(A.tpm, A.tpa), pc(H.tpm, H.tpa)], ['Free throws', pc(A.ftm, A.fta), pc(H.ftm, H.fta)], ['Rebounds', A.reb, H.reb], ['Assists', A.ast, H.ast], ['Steals', A.stl, H.stl], ['Blocks', A.blk, H.blk], ['Turnovers', A.tov, H.tov]];
+      const rows = [['Field goals', pc(A.fgm, A.fga), pc(H.fgm, H.fga)], ['3-pointers', pc(A.tpm, A.tpa), pc(H.tpm, H.tpa)], ['Free throws', pc(A.ftm, A.fta), pc(H.ftm, H.fta)], ['Rebounds', A.reb, H.reb], ['Assists', A.ast, H.ast], ['Steals', A.stl, H.stl], ['Blocks', A.blk, H.blk], ['Turnovers', A.tov, H.tov], [`Team fouls (${qName(game.q)})`, game.teamFouls(0), game.teamFouls(1)], ['Biggest lead', (game.big || [0, 0])[0], (game.big || [0, 0])[1]], ['Timeouts left', game.timeouts[0], game.timeouts[1]]];
       const d = document.createElement('div'); d.className = 'arc-end pog arc-half';
-      d.innerHTML = `<div class="mh mhb"><span>HALFTIME</span><button class="go" data-y="half">Start 2nd half ▶</button></div>${teamHead()}${lineScore()}<table class="ts"><tr class="h"><th>${game.T[0].abbr}</th><th>TEAM STATS</th><th>${game.T[1].abbr}</th></tr>${rows.map(r => `<tr><td>${r[1]}</td><td class="m">${r[0]}</td><td>${r[2]}</td></tr>`).join('')}</table>
+      d.innerHTML = `<div class="mh mhb"><span>${game.q === 2 ? 'HALFTIME' : game.q >= 4 ? (game.q === 4 ? 'END OF REGULATION' : 'END OF ' + qName(game.q)) : 'END OF THE ' + qName(game.q) + ' QUARTER'}</span><button class="go" data-y="half">${game.q === 2 ? 'Start 2nd half' : game.q >= 4 ? 'Start overtime' : 'Start the ' + qName(game.q + 1)} ▶</button></div>${teamHead()}${lineScore()}<table class="ts"><tr class="h"><th>${game.T[0].abbr}</th><th>TEAM STATS</th><th>${game.T[1].abbr}</th></tr>${rows.map(r => `<tr><td>${r[1]}</td><td class="m">${r[0]}</td><td>${r[2]}</td></tr>`).join('')}</table>
         <div class="tops">${topCard(game.T[0])}${topCard(game.T[1])}</div>`;
       fillPortraits(d);
       d.querySelector('[data-y="half"]').addEventListener('click', () => { game.half = false; game.wait = 0.4; d.remove(); });
@@ -7714,6 +7726,7 @@ const HELP = [
 <li><b>Crossover</b>: tap Cross and your ball handler jabs about 3 feet to the other side and bursts out of it, guarded or not. Against a close defender it works about half the time (better handlers more often): he bites the wrong way and is frozen for a moment, and once in a while he ends up on the floor. A failed cross can get stripped.</li>
 <li><b>Game setup</b> (on the matchup screen): Difficulty — Rookie (your shots fall more, a wider green window, the computer's shots fall less and its hands are slower), Pro (even), All-Star (the other way); quarter length; and Control — You vs CPU, or CPU vs CPU to watch the game play itself. Your choices are remembered.</li>
 <li><b>Play your real games</b>: on the Office tab, next to Sim next game, tap <b>Play it in arcade</b> (playoffs too). The arcade score decides who wins and roughly by how much; the sim engine then builds a full-length NBA box score that leans on what each player did in your game (minutes, points, threes, free throws, rebounds, assists, steals, blocks, turnovers), and that is what goes into the standings and the stat history. Any difficulty counts. Quit partway (Pause → Sim / Quit) and the rest of the game is simmed, weighted by how much you played.</li>
+<li><b>Dead balls</b>: after a foul the call stays on screen (who fouled, team foul count or shots) while everyone jogs to the inbound spot or lines up on the lane; nobody teleports. After every quarter a break screen shows the score, line score, team stats, team fouls for the quarter, biggest lead, timeouts and top performers until you tap Start.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7955,7 +7968,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24p';
+const APP_VERSION = '2026-11-24q';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
