@@ -511,6 +511,11 @@ table.ts { width: 100%; border-collapse: separate; border-spacing: 0 3px; margin
 .arc-match .mh.mhb { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 0; z-index: 2; text-align: left; flex: none; }
 .arc-match .mh.mhb button { font: 800 15px/1.1 system-ui, sans-serif; letter-spacing: 0; padding: 9px 16px; background: #1a8f4a; border: 3px solid #4ade80; color: #fff; }
 @media (max-height: 500px) { .arc-match .mh.mhb button { padding: 6px 12px; font-size: 13px; } }
+/* phones: the player card moves to the top-left corner and shrinks, so it never sits on the baseline */
+@media (max-height: 500px) {
+  .arc-card { left: max(8px, env(safe-area-inset-left)) !important; transform: none !important; top: max(6px, env(safe-area-inset-top)); bottom: auto !important; min-width: 0 !important; zoom: 0.72; opacity: .94; }
+  .arc-tip { top: calc(max(6px, env(safe-area-inset-top)) + 96px) !important; }
+}
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -6767,11 +6772,11 @@ const ARC = (() => {
     root.appendChild(cv); root.appendChild(ui); ui.classList.add('arc-ui');
     let w = 0, h = 0, dpr = 1, camX = 47;
     const inp = { jx: 0, jy: 0 }, edge = {}, keys = {};
-    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; PH = camFar ? clamp(Math.min(Math.round(h / 1.5), Math.round((LEN + 2 * MARGIN) * SC * h / Math.max(1, w))), 150, 440) : clamp(Math.round(h / 2.7), 140, 320); PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW * RS; pc.height = PH * RS; }
+    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; shortScr = h < 500; PH = camFar ? clamp(Math.min(Math.round(h / 1.5), Math.round((LEN + 2 * MARGIN) * SC * h / Math.max(1, w))), 150, 440) : shortScr ? clamp(Math.round(h / 2.15), 150, 240) : clamp(Math.round(h / 2.7), 140, 320); /* phones: a bit wider so the whole court depth fits */ PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW * RS; pc.height = PH * RS; }
     // Pixel-art view: everything is drawn into a small canvas (PH pixels tall) and scaled up with no smoothing.
     // 3/4 top-down camera that follows the ball along the length of the court.
     // SC = pixels per foot. Players are drawn small next to the court (about 3.5 ft tall) like classic arcade games.
-    let PH = 240, camFar = (() => { try { return localStorage.getItem('arcCam') === 'far'; } catch (e) { return false; } })(); const SC = 5, SYF = 0.66, MARGIN = 9, CROWD = 70;
+    let PH = 240, camFar = (() => { let v = null; try { v = localStorage.getItem('arcCam'); } catch (e) {} return v ? v === 'far' : (window.innerHeight || 999) < 500; })(); /* phones start in full court */ const SC = 5, SYF = 0.66, MARGIN = 9, CROWD = 70;
     const pc = document.createElement('canvas'), px = pc.getContext('2d');
     let PW = 320, world = null, camY = 25;
     const RS = 2;   // the pixel canvas is drawn at 2x: court and ball in 2x2 blocks, players in single pixels for more detail
@@ -6779,7 +6784,9 @@ const ARC = (() => {
     const wx = x => (x + MARGIN) * SC, wy = (y, z) => CROWD + 3 * SC * SYF + y * SC * SYF - (z || 0) * SC * 0.8;
     const WORLD_H = Math.ceil(wy(W) + 3 * SC * SYF + CROWD);
     const camPx = () => clamp(wx(camX) - PW / 2, 0, Math.max(0, world.width - PW));
-    const camPy = () => clamp(wy(camY) - PH * 0.55, 0, WORLD_H - PH);
+    let shortScr = false;
+    // On phones keep the crowd to a thin strip so the court gets the screen; elsewhere the crowd and hanging scoreboard show
+    const camPy = () => { const lo = shortScr ? CROWD - 12 : 0, hi = WORLD_H - PH - (shortScr ? CROWD - 12 : 0); return hi < lo ? Math.round((lo + hi) / 2) : clamp(wy(camY) - PH * 0.55, lo, hi); };
     const toScr = (x, y, z) => [Math.round(wx(x) - camPx()), Math.round(wy(y, z) - camPy())];
     size(); window.addEventListener('resize', size);
     game.spriteFt = 29 / (SC * 0.8);   // how tall a player sprite is in feet of height on this court (for dunks)
@@ -7938,7 +7945,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24n';
+const APP_VERSION = '2026-11-24o';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
