@@ -5868,7 +5868,7 @@ const ARC = (() => {
       this.q = 1; this.clock = this.qsec; this.shot = 24; this.poss = 0; this.state = 'inbound'; this.wait = 1.2;
       this.ball = { x: 47, y: 25, z: 4, holder: null, flight: null, lastPasser: null };
       this.ctrl = [null, null]; this.log = []; this.msg = ''; this.msgT = 0; this.over = false; this.t = 0; this.jumpHold = null;
-      this.setupInbound(0, true);
+      this.setupJump();
       if (this.user != null) this.say('Hold SHOOT, let go at the top of the jump', 3.5);
     }
     hoopOf(side) { return { x: side === 0 ? HOOP[1] : HOOP[0], y: HY }; } // the hoop this side attacks: user (side 0) attacks right
@@ -5917,6 +5917,7 @@ const ARC = (() => {
       if (this.over) return;
       inp = inp || {}; this.t += dt; if (this.msgT > 0) this.msgT -= dt;
       for (const pl of this.all()) if (pl.anim) { pl.anim.t += dt; if (pl.anim.t >= pl.anim.T) pl.anim = null; }
+      if (this.state === 'jump') { this.jumpStep(dt, inp); return; }
       if (this.state === 'made') {   // a short pause after a basket: the ball drops through the net, a dunker hangs on the rim
         this.wait -= dt; const b = this.ball; b.z = Math.max(0, b.z - dt * 14); this.moveAll(dt, {});
         if (this.wait <= 0) { const side = this.madeBy; this.madeBy = null; this.setupInbound(1 - side); }
@@ -6153,7 +6154,44 @@ const ARC = (() => {
       if (this.q >= 4 && this.T[0].score !== this.T[1].score) { this.over = true; this.state = 'end'; this.say('Final', 99); return; }
       this.state = 'break'; this.wait = 2.2; this.say(this.q >= 4 ? 'Tied! Overtime' : `End of Q${this.q}`, 2.2);
     }
-    nextQuarter() { this.q++; this.clock = this.q > 4 ? Math.round(this.qsec / 2) : this.qsec; this.setupInbound(this.q % 2 === 0 ? 1 : 0); }
+    // Quarters 2 and 3 go to the team that lost the opening tip, the 4th to the team that won it; overtime starts with a new jump ball.
+    nextQuarter() { this.q++; this.clock = this.q > 4 ? Math.round(this.qsec / 2) : this.qsec; if (this.q > 4) return this.setupJump(); const w = this.tipWin || 0; this.setupInbound(this.q === 4 ? w : 1 - w); }
+    /* ----- jump ball: centers face off in the center circle; the ref tosses it; time your JUMP as it comes down ----- */
+    setupJump() {
+      this.state = 'jump'; this.jt = 0; this.poss = -1; this.shot = 24; this.tipDone = false;
+      const b = this.ball; b.holder = null; b.flight = null; b.x = 47; b.y = HY; b.z = 4; b.vz = 0; b.lastPasser = null;
+      const spots = [[-8, -7], [-8, 7], [-3, -11], [-3, 11]];
+      this.T.forEach((T, side) => { const d = side === 0 ? -1 : 1;
+        T.P.forEach(pl => { pl.z = 0; pl.vz = 0; pl.anim = null; pl.glide = null; pl.hang = 0; pl.oob = false; pl.jumpAt = null; });
+        const c = T.P[4]; c.x = 47 + d * 1.3; c.y = HY;
+        T.P.slice(0, 4).forEach((pl, i) => { pl.x = 47 + d * Math.abs(spots[i][0]) * (i < 2 ? 1 : -1); pl.y = HY + spots[i][1] + (side ? 1.5 : -1.5); });
+        // jump-ball AI: the computer's center jumps around the right moment
+        c.jumpAt = side === this.user ? null : 0.6 + 19 / G_ACC - 0.15 + rnd(-0.28, 0.28);
+      });
+      if (this.user != null) { this.ctrl[this.user] = this.T[this.user].P[4]; this.say(this.q > 4 ? 'Overtime jump ball! Tap JUMP as the ball comes down' : 'Jump ball! Tap JUMP as the ball comes down', 2.6); }
+    }
+    jumpStep(dt, inp) {
+      this.jt += dt; const b = this.ball, TOSS = 0.6;
+      if (this.jt >= TOSS && b.vz === 0 && b.z === 4) b.vz = 19;
+      if (this.jt >= TOSS) { b.z += b.vz * dt; b.vz -= G_ACC * dt; if (b.z < 0) b.z = 0; }
+      for (const T of this.T) { const c = T.P[4];
+        const userC = this.user != null && c.side === this.user;
+        if (!c.jumped && ((userC && (inp.jump || inp.shootDown)) || (!userC && c.jumpAt != null && this.jt >= c.jumpAt))) { c.jumped = this.jt; c.vz = 13 + c.r.reb * 2; c.z = 0.01; }
+        if (c.z > 0 || c.vz > 0) { c.z += c.vz * dt; c.vz -= G_ACC * dt; if (c.z <= 0) { c.z = 0; c.vz = 0; } }
+      }
+      const apex = TOSS + 19 / G_ACC;
+      if (!this.tipDone && this.jt >= apex + 0.38) {
+        // best moment to leave the floor is just before the ball peaks; height and leaping (rebounding) help too
+        const score = c => (c.jumped ? clamp(1 - Math.abs(c.jumped - (apex - 0.15)) / 0.45, 0, 1) : 0) * 0.65 + c.r.reb * 0.25 + (c.r.height - 6.8) * 0.2 + rnd(0, 0.18);
+        const c0 = this.T[0].P[4], c1 = this.T[1].P[4], win = score(c0) >= score(c1) ? 0 : 1, wc = this.T[win].P[4];
+        this.tipDone = true; this.tipWin = win; this.poss = win;
+        b.x = wc.x; b.y = wc.y; b.z = 9;
+        const to = this.T[win].P[Math.random() < 0.6 ? 0 : 1];
+        for (const T of this.T) { T.P[4].jumped = null; }
+        this.pass(wc, to); this.ball.lastPasser = null; this.shot = 24; this.pickCtrl(true);
+        this.say(`${this.T[win].abbr} win the tip`, 1.4);
+      }
+    }
     box() { return this.T.map(t => ({ abbr: t.abbr, score: t.score, rows: t.P.map(pl => ({ name: pl.p.name, pos: pl.p.pos, ...pl.st })) })); }
   }
   function short(p) { const n = p.name.split(' '); return n.length > 1 ? n.slice(1).join(' ') : p.name; }
@@ -6399,6 +6437,7 @@ const ARC = (() => {
       const items = game.all().map(pl => ({ y: pl.y, f: () => drawPlayer(pl, shift) }));
       items.push({ y: b.y + 0.05, f: () => drawBall(shift) });
       items.push({ y: HY - 1.5, f: () => { drawHoop(0, shift); drawHoop(1, shift); } });
+      if (game.state === 'jump') items.push({ y: HY + 3, f: () => drawRef(shift) });
       items.sort((a, bb) => a.y - bb.y).forEach(it => it.f());
       drawMeter();
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
@@ -6482,6 +6521,16 @@ const ARC = (() => {
       micro(px, T[1].score, mx + wMid + Math.round((wScore - microW(T[1].score, sc2)) / 2), y0 + 5, sc2, '#ffffff');
       team(T[1], mx + wMid + wScore);
     }
+    // the referee tossing the jump ball: striped shirt, black pants, arm up after the toss
+    function drawRef(sh) {
+      const [x0, y0] = toScr(47, HY + 3, 0), x = x0 + sh, R = (a, b2, w2, h2, c2) => { px.fillStyle = c2; px.fillRect(x + a, y0 + b2, w2, h2); };
+      px.fillStyle = 'rgba(0,0,0,.28)'; px.beginPath(); px.ellipse(x, y0, 5, 2, 0, 0, Math.PI * 2); px.fill();
+      R(-4, -26, 8, 27, 'rgba(20,14,10,.85)');
+      R(-3, -2, 2, 2, '#111'); R(1, -2, 2, 2, '#111'); R(-3, -10, 2, 8, '#222'); R(1, -10, 2, 8, '#222');
+      R(-3, -17, 6, 7, '#f4f4f4'); R(-2, -17, 1, 7, '#111'); R(0, -17, 1, 7, '#111'); R(2, -17, 1, 7, '#111');
+      R(-2, -23, 4, 5, '#c68863'); R(-2, -23, 4, 1, '#2e1d10');
+      if (game.jt > 0.6) R(3, -25, 1, 8, '#c68863'); else R(-4, -16, 1, 5, '#c68863');
+    }
     function drawBall(sh) {
       const b = game.ball, [sx2, sy2] = toScr(b.x, b.y, 0), [bx0, by] = toScr(b.x, b.y, b.z), bx = bx0 + sh;
       const hb = b.holder; let x = bx, y = by;
@@ -6553,13 +6602,16 @@ const HELP = [
 </ul>` },
 
 { id: 'arcade', t: 'Arcade game (beta)', tabs: [], b: `
-<p>Play a game yourself, side view, five on five, with your starting five against any team. It's an exhibition for now: it doesn't count in the standings or player stats. Start it from the Office tab, pick an opponent and the quarter length (1, 2, 3 or 5 minutes). Best with the iPad turned sideways.</p>
+<p>Play a game yourself, five on five on a pixel-art court seen from above, with your starting five against any team. It's an exhibition for now: it doesn't count in the standings or player stats. Start it from the Office tab, pick an opponent and the quarter length (1, 2, 3 or 5 minutes). Best with the iPad turned sideways.</p>
 <ul>
 <li><b>Move</b>: put a finger anywhere on the left side and drag; the stick follows your thumb.</li>
 <li><b>Offense</b>: you control whoever has the ball. <b>Pass</b> goes to the teammate in the direction you're pushing (or the most open man if you aren't pushing). <b>Shoot</b>: hold it to jump and let go at the top of the jump. The better your timing, the better the shot; close to the rim, strong players dunk.</li>
 <li><b>Defense</b>: you control one defender (ringed in yellow). <b>Switch</b> to the defender nearest the ball, <b>Steal</b> when you're close to the ball handler, <b>Jump</b> to contest or block a shot.</li>
 <li><b>Ratings matter about as much as your play</b>: speed, shooting, passing, steals, blocks and rebounding all come from the players' real numbers. Good defenders make shots harder, and the three-point line appears from 1979-80.</li>
-<li>The shot clock is 24 seconds. Shooting fouls send a player to the line. Tied after four quarters means overtime.</li>
+<li><b>Jump ball</b>: the game and each overtime start with a tip-off. You control your center: tap <b>Jump</b> just before the ball peaks. Timing matters most; height and leaping help. The team that loses the opening tip gets the ball to start the 2nd and 3rd quarters, the winner the 4th.</li>
+<li><b>Inbounds</b>: every possession starts with a pass in from under the basket. Tap <b>Pass</b> to inbound right away.</li>
+<li><b>Shot meter</b>: the bar next to your shooter fills as he rises and turns green at the top of the jump. Close to the rim, players drive in for a layup, and dunkers slam it and hang on the rim.</li>
+<li>The shot clock is 24 seconds. Shooting fouls send a player to the line (and to the floor). Tied after four quarters means overtime.</li>
 </ul>` },
 
 { id: 'roster', t: 'Roster tab', tabs: ['roster'], b: `
@@ -6786,7 +6838,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23c';
+const APP_VERSION = '2026-11-23d';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
