@@ -6344,7 +6344,7 @@ const ARC = (() => {
       if (pl.r.dunk && d < (this.laneClear(pl) ? 8 : 4)) { pl.shooting.t = pl.shooting.apex; this.releaseShot(pl); }
     }
     releaseShot(pl) {
-      const s = pl.shooting; if (!s || this.ball.holder !== pl) return;
+      const s = pl.shooting; if (!s) return; if (this.ball.holder !== pl) { delete pl.shooting; return; }   // lost the ball on the way up: arms come down
       const h = this.hoopOf(pl.side), d = dist(pl, h), three = this.isThree(pl), dfn = this.nearestDef(pl), open = dfn ? dist(dfn, pl) : 20;
       const timing = clamp(1 - Math.abs(s.t - s.apex) / (s.apex * 1.1), 0, 1);       // 1 = released right at the top
       // dunkers throw it down from up to 8 feet when nobody is directly between them and the rim (4 feet when somebody is)
@@ -6462,6 +6462,7 @@ const ARC = (() => {
         }
         for (const pl of this.all()) if (pl.stealCd) pl.stealCd = Math.max(0, pl.stealCd - dt);
       }
+      for (const pl of this.all()) if (pl.shooting && (this.ball.holder !== pl || pl.shooting.ft)) delete pl.shooting;   // nobody keeps his arms up without the ball
       for (const pl of this.all()) if (pl.shooting) {
         pl.shooting.t += dt;
         const userShot = pl.shooting.user;
@@ -7857,7 +7858,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24i';
+const APP_VERSION = '2026-11-24j';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
