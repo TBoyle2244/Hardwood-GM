@@ -479,6 +479,7 @@ svg.chart .mk { fill: #22c55e; stroke: #063; stroke-width: .25; } svg.chart .ms 
 /* halftime team stats */
 table.ts { width: 100%; border-collapse: separate; border-spacing: 0 3px; margin: 4px 0 8px; font-size: 13px; } table.ts td, table.ts th { background: #1557b4; padding: 5px 8px; text-align: center; font-variant-numeric: tabular-nums; color: #fff; } table.ts tr.h th { background: #0a2a66; font: 900 12px "Courier New", monospace; } table.ts td.m { color: #bfe0ff; font-weight: 700; }
 .arc-half .tops .top .tt { font-size: 11px; }
+.thd .tp small { font: 800 10px/1.3 "Courier New", monospace; color: #ffe9a8; }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -6194,7 +6195,7 @@ const ARC = (() => {
       const hb = this.ball.holder;
       if (hb && this.state === 'live' && Math.hypot(hb.vx, hb.vy) > 4) for (const d of this.T[1 - hb.side].P) if (d.charge > 0 && dist(d, hb) < 1.6) {
         d.charge = 0; if (Math.random() < 0.45 + d.r.def * 0.25) { this.foul(hb); hb.st.tov++; hb.anim = { k: 'fall', t: 0, T: 1 }; this.say(`Charge! ${short(d.p)} takes it`); this.setupInbound(1 - hb.side); return; }
-        this.foul(d); this.say(`Blocking foul on ${short(d.p)}`, 1.4); break;
+        this.defFoul(d, hb, 'Blocking foul'); return;
       }
       // keep players from standing on each other
       const A = this.all();
@@ -6322,9 +6323,9 @@ const ARC = (() => {
       if (blocked) { dfn.st.blk++; this.say(`Blocked by ${short(dfn.p)}!`); }
       if (pl.side === this.user && !dunk) this.timingNote = timing;
     }
-    foulShot(pl, n, and1) {
+    foulShot(pl, n, and1, quiet) {
       if (and1) { const pts = n === 3 ? 3 : 2; pl.st.fga++; pl.st.fgm++; if (n === 3) { pl.st.tpa++; pl.st.tpm++; } this.T[pl.side].score += pts; this.qpts(pl.side, pts); pl.st.pts += pts; n = 1; this.say('And one!'); }
-      else { pl.st.fga += 0; this.say('Shooting foul'); }
+      else if (!quiet) { pl.st.fga += 0; this.say('Shooting foul'); }
       this.state = 'ft'; this.wait = 1.3; this.fts = { pl, n }; this.ball.holder = pl; pl.anim = { k: 'fall', t: 0, T: 1.2 }; pl.glide = null;
     }
     shootFTs() {
@@ -6361,7 +6362,7 @@ const ARC = (() => {
             me.stealCd = 0.8; const h = b.holder;
             const pS = 0.08 + me.r.stl * 0.18 - h.r.pass * 0.06;
             if (Math.random() < pS) { me.st.stl++; h.st.tov++; this.say(`Steal by ${short(me.p)}!`); this.give(me); this.poss = me.side; this.shot = 24; this.pickCtrl(); return; }
-            if (Math.random() < 0.12) { this.foul(me); this.say(`Reach-in foul on ${short(me.p)}`); }
+            if (Math.random() < 0.12) { this.defFoul(me, h, 'Reach-in foul'); return; }
           }
         }
         for (const pl of this.all()) if (pl.stealCd) pl.stealCd = Math.max(0, pl.stealCd - dt);
@@ -6376,6 +6377,7 @@ const ARC = (() => {
         if (user != null && pl === this.ctrl[user]) continue;
         const sh = this.T[this.poss].P.find(x => !!x.shooting);
         if (sh && dist(pl, sh) < 3.2 && pl.z === 0 && Math.random() < 0.12 + pl.r.blk * 0.1) { pl.vz = 11 + pl.r.blk * 2; pl.z = 0.01; }
+        if (b.holder && b.holder.side !== pl.side && dist(pl, b.holder) < 2.6 && !b.holder.oob && Math.random() < 0.0011 * (1.6 - pl.r.def)) { this.defFoul(pl, b.holder, 'Reach-in foul'); return; }   // the computer reaches too, and sometimes gets whistled
         if (b.holder && b.holder.side !== pl.side && dist(pl, b.holder) < 2.6 && Math.random() < 0.0012 * (0.5 + pl.r.stl) * (1.35 - b.holder.r.pass) * pl.r.def) {
           pl.st.stl++; b.holder.st.tov++; this.reach = (this.reach || 0) + 1; this.say(`Steal by ${short(pl.p)}!`); this.give(pl); this.poss = pl.side; this.shot = 24; this.pickCtrl(); return;
         }
@@ -6540,7 +6542,29 @@ const ARC = (() => {
     }
     foul(pl, kind) {
       if (!pl) return; pl.st.pf++;
+      const T = this.T[pl.side]; T.tf = T.tf || {}; T.tf[this.q] = (T.tf[this.q] || 0) + 1;   // team fouls, per quarter
       if (pl.st.pf >= 6 && !pl.fouledOut) { pl.fouledOut = true; this.say(`${short(pl.p)} has fouled out`, 2); }
+    }
+    // Team fouls in this period, and how many put the other team in the bonus (4 a quarter in short arcade quarters, 5 in 10+ minute quarters, 3 in overtime).
+    teamFouls(side) { return (this.T[side].tf || {})[this.q] || 0; }
+    bonusAt() { return this.q > 4 ? 3 : this.qsec >= 600 ? 5 : 4; }
+    // A non-shooting defensive foul (reach-in, blocking): the whistle stops play. In the bonus the fouled player shoots two; otherwise his team inbounds from the sideline.
+    defFoul(d, o, why) {
+      this.foul(d); const n = this.teamFouls(d.side), bonus = n >= this.bonusAt();
+      if (bonus) { this.foulShot(o, 2, false, true); this.say(`${why} on ${short(d.p)} · Bonus, 2 shots`, 2); }
+      else { this.sideOut(o.side, o.x); this.say(`${why} on ${short(d.p)} · Team foul ${n} of ${this.bonusAt()}`, 2); }
+    }
+    // Inbound from the sideline at the spot of the foul; the shot clock goes back up to at least 14.
+    sideOut(side, x) {
+      for (const p0 of this.all()) { p0.screen = null; p0.cut = null; p0.anim = null; p0.glide = null; p0.hang = 0; p0.oob = false; p0.blocking = false; p0.landing = null; p0.shooting = null; p0.stepTo = null; p0.charge = 0; p0.drive = 0; }
+      this.poss = side; this.shot = Math.max(this.shot, 14); this.state = 'inbound'; this.wait = 1.1; this.ball.flight = null;
+      this.deadBall();
+      const P5 = this.T[side].P, bx = clamp(x, 6, LEN - 6), hd = this.T[side].handler && P5.includes(this.T[side].handler) ? this.T[side].handler : P5[0];
+      const inb = P5.filter(p => p !== hd).sort((a, b) => Math.hypot(a.x - bx, a.y) - Math.hypot(b.x - bx, b.y))[0] || P5[0];
+      inb.x = bx; inb.y = 0.5; inb.oob = true; inb.z = 0; inb.vz = 0;
+      if (dist(hd, inb) < 5) { hd.x = bx + this.dir(side) * 4; hd.y = 9; }
+      this.fcSide = side; this.frontcourt = (bx - LEN / 2) * this.dir(side) > 0; this.backT = 0;
+      this.give(inb); this.pickCtrl();
     }
     deadBall() { for (const side of [0, 1]) if (this.user !== side || this.autoSub[side] || this.T[side].P.some(p => p.fouledOut)) this.autoSubs(side); }
     /* ----- ball-handler moves ----- */
@@ -6724,7 +6748,8 @@ const ARC = (() => {
     const topOf = T => allOf(T).slice().sort((a, b) => (b.st.pts - a.st.pts) || (b.st.reb + b.st.ast - a.st.reb - a.st.ast))[0];
     function teamHead() {
       const T0 = game.T[0], T1 = game.T[1], q = game.over ? 'FINAL' : qName(game.q);
-      const pn = (T, r) => `<div class="tp${r ? ' r' : ''}" style="background:${T.pri}"><b>${(T.city || '').toUpperCase()}</b><b>${(T.nick || T.name || T.abbr).toUpperCase()}</b></div>`, sc = T => `<div class="sc">${T.score}</div>`;
+      const tf = T => { const n = game.teamFouls(T.side), bon = n >= game.bonusAt(); return game.over ? '' : `<small>FOULS ${n}${game.teamFouls(1 - T.side) >= game.bonusAt() ? ' · BONUS' : ''}</small>`; };
+      const pn = (T, r) => `<div class="tp${r ? ' r' : ''}" style="background:${T.pri}"><b>${(T.city || '').toUpperCase()}</b><b>${(T.nick || T.name || T.abbr).toUpperCase()}</b>${tf(T)}</div>`, sc = T => `<div class="sc">${T.score}</div>`;
       return `<div class="thd">${pn(T0)}${sc(T0)}<div class="qc">${q}<span>${game.over ? '' : clk(game.clock)}</span></div>${sc(T1)}${pn(T1, true)}</div>`;
     }
     function topCard(T) {
@@ -7385,6 +7410,7 @@ const HELP = [
 <li><b>Auto defense</b> (Settings, on by default): your defender guards his man by himself until you move the joystick. You still press Block, Steal and Charge yourself.</li>
 <li><b>Who to guard</b>: on defense, a small yellow arrow on the circle under your player points at the man you're guarding.</li>
 <li><b>TV graphics</b>: both starting fives show at the start of each half, the scorer's card pops up after a basket, and halftime shows team stats and top performers until you tap Start 2nd half.</li>
+<li><b>Fouls and the bonus</b>: a reach-in or blocking foul stops play. The other team inbounds from the sideline at the spot of the foul (shot clock back to at least 14). Every foul counts as a team foul for the quarter; after 4 team fouls in a quarter (5 in quarters of 10 minutes or more, 3 in overtime), every non-shooting foul gives the fouled player 2 free throws. Team fouls and BONUS show in the pause menu.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7626,7 +7652,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24a';
+const APP_VERSION = '2026-11-24b';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
