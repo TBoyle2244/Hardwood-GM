@@ -5989,6 +5989,18 @@ const ARC = (() => {
       if (this.poss === this.user && this.ball.holder && this.ball.holder.side === this.user) { this.ctrl[this.user] = this.ball.holder; return; }
       if (force || !this.ctrl[this.user] || this.ctrl[this.user].side !== this.user) this.ctrl[this.user] = me.P.slice().sort((a, b) => dist(a, this.ball) - dist(b, this.ball))[0];
     }
+    // Man-to-man matchups by position: guards on guards, forwards on forwards, bigs on bigs (height breaks ties).
+    // Worked out again whenever either lineup changes.
+    markOf(pl) {
+      const D = this.T[pl.side].P, O = this.T[1 - pl.side].P, key = D.map(p => p.p.id).join(',') + '|' + O.map(p => p.p.id).join(',');
+      const T = this.T[pl.side];
+      if (T.markKey !== key) {
+        const ord = p => ({ PG: 1, SG: 2, SF: 3, PF: 4, C: 5 }[p.p.pos] || 3) + p.r.height * 0.3;
+        const ds = D.slice().sort((a, b) => ord(a) - ord(b)), os = O.slice().sort((a, b) => ord(a) - ord(b));
+        T.marks = new Map(ds.map((d, i) => [d, os[i]])); T.markKey = key;
+      }
+      return T.marks.get(pl) || O[pl.i];
+    }
     switchDef() {
       if (this.user == null || this.poss === this.user) return;
       const me = this.T[this.user].P, cur = this.ctrl[this.user];
@@ -6056,7 +6068,7 @@ const ARC = (() => {
           }
         } else {
           // man-to-man: stay between your man and the hoop, closer when he has the ball
-          const man = this.T[off].P[pl.i], onBall = man === this.ball.holder;
+          const man = this.markOf(pl), onBall = man === this.ball.holder;
           const k = onBall ? 0.18 : 0.38 + (dist(man, this.ball) > 20 ? 0.15 : 0);
           tx = man.x + (h.x - man.x) * k; ty = man.y + (HY - man.y) * k;
           if (this.state === 'shot' && dist(pl, h) < 14) { tx = (tx + h.x) / 2; ty = (ty + HY) / 2; } // box out near the rim
@@ -7118,6 +7130,7 @@ const HELP = [
 <ul>
 <li><b>Move</b>: put a finger anywhere on the left side and drag; the stick follows your thumb.</li>
 <li><b>Offense pad</b> (bottom right): <b>Shoot</b>: hold, let go at the top of the jump (a quick tap is a pump fake). <b>Pass</b>: tap to pass toward where you're pushing, hold for a lob; lob to a dunker near the rim for an alley-oop. A <b>thought bubble with a ball</b> over a teammate means he's ready for the lob; hold Pass without pushing the stick and the lob goes to him. He takes off as the ball comes down, catches it in the air and slams it. <b>Cross</b>: tap for a crossover, hold to hesitate. <b>Step</b>: tap for a step-back, hold to spin. Swipes on the right side work too: swipe down and hold to shoot, left/right to cross, up to spin, tap to pass, hold to lob.</li>
+<li><b>Matchups</b>: on defense, players guard their position: guards on guards, forwards on forwards, centers on centers. Subs change the matchups.</li>
 <li><b>Defense pad</b>: <b>Steal</b> swipes at the ball, <b>Block</b> jumps to contest, <b>Charge</b> plants your feet (if the driver runs into you it's an offensive foul, but a late slide is a blocking foul), <b>Switch</b> takes the defender nearest the ball.</li>
 <li><b>Moves beat defenders</b>: a crossover, hesitation, spin or step-back freezes the man guarding you for a moment. Good ball handlers and quick players win more often; a sloppy crossover against a good thief can get stripped.</li>
 <li><b>Energy and substitutions</b>: players tire on the floor (faster when they run hard) and recover on the bench. Tired players are slower and miss more. Pause (II) and open Substitutions to see each player's energy, minutes, points, fouls and ratings, and to swap players (tap a starter, then a bench player). Auto substitutions are on unless you turn them off in Settings. Six fouls and a player is out.</li>
@@ -7358,7 +7371,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23s';
+const APP_VERSION = '2026-11-23t';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
