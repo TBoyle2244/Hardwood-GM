@@ -6000,7 +6000,33 @@ const ARC = (() => {
     dal: ['#00538c', '#b8c4ca'], hou: ['#ce1141', '#c4ced4'], mem: ['#5d76a9', '#12173f'], nop: ['#00788c', '#1d1160'], sas: ['#3a3f45', '#c4ced4'],
     den: ['#0e2240', '#fec524'], min: ['#0c2340', '#78be20'], okc: ['#007ac1', '#ef3b24'], por: ['#e03a3e', '#1a1a1a'], uta: ['#002b5c', '#f9a01b'],
     gsw: ['#1d428a', '#ffc72c'], lac: ['#c8102e', '#1d428a'], lal: ['#552583', '#fdb927'], pho: ['#1d1160', '#e56020'], sac: ['#5a2d81', '#63727a'] };
-  const tcol = (key, tid) => TC[key] || [color(tid), '#f4f1ea'];
+  // Team colors by era (first season of each look). Keys are franchises, so a team keeps its history through moves and renames.
+  const ERA = {
+    atl: [[1976, '#e03a3e', '#fdb927'], [1995, '#c8102e', '#1a1a1a'], [2007, '#e03a3e', '#0c2340'], [2015, '#e03a3e', '#c1d32f']],
+    lac: [[1976, '#1d4e9e', '#ef7b00'], [1978, '#3a8ddb', '#f58426'], [1984, '#c8102e', '#1d428a']],
+    bkn: [[1976, '#c8102e', '#1d428a'], [1990, '#002a60', '#cd1041'], [2012, '#1a1a1a', '#c4ced4']],
+    phi: [[1976, '#1d428a', '#ed174c'], [1997, '#1a1a1a', '#ed174c'], [2009, '#006bb6', '#ed174c']],
+    cle: [[1976, '#860038', '#fdbb30'], [1983, '#1d428a', '#ff8200'], [1994, '#1a1a1a', '#00a3e0'], [2003, '#860038', '#fdbb30']],
+    hou: [[1976, '#ba0c2f', '#ffc72c'], [1995, '#0b2240', '#c8102e'], [2003, '#ce1141', '#c4ced4']],
+    uta: [[1976, '#5a2d81', '#fdb927'], [1996, '#4b2a83', '#6fb2d8'], [2004, '#002b5c', '#6fb2d8'], [2010, '#002b5c', '#f9a01b'], [2022, '#1a1a1a', '#f9a01b']],
+    was: [[1976, '#c8102e', '#1d428a'], [1997, '#002b5c', '#c6a55a'], [2011, '#002b5c', '#e31837']],
+    den: [[1976, '#0e4d92', '#e03a3e'], [1981, '#0057b8', '#fec524'], [1993, '#0e2240', '#8b2131'], [2003, '#4fa3e0', '#fec524'], [2018, '#0e2240', '#fec524']],
+    det: [[1976, '#c8102e', '#1d42ba'], [1996, '#006272', '#8c1d2c'], [2001, '#c8102e', '#1d42ba']],
+    sac: [[1976, '#1d4e9e', '#c8102e'], [1994, '#5a2d81', '#63727a']],
+    mil: [[1976, '#00471b', '#c8102e'], [1993, '#3d2e7a', '#00471b'], [2006, '#00471b', '#c8102e'], [2015, '#00471b', '#eee1c6']],
+    gsw: [[1976, '#1d428a', '#ffc72c'], [1997, '#002a5c', '#e36c0a'], [2010, '#1d428a', '#ffc72c']],
+    okc: [[1976, '#00653a', '#ffc200'], [1995, '#00653a', '#c8102e'], [2001, '#00653a', '#ffc200'], [2008, '#007ac1', '#ef3b24']],
+    dal: [[1980, '#0b60ad', '#00843d'], [2001, '#00538c', '#b8c4ca']],
+    nop: [[1988, '#00788c', '#1d1160'], [2008, '#002b5c', '#00a3b4'], [2013, '#0c2340', '#85714d']],
+    min: [[1989, '#00538c', '#00843d'], [1996, '#002b5c', '#78be20'], [2017, '#0c2340', '#78be20']],
+    orl: [[1989, '#0077c0', '#1a1a1a'], [2010, '#0077c0', '#c4ced4']],
+    tor: [[1995, '#5a2d81', '#ce1141'], [2008, '#ce1141', '#1a1a1a']],
+    mem: [[1995, '#00a3ad', '#8b4513'], [2001, '#5d76a9', '#12173f']],
+    cha: [[2004, '#f26532', '#2b5797'], [2014, '#1d1160', '#00788c']]
+  };
+  // which look a team had in a season: its colors and an era number (the center-court badge changes shape with it)
+  const eraOf = (key, year) => { const L2 = ERA[key]; if (!L2) return { i: 0, c: TC[key] }; let k = 0; for (let j = 0; j < L2.length; j++) if (year >= L2[j][0]) k = j; return { i: k, c: [L2[k][1], L2[k][2]] }; };
+  const tcol = (key, tid, year) => (key && eraOf(key, year || 2025).c) || TC[key] || [color(tid), '#f4f1ea'];
 
   /* ---------- the game ---------- */
   class Game {
@@ -6009,7 +6035,7 @@ const ARC = (() => {
       this.year = o.year || 2000; this.qsec = o.qsec || 120; this.user = o.user == null ? null : o.user;
       this.sp = clamp((this.year - 1979) / 35, 0, 1); // how spread out the offense plays (posts early, corners later)
       this.three = this.year >= 1979;
-      this.T = o.teams.map((t, side) => ({ side, tid: t.tid, key: t.key, city: t.city, nick: t.nick, rec: t.rec, kit: side === 0 ? 'home' : 'away', abbr: t.abbr, name: t.name, pri: tcol(t.key, t.tid)[0], sec: tcol(t.key, t.tid)[1], color: side === 0 ? '#f4f1ea' : tcol(t.key, t.tid)[0], trim: side === 0 ? tcol(t.key, t.tid)[0] : tcol(t.key, t.tid)[1], score: 0,
+      this.T = o.teams.map((t, side) => ({ side, tid: t.tid, key: t.key, city: t.city, nick: t.nick, rec: t.rec, kit: side === 0 ? 'home' : 'away', abbr: t.abbr, name: t.name, pri: tcol(t.key, t.tid, this.year)[0], sec: tcol(t.key, t.tid, this.year)[1], color: side === 0 ? '#f4f1ea' : tcol(t.key, t.tid, this.year)[0], trim: side === 0 ? tcol(t.key, t.tid, this.year)[0] : tcol(t.key, t.tid, this.year)[1], score: 0,
         P: t.players.slice(0, 5).map((p, i) => mkPl(p, i, side, this.year)), B: t.players.slice(5, 13).map(p => mkPl(p, null, side, this.year)) }));
       this.T.forEach(T => T.P.forEach(pl => { pl.home = pl.i; pl.starter = true; }));
       this.k = 720 / this.qsec;
@@ -6376,12 +6402,13 @@ const ARC = (() => {
       if (!F.lined) { F.lined = true; this.ftLine(); this.wait = 0.8; return; }
       const userShoots = this.user != null && this.user === pl.side;
       let make;
-      if (userShoots) {   // the meter: tap SHOOT when the marker is in the green
-        F.mt += dt; const m = this.ftMeter(), pressed = inp.pump || inp.shootDown || inp.shootUp || inp.pass;
-        if (!pressed && F.mt < 8) return;
-        const off2 = Math.abs(m.pos - 0.5);
-        make = Math.random() < (off2 <= m.zone ? clamp(pl.r.ft + 0.2, 0.6, 0.97) : clamp(pl.r.ft * (1 - (off2 - m.zone) * 2.2), 0.04, 0.9));
-        F.last = { pos: m.pos, zone: m.zone, t: this.t };
+      if (userShoots) {   // same meter as a jump shot: hold SHOOT, it fills; let go at the top
+        F.mt += dt;
+        if (!pl.shooting) { if (F.mt === dt) this.say(`Free throw ${F.i + 1} of ${F.n}: hold SHOOT, let go at the top`, 2.5); if ((inp.shootDown || inp.pump) || F.mt > 8) pl.shooting = { t: 0, apex: 0.55, user: true, ft: true }; else return; }
+        const S = pl.shooting; S.t += dt;
+        if (!(inp.shootUp || inp.pump || S.t > S.apex * 2.1 || F.mt > 10)) return;
+        const timing = clamp(1 - Math.abs(S.t - S.apex) / (S.apex * 1.1), 0, 1); delete pl.shooting;
+        make = Math.random() < clamp(pl.r.ft * (0.45 + 0.6 * timing) + (timing > 0.85 ? 0.12 : 0), 0.03, 0.97);
       } else make = Math.random() < pl.r.ft;
       b.holder = null; pl.anim = { k: 'pump', t: 0, T: 0.45 };
       F.fly = { t: 0, T: 0.85, make, x0: pl.x, z0: pl.r.height + 1 };
@@ -6927,7 +6954,7 @@ const ARC = (() => {
       msgEl.textContent = game.msgT > 0 ? game.msg : '';
       if (game.over && !ui.querySelector('.arc-end')) showEnd();
       if (game.half && !ui.querySelector('.arc-half')) showHalf();
-      const F = game.fts, ftOn = game.state === 'ft' && F && F.lined && !F.fly && game.wait <= 0 && game.user != null && F.pl.side === game.user;
+      const F = game.fts, ftOn = false;
       if (ftOn) { const m = game.ftMeter();
         if (!ftEl) { ftEl = document.createElement('div'); ftEl.className = 'arc-ftm'; ftEl.innerHTML = '<div class="lb"></div><div class="bar"><i class="z"></i><b></b></div><div class="hn">Tap SHOOT when the marker is in the green</div>'; ui.appendChild(ftEl); }
         ftEl.querySelector('.lb').textContent = `FREE THROW ${F.i + 1} OF ${F.n}`;
@@ -6975,6 +7002,30 @@ const ARC = (() => {
       const c = portrait(pog); c.className = 'ptc'; d.querySelector('.pf').appendChild(c);
       d.querySelector('[data-y="box"]').addEventListener('click', () => { const bx = d.querySelector('.boxes'); bx.hidden = !bx.hidden; if (!bx.hidden) bx.scrollIntoView({ block: 'nearest' }); });
       ui.appendChild(d);
+    }
+    // Center-court badge: an original emblem in the team's colors for that season. Its shape changes with each new team look (era).
+    function centerBadge(g, T0, pri, sec, nick) {
+      const era = eraOf(T0.key, game.year).i, shapes = ['circle', 'shield', 'diamond', 'hex'], k = ((T0.key || 'x').charCodeAt(0) + era * 3) % 4, shape = shapes[era === 0 ? k % 2 : k];
+      const cx = wx(47), cy = wy(HY), rx = 5.6 * SC, ry = rx * SYF;
+      const poly = (sc, pts) => { g.beginPath(); pts.forEach(([x, y], i) => { const X = Math.round(cx + x * rx * sc), Y = Math.round(cy + y * ry * sc); i ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.closePath(); };
+      const path = sc => {
+        if (shape === 'circle') { g.beginPath(); g.ellipse(cx, cy, rx * sc, ry * sc, 0, 0, Math.PI * 2); }
+        else if (shape === 'diamond') poly(sc, [[0, -1.12], [1.12, 0], [0, 1.12], [-1.12, 0]]);
+        else if (shape === 'shield') poly(sc, [[-0.95, -0.9], [0.95, -0.9], [0.95, 0.15], [0, 1.05], [-0.95, 0.15]]);
+        else poly(sc, [[-0.55, -0.98], [0.55, -0.98], [1.1, 0], [0.55, 0.98], [-0.55, 0.98], [-1.1, 0]]);
+      };
+      g.save();
+      g.fillStyle = shade(sec, -0.25); path(1.08); g.fill();
+      g.fillStyle = sec; path(1); g.fill();
+      g.fillStyle = pri; path(0.84); g.fill();
+      g.save(); path(0.84); g.clip(); g.strokeStyle = shade(pri, -0.3); g.lineWidth = 1;   // basketball seams inside the badge
+      g.beginPath(); g.moveTo(cx - rx, cy); g.lineTo(cx + rx, cy); g.moveTo(cx, cy - ry); g.lineTo(cx, cy + ry); g.stroke();
+      g.beginPath(); g.ellipse(cx - rx * 0.95, cy, rx * 0.55, ry * 1.1, 0, -Math.PI / 2, Math.PI / 2); g.stroke(); g.beginPath(); g.ellipse(cx + rx * 0.95, cy, rx * 0.55, ry * 1.1, 0, Math.PI / 2, Math.PI * 1.5); g.stroke(); g.restore();
+      g.restore();
+      const fs = Math.max(8, Math.round(SC * (nick.length > 9 ? 1.8 : 2.3)));
+      pixText(g, nick, cx, cy - 1, fs, '#ffffff', 0, shade(pri, -0.55));
+      pixText(g, (T0.city || '').toUpperCase().slice(0, 14), cx, Math.round(cy - ry * 0.62), Math.max(6, Math.round(SC * 1.2)), sec);
+      pixText(g, '★ ' + game.year + ' ★', cx, Math.round(cy + ry * 0.62), Math.max(6, Math.round(SC * 1.1)), sec);
     }
     // ---- pixel helpers ----
     const hash = n => { n = (n ^ 61) ^ (n >>> 16); n = n + (n << 3); n = n ^ (n >>> 4); n = Math.imul(n, 0x27d4eb2d); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; };
@@ -7050,7 +7101,7 @@ const ARC = (() => {
       }
       // center-court logo and baseline names
       const nick = (T0.nick || T0.name || T0.abbr).toUpperCase(), city = (T0.city || '').toUpperCase();
-      pixText(g, nick, wx(47), wy(HY) - 1, Math.max(9, Math.round(SC * 3)), sec, 0, shade(pri, -0.35));
+      centerBadge(g, T0, pri, sec, nick);
       for (const side of [0, 1]) { const x = side ? cx1 + ap / 2 : cx0 - ap / 2; pixText(g, (city + ' ' + nick).trim(), x, (cy0 + cy1) / 2, Math.max(7, Math.round(ap * 0.75)), '#ffffff', side ? Math.PI / 2 : -Math.PI / 2); }
       pixText(g, T0.abbr, wx(23), cy0 - ap / 2, Math.max(7, Math.round(ap * 0.7)), '#ffffff'); pixText(g, T0.abbr, wx(71), cy0 - ap / 2, Math.max(7, Math.round(ap * 0.7)), '#ffffff');
       // fans in the end stands past each baseline
@@ -7470,7 +7521,8 @@ const HELP = [
 <li><b>Who to guard</b>: on defense, a small yellow arrow on the circle under your player points at the man you're guarding.</li>
 <li><b>TV graphics</b>: both starting fives show at the start of each half, the scorer's card pops up after a basket, and halftime shows team stats and top performers until you tap Start 2nd half.</li>
 <li><b>Fouls and the bonus</b>: a reach-in or blocking foul stops play. The other team inbounds from the sideline at the spot of the foul (shot clock back to at least 14). Every foul counts as a team foul for the quarter; after 4 team fouls in a quarter (5 in quarters of 10 minutes or more, 3 in overtime), every non-shooting foul gives the fouled player 2 free throws. Team fouls and BONUS show in the pause menu.</li>
-<li><b>Free throws</b>: players line up on the lane and the shots go one at a time. When you shoot, a meter sweeps back and forth: tap Shoot while the marker is in the green (better shooters get a wider green). A missed last free throw is a live rebound.</li>
+<li><b>Free throws</b>: players line up on the lane and the shots go one at a time. When you shoot, use the same meter as a jump shot: hold Shoot and let go at the top (green). A missed last free throw is a live rebound.</li>
+<li><b>Team colors and center court</b>: each team wears the colors it used in that season (for example, the Rockets are red and gold in the 1970s and navy and red in the late 1990s). Center court has an original team badge in those colors; its shape changes when the team changes its look.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7712,7 +7764,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24c';
+const APP_VERSION = '2026-11-24d';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
