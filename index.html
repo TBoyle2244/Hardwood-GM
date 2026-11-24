@@ -7010,7 +7010,7 @@ const ARC = (() => {
     // Center-court badge: an original emblem in the team's colors for that season. Its shape changes with each new team look (era).
     function centerBadge(g, T0, pri, sec, nick) {
       const era = eraOf(T0.key, game.year).i, shapes = ['circle', 'shield', 'diamond', 'hex'], k = ((T0.key || 'x').charCodeAt(0) + era * 3) % 4, shape = shapes[era === 0 ? k % 2 : k];
-      const cx = wx(47), cy = wy(HY), rx = 5.6 * SC, ry = rx * SYF;
+      const cx = wx(47), cy = wy(HY), rx = 6.6 * SC, ry = rx * SYF;
       const poly = (sc, pts) => { g.beginPath(); pts.forEach(([x, y], i) => { const X = Math.round(cx + x * rx * sc), Y = Math.round(cy + y * ry * sc); i ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.closePath(); };
       const path = sc => {
         if (shape === 'circle') { g.beginPath(); g.ellipse(cx, cy, rx * sc, ry * sc, 0, 0, Math.PI * 2); }
@@ -7021,15 +7021,11 @@ const ARC = (() => {
       g.save();
       g.fillStyle = shade(sec, -0.25); path(1.08); g.fill();
       g.fillStyle = sec; path(1); g.fill();
-      g.fillStyle = pri; path(0.84); g.fill();
-      g.save(); path(0.84); g.clip(); g.strokeStyle = shade(pri, -0.3); g.lineWidth = 1;   // basketball seams inside the badge
-      g.beginPath(); g.moveTo(cx - rx, cy); g.lineTo(cx + rx, cy); g.moveTo(cx, cy - ry); g.lineTo(cx, cy + ry); g.stroke();
-      g.beginPath(); g.ellipse(cx - rx * 0.95, cy, rx * 0.55, ry * 1.1, 0, -Math.PI / 2, Math.PI / 2); g.stroke(); g.beginPath(); g.ellipse(cx + rx * 0.95, cy, rx * 0.55, ry * 1.1, 0, Math.PI / 2, Math.PI * 1.5); g.stroke(); g.restore();
-      g.restore();
-      const fs = Math.max(8, Math.round(SC * (nick.length > 9 ? 1.8 : 2.3)));
-      pixText(g, nick, cx, cy - 1, fs, '#ffffff', 0, shade(pri, -0.55));
-      pixText(g, (T0.city || '').toUpperCase().slice(0, 14), cx, Math.round(cy - ry * 0.62), Math.max(6, Math.round(SC * 1.2)), sec);
-      pixText(g, '★ ' + game.year + ' ★', cx, Math.round(cy + ry * 0.62), Math.max(6, Math.round(SC * 1.1)), sec);
+      g.fillStyle = pri; path(0.84); g.fill(); g.restore();
+      const dark = shade(pri, -0.6), long = nick.length > 9;
+      const fs = Math.max(9, Math.round(SC * (long ? 2.1 : 2.7)));
+      pixText(g, nick, cx, cy + 1, fs, '#ffffff', 0, dark);
+      const city = (T0.city || '').toUpperCase(); if (city) pixText(g, city.length > 13 ? (T0.abbr || '') : city, cx, Math.round(cy - ry * 0.56), Math.max(7, Math.round(SC * 1.45)), '#ffffff', 0, dark);
     }
     // ---- pixel helpers ----
     const hash = n => { n = (n ^ 61) ^ (n >>> 16); n = n + (n << 3); n = n ^ (n >>> 4); n = Math.imul(n, 0x27d4eb2d); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; };
@@ -7768,7 +7764,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24e';
+const APP_VERSION = '2026-11-24f';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
