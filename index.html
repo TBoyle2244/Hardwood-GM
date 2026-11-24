@@ -3347,7 +3347,7 @@ function expected(L, oR, dR, oC, dC, isHome, neutral, poss) {
   return poss * ortg / 100 + m - (L.schemeAdj || 0) + (neutral ? 0 : (isHome ? E.home / 2 : -E.home / 2));
 }
 
-let GAMEBUF = null, NOHIST = false; let POST = false;
+let GAMEBUF = null, NOHIST = false; let POST = false; let ARCTILT = null;   // ARCTILT: an arcade game's box score, which tilts who gets the stats
 function stat(p, y, k, v) {
   if (!p || !v) return;
   if (GAMEBUF) { const b = GAMEBUF[p.id] || (GAMEBUF[p.id] = { tm: p.team }); b[k] = (b[k] || 0) + v; }
@@ -3369,7 +3369,12 @@ function creditStats(L, tid, pts, rat, opp, coach, oppCoach, ot, poss) {
   const y = L.year, E = era(y), M = rat.mins, n = M.length;
   if (!n) return null;
   const totMin = 240 + ot * 25;
-  const mins = M.map(x => x.min * totMin / 240);
+  let mins = M.map(x => x.min * totMin / 240);
+  // A game played in the arcade: minutes and every stat split lean toward what each player actually did there (70% when the whole game was played)
+  const A = ARCTILT && ARCTILT.t[tid], wA = A ? 0.7 * ARCTILT.f : 0, ap = x => (A && A.p[x.p.id]) || null;
+  const tilt = (W, k) => { if (!wA) return W; const sw = W.reduce((a, b) => a + b, 0) || 1, played = M.map(x => { const q = ap(x); return q && q.sec > 0 ? q : null; }), sa = played.reduce((s, q) => s + (q ? (q[k] || 0) + 0.3 : 0), 0) || 1;
+    return W.map((w, i) => (1 - wA) * w / sw + wA * (played[i] ? ((played[i][k] || 0) + 0.3) / sa : 0)); };
+  if (wA) { const secs = M.map(x => { const q = ap(x); return q ? q.sec || 0 : 0; }), ts = secs.reduce((a, b) => a + b, 0); if (ts > 0) mins = mins.map((m, i) => (1 - wA) * m + wA * secs[i] / ts * totMin); }
   // shot mix for this team
   const OX = OFFENSES[coach.off] || OFFENSES.bal, focus3 = OX.t3 / (L.f3Norm || 1);
   let tpaT = 0, tpm = 0;
@@ -3384,9 +3389,9 @@ function creditStats(L, tid, pts, rat, opp, coach, oppCoach, ot, poss) {
   ftm = Math.max(0, ftm);
   const twoM = Math.max(0, (pts - ftm - 3 * tpm) / 2);
   // who takes and makes the shots
-  const sc = M.map((x, i) => mins[i] * x.p.prof.pts * Math.exp((eff(x.p) - 64) / (oppCoach.def === 'jordan' ? 95 : coach.off === 'iso' ? 42 : 65)));
-  const sc3 = M.map((x, i) => mins[i] * x.p.prof.t3 * Math.sqrt(x.p.prof.pts) * Math.exp((eff(x.p) - 64) / 60));
-  const scF = M.map((x, i) => sc[i] * (1.2 - Math.min(1, x.p.prof.t3) * 0.3));
+  const sc = tilt(M.map((x, i) => mins[i] * x.p.prof.pts * Math.exp((eff(x.p) - 64) / (oppCoach.def === 'jordan' ? 95 : coach.off === 'iso' ? 42 : 65))), 'pts');
+  const sc3 = tilt(M.map((x, i) => mins[i] * x.p.prof.t3 * Math.sqrt(x.p.prof.pts) * Math.exp((eff(x.p) - 64) / 60)), 'tpm');
+  const scF = tilt(M.map((x, i) => sc[i] * (1.2 - Math.min(1, x.p.prof.t3) * 0.3)), 'ftm');
   const p2 = M.map(x => clamp(E.p2 + (x.p.prof.fg - 0.47) * 0.8 + (eff(x.p) - 64) * 0.0015, 0.33, 0.7));
   const p3 = M.map(x => clamp((E.tp3 || 0.33) + (eff(x.p) - 64) * 0.0015 + (Math.min(x.p.prof.t3, 2) - 1) * 0.012, 0.15, 0.47));
   const pf = M.map(x => clamp(x.p.prof.ft, 0.35, 0.95));
@@ -3401,14 +3406,15 @@ function creditStats(L, tid, pts, rat, opp, coach, oppCoach, ot, poss) {
   const lines = M.map((x, i) => ({ p: x.p, min: Math.round(mins[i]), start: x.start, fgm: p2m[i] + p3m[i], fga: p2m[i] + m2[i] + p3m[i] + m3[i], tpm: p3m[i], tpa: p3m[i] + m3[i],
     ftm: pfm[i], fta: pfm[i] + mf[i], pts: p2m[i] * 2 + p3m[i] * 3 + pfm[i], pf: x.pf || 0, dq: x.dq ? 1 : 0 }));
   // the rest of the box score
-  const tReb = Math.max(20, Math.round(E.reb * (poss / E.pace) * (1 + (rat.reb - opp.reb) / 40) + R.norm() * 4.5));
+  const teamTilt = k => { if (!wA) return 1; const o = ARCTILT.t[ARCTILT.opp[tid]], mine = A.tot[k] || 0, theirs = o ? o.tot[k] || 0 : 0; return clamp(1 + ((mine + 1) / (mine + theirs + 2) - 0.5) * 0.6 * ARCTILT.f, 0.82, 1.18); };
+  const tReb = Math.max(20, Math.round(E.reb * (poss / E.pace) * (1 + (rat.reb - opp.reb) / 40) * teamTilt('reb') + R.norm() * 4.5));
   const fgm = lines.reduce((s, l) => s + l.fgm, 0);
   const tAst = clamp(Math.round(fgm * (E.ast / E.fgm) * (1 + (rat.ast - 3.6) * 0.04) * (coach.off === 'tri' ? 1.1 : coach.off === 'iso' ? 0.88 : 1) + R.norm() * 3), 0, fgm);
-  const tStl = R.poisson(E.stl * Math.sqrt(rat.stl / 1.15) * (coach.def === 'press' ? 1.2 : 1));
-  const tBlk = R.poisson(E.blk * Math.sqrt(rat.blk / 0.95) * (coach.def === 'pack' ? 1.1 : 1));
-  const tTov = R.poisson(E.tov * (poss / E.pace) * Math.sqrt(rat.tov / 2.6) * (oppCoach.def === 'press' ? 1.12 : 1));
-  const dist = (n, f) => allot(n, M.map((x, i) => mins[i] * Math.max(0.05, f(x.p.prof))));
-  const rb = dist(tReb, pr => pr.reb), as = dist(tAst, pr => pr.ast), st = dist(tStl, pr => pr.stl), bk = dist(tBlk, pr => pr.blk), to = dist(tTov, pr => pr.tov);
+  const tStl = R.poisson(E.stl * Math.sqrt(rat.stl / 1.15) * (coach.def === 'press' ? 1.2 : 1) * teamTilt('stl'));
+  const tBlk = R.poisson(E.blk * Math.sqrt(rat.blk / 0.95) * (coach.def === 'pack' ? 1.1 : 1) * teamTilt('blk'));
+  const tTov = R.poisson(E.tov * (poss / E.pace) * Math.sqrt(rat.tov / 2.6) * (oppCoach.def === 'press' ? 1.12 : 1) * teamTilt('tov'));
+  const dist = (n, f, k) => allot(n, tilt(M.map((x, i) => mins[i] * Math.max(0.05, f(x.p.prof))), k));
+  const rb = dist(tReb, pr => pr.reb, 'reb'), as = dist(tAst, pr => pr.ast, 'ast'), st = dist(tStl, pr => pr.stl, 'stl'), bk = dist(tBlk, pr => pr.blk, 'blk'), to = dist(tTov, pr => pr.tov, 'tov');
   lines.forEach((l, i) => { l.reb = rb[i]; l.ast = as[i]; l.stl = st[i]; l.blk = bk[i]; l.tov = to[i]; });
   for (const l of lines) {
     const p = l.p;
@@ -3483,13 +3489,23 @@ function playGame(L, g, opts) {
   let hp = Math.max(50, Math.round(hx + shared + R.norm() * sd)), ap = Math.max(50, Math.round(ax + shared + R.norm() * sd));
   let ot = 0; const otp = [[], []];
   while (hp === ap) { ot++; const a = Math.max(2, Math.round(hx * 5 / 48 + R.norm() * 3.3)), b = Math.max(2, Math.round(ax * 5 / 48 + R.norm() * 3.3)) + (ot >= 5 ? 1 : 0); hp += a; ap += b; otp[0].push(a); otp[1].push(b); }
+  const AR = opts.arcade || (L._arc && (g.h === L.user || g.a === L.user) ? L._arc : null);
+  if (AR && AR.t[g.h] && AR.t[g.a]) {   // played in the arcade: its score sets the winner and how lopsided it was, stretched to a full NBA game
+    const ah = AR.t[g.h].pts, aa = AR.t[g.a].pts, f = clamp(AR.f, 0, 1), tot = hp + ap, sh = 0.5 + ((ah + 1) / (ah + aa + 2) - 0.5) * 0.45;
+    let h2 = Math.round(f * tot * sh + (1 - f) * hp), a2 = Math.round(f * tot * (1 - sh) + (1 - f) * ap);
+    if (f >= 0.999 && ah !== aa) { if (ah > aa && h2 <= a2) h2 = a2 + 1 + R.int(0, 3); if (aa > ah && a2 <= h2) a2 = h2 + 1 + R.int(0, 3); }
+    if (h2 === a2) { if (Math.random() < 0.5) h2++; else a2++; }
+    hp = h2; ap = a2; ot = f >= 0.999 ? (AR.ot || 0) : 0; otp[0] = []; otp[1] = [];
+    for (let k = 0; k < ot; k++) { otp[0].push(Math.max(4, Math.round(hp * 5 / (48 + 5 * ot)))); otp[1].push(Math.max(4, Math.round(ap * 5 / (48 + 5 * ot)))); }
+    ARCTILT = { t: AR.t, f, opp: { [g.h]: g.a, [g.a]: g.h } }; g.arc = 1;
+  }
   g.hs = hp; g.as = ap; g.done = true; g.ot = ot;
   GAMEBUF = {}; NOHIST = !!opts.noStats; POST = !!opts.post;
   const hS = creditStats(L, g.h, hp, hr, ar, Hc, Ac, ot, poss), aS = creditStats(L, g.a, ap, ar, hr, Ac, Hc, ot, poss);
   if (!NOHIST) { tstat(L, g.h).opp += ap; tstat(L, g.a).opp += hp; }
   const full = opts.playoff || g.h === L.user || g.a === L.user || !!(HOOKS.full && HOOKS.full(L, g));
   g.box = makeBox(L, g, hp, ap, otp, hS, aS, full);
-  GAMEBUF = null; NOHIST = false; POST = false;
+  GAMEBUF = null; NOHIST = false; POST = false; ARCTILT = null;
   const H = L.teams[g.h], A = L.teams[g.a];
   if (!opts.playoff) { H.pf += hp; H.pa += ap; A.pf += ap; A.pa += hp; if (hp > ap) { H.w++; A.l++; } else { A.w++; H.l++; } }
   if (hS) injuries(L, hS); if (aS) injuries(L, aS);
@@ -3650,6 +3666,14 @@ function simNextGame(L) {
   let guard = 0;
   while (L.phase === 'regular' && guard++ < 30) { const mine = userPlaysOn(L, L.day); simDay(L); if (mine) break; }
 }
+// Arcade games that count: first sim ahead to the day of your next game, then play it in the arcade, then that day is simmed with your game's result taken from the arcade.
+function prepArcade(L) {
+  if (L.phase === 'regular') { let guard = 0; while (L.phase === 'regular' && !userPlaysOn(L, L.day) && guard++ < 30) simDay(L); if (L.phase !== 'regular') return prepArcade(L); const g = (L.schedule[L.day] || []).find(x => !x.done && (x.h === L.user || x.a === L.user)); return g ? { h: g.h, a: g.a } : null; }
+  if (L.phase === 'playoffs') { const rd = curRound(L), s = rd && rd.series.find(x => x.winner == null && (x.h === L.user || x.a === L.user)); if (!s) return null;
+    const pat = homePattern(s.len, rd.name === 'NBA Finals' && rules(L.year).finals232), high = pat[s.games.length] === 'H'; return { h: high ? s.h : s.a, a: high ? s.a : s.h, playoff: true }; }
+  return null;
+}
+function finishArcade(L, res) { L._arc = res; try { simNextGame(L); } finally { L._arc = null; } }
 function daysLeft(L) { return L.schedule.length - L.day; }
 function pct(L, t) { const g = t.w + t.l; return g ? t.w / g : 0; }
 function sortTeams(L, list) { return list.slice().sort((a, b) => (pct(L, b) - pct(L, a)) || ((b.pf - b.pa) - (a.pf - a.pa)) || (b.w - a.w)); }
@@ -4833,7 +4857,7 @@ const API = { resignQuote, signQuote, OPT_MULT, optOn, optText, teamOption, auto
   proposeTrade, tradeVerdict, teamPicks, pickById, pickLabel, projectedOverall, pickWeight, playerWeight, ensurePicks, myDraftSlots, aiTrades, acceptOffer, rejectOffer, offerValid,
   tradeLocked, lockText, deadlineDay, pastDeadline, ROLE_NAME, STAFF_ROLES, staffSal, staffBudget, budgetOf, staffPay, budgetRoom, marketOf, marketName, trainerR, injMult, healMult, scoutR, scoutMiss, gradeFor, myGrade, xdPool, xdOnClock, xdPick, xdStop, xdAI, beginXD, endXD, xdCount, startDraftNow, schemeFit, ovrFor, setBudgets, reviewScouts, ensureStaff, staffBonus, fireCoach, hireCoach, coachAcceptP, coachWindow, takeJob, careerScore,
   mor, moraleWord, underpaid, renegotiate, renegotiatePrice, gamePlan, setGamePlan, clearGamePlan, coachFor, nextGame, boxLine, boxStar,
-  canStartSeason, startRegular, simDay, simWeek, simNextGame, daysLeft, simPlayoffDay, simPlayoffRound, curRound, roundName, homePattern,
+  canStartSeason, startRegular, simDay, simWeek, simNextGame, prepArcade, finishArcade, daysLeft, simPlayoffDay, simPlayoffRound, curRound, roundName, homePattern,
   sortTeams, divisions, gamesBack, pct, seeds, perGame, AWARD_NAMES, startDraft, onClock, makePick, aiPick, draftUntilUser, draftAll, scoutPlayer, beginDraft, SCOUT_VISITS, endDraft,
   startNextSeason, getP, allPlayers, capFor, avgSalary, minSalary, maxSalary, taxLine, luxuryTax, mleAmount, mleFree, capYear, faEra, ERA_INFO, money, payroll, capSpace, expiring,
   askPrice, tenderPrice, isRestricted, compPicks, resign, letGo, matchSheet, declineSheet, sheetTargets, sendSheet, signFA, onBooks, ensureFA, marketValue, salFor, fitFor, priceFor,
@@ -6297,6 +6321,14 @@ const ARC = (() => {
     shotMul(pl) { if (this.userSide == null) return 1; return pl.side === this.userSide ? [1.08, 1, 0.95][this.diff] : [0.86, 1, 1.07][this.diff]; }
     handsMul(d) { if (this.userSide == null || d.side === this.userSide) return 1; return [0.55, 1, 1.4][this.diff]; }
     timingWin() { return [1.6, 1.1, 0.85][this.diff]; }
+    // What happened, for the GM game: points and each player's line by team, and how much of the game was played (1 = all of it).
+    result() {
+      const played = this.over ? 1 : clamp(((this.q - 1) * this.qsec + (this.qsec - Math.max(0, this.clock))) / (4 * this.qsec), 0, 1), t = {};
+      for (const T of this.T) { const p = {}, tot = {};
+        for (const pl of T.P.concat(T.B)) { const st = pl.st; p[pl.p.id] = Object.assign({}, st); for (const k of ['reb', 'ast', 'stl', 'blk', 'tov']) tot[k] = (tot[k] || 0) + (st[k] || 0); }
+        t[T.tid] = { pts: T.score, p, tot }; }
+      return { f: played, ot: Math.max(0, this.q - 4), t };
+    }
     simToEnd() { this.user = null; let n = 0; while (!this.over && n++ < 200000) this.step(1 / 30, {}); }
     // the make chance shown under your shooter: a well-timed shot from here, against this defense, on these legs
     chance(pl) {
@@ -7012,7 +7044,7 @@ const ARC = (() => {
         <button data-m="tips">Control tips: <b>${showTips ? 'On' : 'Off'}</b></button></div>`;
       const left = game.user != null ? game.timeouts[game.user] : 0;
       menu.innerHTML = `<div class="mh">PAUSED</div><div class="mb"><div class="tabs">${game.user != null ? `<button data-m="timeout" class="to"${left > 0 ? '' : ' disabled'}>Call Timeout (${left})</button>` : ''}${TABS.map(([k2, n]) => `<button data-m="${k2}" class="${tab === k2 ? 'on' : ''}">${n}</button>`).join('')}</div><div class="pane">${body}</div></div>
-        <div class="mf">${confirmQuit ? `<div class="sq"><button data-m="sim">Sim to the end</button><button data-m="quit">Quit game</button><button data-m="simquit">Cancel</button></div>` : '<button data-m="simquit">Sim / Quit</button>'}<button data-m="resume" class="go">Resume</button></div>`;
+        <div class="mf">${confirmQuit ? `<div class="sq"><button data-m="sim">Sim to the end</button><button data-m="quit">${game.real ? 'Quit (sim the rest)' : 'Quit game'}</button><button data-m="simquit">Cancel</button></div>` : '<button data-m="simquit">Sim / Quit</button>'}<button data-m="resume" class="go">Resume</button></div>`;
       fillPortraits(menu);
     }
     /* ---------- tonight's matchup: starting fives with portraits, the records, and your jersey ---------- */
@@ -7025,8 +7057,8 @@ const ARC = (() => {
           if (k === 'tip') { SFX.init(); match.remove(); match = null; paused = false; return; }
           if (k.startsWith('d:')) { game.diff = +k.slice(2); try { localStorage.setItem('arcDiff', k.slice(2)); } catch (e2) {} return showMatchup(); }
           if (k.startsWith('q:')) { game.qsec = +k.slice(2); game.clock = game.qsec; return showMatchup(); }
-          if (k.startsWith('c:')) { const cpu = k === 'c:cpu'; game.user = game.userSide = cpu ? null : 0; if (!cpu) game.pickCtrl(true); ui.classList.toggle('watch', cpu); mode = ''; try { localStorage.setItem('arcCtl', cpu ? 'cpu' : 'you'); } catch (e2) {} return showMatchup(); }
-          game.setKit(0, k); for (const key in cache) delete cache[key]; warmed = false; showMatchup(); } }); }
+          if (k.startsWith('c:')) { const cpu = k === 'c:cpu'; game.user = game.userSide = cpu ? null : (game.youSide || 0); if (!cpu) game.pickCtrl(true); ui.classList.toggle('watch', cpu); mode = ''; try { localStorage.setItem('arcCtl', cpu ? 'cpu' : 'you'); } catch (e2) {} return showMatchup(); }
+          game.setKit(game.youSide || 0, k); for (const key in cache) delete cache[key]; warmed = false; showMatchup(); } }); }
       const me = game.user != null ? game.user : 0, T0 = game.T[0], T1 = game.T[1];
       const five = T => `<div class="five">${T.P.map(pl => { const pc2 = portrait(pl); return `<div class="pc"><img src="${pc2.toDataURL()}" alt=""><div class="st">${stars(pl.p.ovr)}</div><b>${pl.p.name}</b><span>${pl.p.pos} #${pl.num}</span></div>`; }).join('')}</div>`;
       const sw = (T, k) => { const c1 = k === 'home' ? '#f4f1ea' : k === 'away' ? T.pri : T.sec, c2 = k === 'home' ? T.pri : k === 'away' ? T.sec : T.pri; return `<span class="sw" style="background:${c1};border-color:${c2}"></span>`; };
@@ -7113,8 +7145,8 @@ const ARC = (() => {
           <div class="st sm"><div><b>${s.fgm}/${s.fga}</b>FG ${pct(s.fgm, s.fga)}</div><div><b>${s.tpm}/${s.tpa}</b>3PT</div><div><b>${s.ftm}/${s.fta}</b>FT</div></div></div>
           <div class="pcht"><div class="tt" style="background:${T.pri}">SHOT CHART</div>${shotChart(game.shots.filter(x => x.pl === pog))}</div></div>
         <div class="boxes" hidden>${boxTable(B[0])}${boxTable(B[1])}</div>
-        <p class="note">Exhibition game: it doesn't count in the standings.</p>
-        <div class="arc-row"><button data-y="box">Box score</button><button data-x="again">Play again</button><button data-x="quit" class="go">Continue</button></div>`;
+        <p class="note">${game.real ? 'This game counts: tap Continue to put it in your season.' : "Exhibition game: it doesn't count in the standings."}</p>
+        <div class="arc-row"><button data-y="box">Box score</button>${game.real ? '' : '<button data-x="again">Play again</button>'}<button data-x="quit" class="go">Continue</button></div>`;
       const c = portrait(pog); c.className = 'ptc'; d.querySelector('.pf').appendChild(c);
       d.querySelector('[data-y="box"]').addEventListener('click', () => { const bx = d.querySelector('.boxes'); bx.hidden = !bx.hidden; if (!bx.hidden) bx.scrollIntoView({ block: 'nearest' }); });
       ui.appendChild(d);
@@ -7590,8 +7622,9 @@ const ARC = (() => {
   // Start a game in a full-screen layer. opts: { home, away (team objects with players), year, qsec, onExit }
   function start(opts) {
     const root = document.createElement('div'); root.className = 'arc-root'; document.body.appendChild(root);
-    const game = new Game({ teams: [opts.home, opts.away], year: opts.year, qsec: opts.qsec, user: (() => { try { return localStorage.getItem('arcCtl') === 'cpu' ? null : 0; } catch (e) { return 0; } })(), diff: (() => { try { const v = localStorage.getItem('arcDiff'); return v == null ? 1 : +v; } catch (e) { return 1; } })(), autoDef: (() => { try { return localStorage.getItem('arcAutoD') !== 'off'; } catch (e) { return true; } })() });
-    const v = View(root, game, how => { if (how === 'again') start(opts); else if (opts.onExit) opts.onExit(game); });
+    const game = new Game({ teams: [opts.home, opts.away], year: opts.year, qsec: opts.qsec, user: (() => { try { return localStorage.getItem('arcCtl') === 'cpu' ? null : (opts.userSide || 0); } catch (e) { return opts.userSide || 0; } })(), diff: (() => { try { const v = localStorage.getItem('arcDiff'); return v == null ? 1 : +v; } catch (e) { return 1; } })(), autoDef: (() => { try { return localStorage.getItem('arcAutoD') !== 'off'; } catch (e) { return true; } })() });
+    game.real = !!opts.real; game.youSide = opts.userSide || 0;
+    const v = View(root, game, how => { if (how === 'again' && !opts.real) start(opts); else if (opts.onExit) opts.onExit(game); });
     if (typeof window !== 'undefined') window.__arcGame = game;   // for automated tests
     return v;
   }
@@ -7662,6 +7695,7 @@ const HELP = [
 <li><b>Tips</b>: control tips show in your first arcade game only (Settings → Control tips to turn them back on). After a basket, +1/+2/+3 floats over the rim in the scoring team's color.</li>
 <li><b>Crossover</b>: tap Cross and your ball handler jabs about 3 feet to the other side and bursts out of it, guarded or not. Against a close defender it works about half the time (better handlers more often): he bites the wrong way and is frozen for a moment, and once in a while he ends up on the floor. A failed cross can get stripped.</li>
 <li><b>Game setup</b> (on the matchup screen): Difficulty — Rookie (your shots fall more, a wider green window, the computer's shots fall less and its hands are slower), Pro (even), All-Star (the other way); quarter length; and Control — You vs CPU, or CPU vs CPU to watch the game play itself. Your choices are remembered.</li>
+<li><b>Play your real games</b>: on the Office tab, next to Sim next game, tap <b>Play it in arcade</b> (playoffs too). The arcade score decides who wins and roughly by how much; the sim engine then builds a full-length NBA box score that leans on what each player did in your game (minutes, points, threes, free throws, rebounds, assists, steals, blocks, turnovers), and that is what goes into the standings and the stat history. Any difficulty counts. Quit partway (Pause → Sim / Quit) and the rest of the game is simmed, weighted by how much you played.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7903,7 +7937,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24l';
+const APP_VERSION = '2026-11-24m';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -8102,7 +8136,7 @@ function vHome() {
         <div class="matchup"><div><div class="mu-abbr">${esc(me().abbr)}</div><div class="mu-rec">${rec(me())}</div>${rating(G.teamOverall(L, L.user))}</div>
         <div class="mu-vs">${home ? 'vs' : 'at'}</div>
         <div><div class="mu-abbr">${esc(o.abbr)}</div><div class="mu-rec">${rec(o)}</div>${rating(G.teamOverall(L, o.id))}</div></div>
-        <div class="row"><button class="btn primary" data-act="simNext">Play next game</button><button class="btn" data-act="simWeek">Sim week</button><button class="btn" data-act="simSeason">Sim to playoffs</button></div>
+        <div class="row"><button class="btn primary" data-act="simNext">Sim next game</button>${arcOK() ? '<button class="btn primary" data-act="arcReal">Play it in arcade</button>' : ''}<button class="btn" data-act="simWeek">Sim week</button><button class="btn" data-act="simSeason">Sim to playoffs</button></div>
         <p class="small">${G.pastDeadline(L) ? 'The trade deadline has passed.' : `Trade deadline: ${Math.max(0, G.deadlineDay(L) - L.day)} days away.`}</p></section>` + lastGameCard() + holdoutCard() + planCard();
     } else h += `<section class="card hero"><h2>Season wrapping up</h2><div class="row"><button class="btn primary" data-act="simSeason">Sim to playoffs</button></div></section>`;
     h += divTable(me().conf, me().div);
@@ -8111,7 +8145,7 @@ function vHome() {
     const rd = G.curRound(L), mine = rd.series.find(s => s.h === L.user || s.a === L.user), alive = rd.series.some(s => s.winner == null && (s.h === L.user || s.a === L.user));
     h += `<section class="card hero"><div class="eyebrow">${esc(rd.name)}</div><h2>${alive ? (mine && mine.len > 1 ? esc(seriesText(mine)) : 'Win or go home') : (mine ? 'Your series is over' : 'Watching from home')}</h2>
       <div class="list">${rd.series.map(s => `<div class="series ${s.h === L.user || s.a === L.user ? 'mine' : ''}"><div class="split"><b>${esc(L.teams[s.h].abbr)} vs ${esc(L.teams[s.a].abbr)}</b><span class="small">${s.len > 1 ? 'Best of ' + s.len : 'One game'}</span></div><span class="small">${esc(seriesText(s))}</span></div>`).join('')}</div>
-      <div class="row">${alive ? '<button class="btn primary" data-act="simNext">Play next game</button>' : ''}<button class="btn${alive ? '' : ' primary'}" data-act="simRound">Sim this round</button><button class="btn" data-act="simPlayoffs">Sim the playoffs</button></div></section>`;
+      <div class="row">${alive ? '<button class="btn primary" data-act="simNext">Sim next game</button>' + (arcOK() ? '<button class="btn primary" data-act="arcReal">Play it in arcade</button>' : '') : ''}<button class="btn${alive ? '' : ' primary'}" data-act="simRound">Sim this round</button><button class="btn" data-act="simPlayoffs">Sim the playoffs</button></div></section>`;
     h += lastPlayoffGame() + planCard();
     h += playoffResults();
   }
@@ -8393,6 +8427,19 @@ function waivedMsg(p, stretched) {
 }
 /* ---------- Arcade mode ---------- */
 function arcTeam(tid) { const t = L.teams[tid], st = G.ratings(L, tid).mins.filter(x => x.start).map(x => x.p); const five = st.length >= 5 ? st : G.roster(L, tid).filter(p => !p.inj).sort((a, b) => b.ovr - a.ovr).slice(0, 5); const mins = {}; G.ratings(L, tid).mins.forEach(x => mins[x.p.id] = x.min || 0); const bench = G.roster(L, tid).filter(p => !p.inj && !five.includes(p)).sort((a, b) => (mins[b.id] || 0) - (mins[a.id] || 0) || b.ovr - a.ovr).slice(0, 8); return { tid, key: t.key, city: t.city, nick: t.name, abbr: t.abbr, name: tname(t), players: five.concat(bench), rec: (t.w || 0) + '-' + (t.l || 0) }; }
+function arcOK() { return typeof ARC !== 'undefined' && G.roster(L, L.user).length >= 5; }
+// Play your next real game in the arcade. The result goes into the season: the arcade score decides the winner and how close it was,
+// then the sim engine fills in a full-length box score that leans on what each player did in the arcade. Quitting early sims the rest.
+function arcReal() {
+  const g = G.prepArcade(L); save();
+  if (!g) { flash('No game to play right now.'); render(); return; }
+  const you = g.h === L.user ? 0 : 1;
+  track('arcade-real', false);
+  ARC.start({ home: arcTeam(g.h), away: arcTeam(g.a), year: L.year, qsec: ui.arcQ || 120, userSide: you, real: true, onExit: game => {
+    const r = game.result(); G.finishArcade(L, r); save();
+    flash(r.f >= 0.999 ? 'Arcade result added to your season, with a full box score built from your game.' : `You played ${Math.round(r.f * 100)}% of the game; the rest was simmed.`); render();
+  } });
+}
 function arcadeCard() {
   if (typeof ARC === 'undefined' || G.roster(L, L.user).length < 5) return '';
   const others = L.teams.filter(t => t.id !== L.user).sort((a, b) => tname(a).localeCompare(tname(b))), opp = others.find(t => t.id === ui.arcOpp) || others[0], q = ui.arcQ || 120;
@@ -9723,6 +9770,7 @@ function act(a, el) {
     case 'autocut': G.cutTo(L, L.user, G.rules(L.year).rosterMax); break;
     case 'startSeason': { const e = G.startRegular(L, IX()); if (e) flash(e); break; }
     case 'simNext': G.simNextGame(L); break;
+    case 'arcReal': arcReal(); return;
     case 'simWeek': G.simWeek(L); break;
     case 'simSeason': while (L.phase === 'regular') G.simDay(L); break;
     case 'simRound': G.simPlayoffRound(L); break;
