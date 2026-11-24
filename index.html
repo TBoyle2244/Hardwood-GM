@@ -6215,6 +6215,7 @@ const ARC = (() => {
     /* ----- movement ----- */
     moveAll(dt, inp) {
       const off = this.poss, def = 1 - off, h = this.hoopOf(off), spots = this.spots(off), user = this.user;
+      this.idleUser = Math.abs(inp.jx || 0) + Math.abs(inp.jy || 0) <= 0.15;
       const ctrl = user != null ? this.ctrl[user] : null;
       for (const pl of this.all()) {
         // jumping
@@ -6222,7 +6223,7 @@ const ARC = (() => {
         if (pl.hang > 0) { pl.hang -= dt; pl.vz = 0; if (pl.glide && pl.glide.z != null) pl.z += (pl.glide.z - pl.z) * Math.min(1, dt * 14); if (pl.hang <= 0) pl.glide = null; }
         else if (pl.z > 0 || pl.vz > 0) { pl.z += pl.vz * dt; pl.vz -= G_ACC * dt; if (pl.z <= 0) { pl.z = 0; pl.vz = 0; pl.glide = null; if (pl.landing) { const f = pl.landing; pl.landing = null; f(); } } }
         let tx = pl.x, ty = pl.y, sp = pl.r.spd * PACE;
-        const idle = Math.abs(inp.jx || 0) + Math.abs(inp.jy || 0) <= 0.15, autoD = this.autoDef && pl === ctrl && pl.side === def && idle && this.state !== 'loose';   // auto defense: the computer guards for you until you move
+        const idle = Math.abs(inp.jx || 0) + Math.abs(inp.jy || 0) <= 0.15, autoD = (this.autoDef && pl === ctrl && pl.side === def && idle && this.state !== 'loose') || (pl === ctrl && idle && this.state === 'loose');   // auto defense; and an idle player always goes after a loose ball   // auto defense: the computer guards for you until you move
         if (pl === ctrl && this.state !== 'inbound' && !autoD) {
           const jx = inp.jx || 0, jy = inp.jy || 0;
           if (Math.abs(jx) + Math.abs(jy) > 0.15) { tx = pl.x + jx * 10; ty = pl.y + jy * 10; } else { tx = pl.x; ty = pl.y; }
@@ -6588,10 +6589,10 @@ const ARC = (() => {
         if (b.x < -1 || b.x > LEN + 1 || b.y < -1 || b.y > W + 1) { const side = 1 - (b.lastTouch != null ? b.lastTouch : this.poss); this.say('Out of bounds', 1.2); this.setupInbound(side); return; }
         // whoever gets a hand on it first: close enough, and the ball low enough for his reach (jumping helps)
         const reach = pl => (this.spriteFt || 6) * 0.9 + pl.z + pl.r.height - 6;
-        for (const pl of this.all()) if (pl.z === 0 && b.vz < 0 && dist(pl, b) < 2.2 && b.z > reach(pl) && b.z < reach(pl) + 3.5 && !(this.user != null && pl === this.ctrl[this.user]) && Math.random() < (0.3 + pl.r.reb * 0.4) * dt * 8) { pl.vz = 11 + pl.r.reb * 3; pl.z = 0.01; }
+        for (const pl of this.all()) if (pl.z === 0 && b.vz < 0 && dist(pl, b) < 2.2 && b.z > reach(pl) && b.z < reach(pl) + 3.5 && !(this.user != null && pl === this.ctrl[this.user] && !this.idleUser) && Math.random() < (0.3 + pl.r.reb * 0.4) * dt * 8) { pl.vz = 11 + pl.r.reb * 3; pl.z = 0.01; }
         const sealed = pl => this.T[1 - pl.side].P.some(d => d.boxing === pl && dist(d, pl) < 4.5);   // a man who's boxed out has a harder time
-        const eff2 = pl => dist(pl, b) - pl.r.reb * 0.9 - (pl.side === this.poss ? 0.9 : 0) + Math.random() * 0.8 - (pl.boxing && dist(pl, pl.boxing) < 4.5 ? 2.4 : 0) + (sealed(pl) ? 2 : 0);   // good rebounders and crashing offensive players get there first more often
-        const cand = this.all().filter(pl => dist(pl, b) < 1.4 + pl.r.reb * 0.5 + (pl.side === this.poss ? 0.4 : 0) && b.z <= reach(pl)).sort((a, c) => eff2(a) - eff2(c));
+        const eff2 = pl => dist(pl, b) - pl.r.reb * 0.9 - (pl.side === this.poss ? 0.35 : 0) + Math.random() * 0.8 - (pl.boxing && dist(pl, pl.boxing) < 4.5 ? 2.4 : 0) + (sealed(pl) ? 2 : 0);   // good rebounders and crashing offensive players get there first more often
+        const cand = this.all().filter(pl => dist(pl, b) < 1.4 + pl.r.reb * 0.5 + (pl.side === this.poss ? 0.15 : 0) && b.z <= reach(pl)).sort((a, c) => eff2(a) - eff2(c));
         if (cand.length && Math.random() < 0.05) { const w2 = cand[0], rival = this.all().find(o => o.side !== w2.side && dist(o, w2) < 1.6); if (rival) { const pusher = Math.random() < 0.5 ? w2 : rival; this.foul(pusher); pusher.st.tov += pusher.side === this.poss ? 1 : 0; this.say(`Pushing foul committed by ${pusher.p.name}`, 1.8); this.setupInbound(1 - pusher.side); return; } }
         for (const pl of cand.length ? [cand[0]] : []) {
           if (true) {
@@ -7937,7 +7938,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24m';
+const APP_VERSION = '2026-11-24n';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
