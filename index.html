@@ -5952,7 +5952,7 @@ const ARC = (() => {
       ];
     }
     setupInbound(side, start) {
-      this.poss = side; this.shot = 24; this.state = 'inbound'; this.wait = start ? 1.2 : 0.9;
+      this.poss = side; this.shot = 24; this.state = 'inbound'; this.wait = start ? 1.2 : 0.9; this.fcSide = side; this.frontcourt = false; this.backT = 0;
       this.deadBall();
       const own = this.hoopOf(1 - side), d = this.dir(side);
       this.T[side].P.forEach((pl, i) => { pl.x = own.x + d * (8 + i * 6); pl.y = 10 + i * 7; pl.z = 0; pl.vz = 0; });
@@ -5997,6 +5997,15 @@ const ARC = (() => {
       this.tire(dt);
       if (this.clock <= 0) { this.clock = 0; if (this.state !== 'shot') return this.endQuarter(); }
       if (this.shot <= 0 && this.state === 'live') { this.turnover(this.ball.holder, 'Shot clock violation'); return; }
+      // half-court rules: get it across in 8 seconds (10 before 2001-02), and once it's across you can't take it back
+      { const hb = this.ball.holder;
+        if (hb && this.state === 'live' && !hb.oob) {
+          if (this.fcSide !== hb.side) { this.fcSide = hb.side; this.frontcourt = false; this.backT = 0; }
+          const front = hb.side === 0 ? hb.x > 47 : hb.x < 47;
+          if (front) this.frontcourt = true;
+          else if (this.frontcourt && Math.abs(hb.x - 47) > 0.6) { this.turnover(hb, 'Backcourt violation'); return; }
+          else { this.backT += dt; if (this.backT > (this.year >= 2001 ? 8 : 10)) { this.turnover(hb, `${this.year >= 2001 ? 8 : 10}-second violation`); return; } }
+        } }
       this.moveAll(dt, inp);
       this.ballStep(dt, inp);
     }
@@ -6018,7 +6027,7 @@ const ARC = (() => {
           if (near.includes(pl)) { tx = this.ball.x; ty = this.ball.y; }
           else { const s = spots[pl.i]; tx = pl.side === off ? s.x : (s.x + h.x) / 2; ty = pl.side === off ? s.y : (s.y + HY) / 2; }
         } else if (pl.side === off) {
-          if (pl === this.ball.holder) { const a = this.aiHandler(pl, dt); tx = a.x; ty = a.y; }
+          if (pl === this.ball.holder) { const a = this.aiHandler(pl, dt); tx = a.x; ty = a.y; if (this.frontcourt && this.fcSide === pl.side) tx = pl.side === 0 ? Math.max(tx, 49) : Math.min(tx, 45); }
           else {
             const s = spots[pl.i];
             if (!pl.cut || pl.cut.t <= 0) pl.cut = Math.random() < 0.12 * dt && pl.i !== 0 ? { t: 1.6, x: h.x - this.dir(off) * rnd(3, 8), y: HY + rnd(-6, 6) } : null;
@@ -6103,8 +6112,9 @@ const ARC = (() => {
       return corner ? Math.abs(pl.y - HY) >= 22 : d >= 23.75;
     }
     bestPass(pl) {
-      const mates = this.T[pl.side].P.filter(x => x !== pl);
-      return mates.map(m => ({ m, s: this.openness(m) - Math.abs(dist(m, this.hoopOf(pl.side)) - 15) * 0.15 + rnd(-1.5, 1.5) })).sort((a, b) => b.s - a.s)[0].m;
+      const back = m => this.frontcourt && this.fcSide === pl.side && (pl.side === 0 ? m.x < 48 : m.x > 46);   // don't throw it back over half court
+      const mates = this.T[pl.side].P.filter(x => x !== pl), ok = mates.filter(m => !back(m));
+      return (ok.length ? ok : mates).map(m => ({ m, s: this.openness(m) - Math.abs(dist(m, this.hoopOf(pl.side)) - 15) * 0.15 + rnd(-1.5, 1.5) })).sort((a, b) => b.s - a.s)[0].m;
     }
     // Pass toward the joystick direction (or the most open man when it's centered).
     passDir(pl, jx, jy) {
@@ -6143,7 +6153,7 @@ const ARC = (() => {
       pl.st.fga++; if (three) pl.st.tpa++;
       this.ball.holder = null;
       this.ball.flight = { kind: 'shot', by: pl, from: { x: pl.x, y: pl.y, z: pl.z + pl.r.height }, t: 0, T: dunk ? 0.25 : clamp(0.7 + d / 40, 0.7, 1.5), make, three, blocked, dunk };
-      this.state = 'shot'; delete pl.shooting;
+      this.state = 'shot'; delete pl.shooting; this.frontcourt = false; this.backT = 0;   // a shot ends team control
       if (close && !blocked) {   // drive to the rim: dunkers glide in and hang on the rim; layups float in with one hand
         const toward = Math.max(0, d - (dunk ? 0.9 : 1.6)), ux = (h.x - pl.x) / (d || 1), uy = (h.y - pl.y) / (d || 1);
         // the court art draws players small next to the rim, so a dunker is lifted until his hands reach it
@@ -6358,7 +6368,7 @@ const ARC = (() => {
       pl.moveCd = kind === 'spin' ? 1.0 : 0.7;
       if (kind === 'cross') pl.hand = dir || -pl.hand;
       pl.anim = { k: kind, t: 0, T: kind === 'spin' ? 0.4 : kind === 'hesi' ? 0.45 : kind === 'step' ? 0.35 : 0.25, dir: dir || pl.hand };
-      if (kind === 'step') { const h = this.hoopOf(pl.side), d = dist(pl, h) || 1; pl.glide = null; pl.stepTo = { x: pl.x - (h.x - pl.x) / d * 4, y: pl.y - (h.y - pl.y) / d * 4, t: 0.3 }; }
+      if (kind === 'step') { const h = this.hoopOf(pl.side), d = dist(pl, h) || 1; pl.glide = null; let sx2 = pl.x - (h.x - pl.x) / d * 4; if (pl !== this.ctrl[this.user] && this.frontcourt) sx2 = pl.side === 0 ? Math.max(sx2, 49) : Math.min(sx2, 45); pl.stepTo = { x: sx2, y: pl.y - (h.y - pl.y) / d * 4, t: 0.3 }; }
       if (!guarded) return;
       const handle = clamp(0.3 + pl.r.pass * 0.35 + (pl.r.spd - 17) * 0.05, 0.2, 0.85) * this.eff(pl);
       const base = { cross: 0.55, hesi: 0.5, spin: 0.62, step: 0.5 }[kind];
@@ -6467,10 +6477,11 @@ const ARC = (() => {
     }
     root.addEventListener('touchstart', e => {
       if (paused) return;
+      // the pause button and the menus are normal buttons: let the tap through as a click (blocking it is why II did nothing on a touch screen)
+      if ([...e.changedTouches].some(t => t.target.closest && t.target.closest('.arc-pause, .arc-menu, .arc-end, .arc-match'))) return;
       for (const t of e.changedTouches) {
         const b = t.target.closest && t.target.closest('[data-b]');
         if (b) { b.classList.add('on'); pressDown(t.identifier, b.dataset.b, t.clientX, t.clientY); continue; }
-        if (t.target.closest && t.target.closest('.arc-pause, .arc-menu, .arc-end')) continue;
         if (t.clientX < w * 0.5 && stickId == null) { stickId = t.identifier; sx = t.clientX; sy = t.clientY; stick.style.left = (sx - 60) + 'px'; stick.style.top = (sy - 60) + 'px'; stick.classList.add('on'); stickMove(sx, sy); }
         else pressDown(t.identifier, null, t.clientX, t.clientY);
       }
@@ -6800,7 +6811,7 @@ const ARC = (() => {
         for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
         px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
       } }
-      drawMeter(); for (const L2 of labels) { const tw = L2.t.length * 4 + 4; px.fillStyle = 'rgba(10,12,20,.72)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 4, tw, 9); pixText(px, L2.t, L2.x, L2.y, 7, '#ffffff'); } labels = [];
+      drawMeter(); for (const L2 of labels) { const tw = L2.t.length * 4 + 4; px.fillStyle = 'rgba(10,12,20,.72)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 4, tw, 9); pixText(px, L2.t, L2.x, L2.y, 7, L2.c || '#ffffff'); } labels = [];
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
       if (game.rimShake > 0) game.rimShake -= 1 / 60;
       scoreboard(shift);
@@ -6823,6 +6834,10 @@ const ARC = (() => {
       px.fillStyle = 'rgba(190,225,255,.5)'; px.fillRect(gx, g1y, gw, g2y - g1y);
       R(gx, g1y, gw, 1, '#ffffff'); R(gx, g2y, gw, 1, '#ffffff'); R(gx, g1y, 1, g2y - g1y, '#ffffff'); R(gx + gw - 1, g1y, 1, g2y - g1y, '#ffffff');
       R(gx + 1, g1y + Math.round((g2y - g1y) * 0.45), gw - 2, 1, '#ff6a3d');
+      // shot clock on top of the backboard: red LED digits, flashing under 5
+      { const st2 = String(Math.max(0, Math.ceil(game.shot))), sw2 = microW(st2, 1) + 4, sx3 = gx + Math.round(gw / 2 - sw2 / 2), sy3 = g1y - 9;
+        R(sx3 - 1, sy3 - 1, sw2 + 2, 9, '#5a5f6b'); R(sx3, sy3, sw2, 7, '#0b0c12');
+        if (!(game.shot <= 5 && game.state === 'live' && Math.floor(game.t * 4) % 2)) micro(px, st2, sx3 + 2, sy3 + 1, 1, '#ff3b2f'); }
       const shk = game.rimShake > 0 && game.hoopOf(game.madeBy != null ? game.madeBy : 0).x === hx ? Math.round(Math.sin(game.t * 60) * 1.4) : 0;
       const [rx, ry0] = P(hx, HY, RIM_Z), ry = ry0 + shk, rw = 12, rh = 5, nl = 7;
       for (let i = 0; i <= nl; i++) { const k = i / nl, half = rw / 2 - k * rw * 0.18; R(rx - half, ry + rh / 2 + i, 1, 1, '#f4f4f4'); R(rx + half - 1, ry + rh / 2 + i, 1, 1, '#f4f4f4'); if (i % 3 === 0) for (let q = rx - half + 2; q < rx + half - 1; q += 2) R(q, ry + rh / 2 + i, 1, 1, 'rgba(255,255,255,.75)'); }
@@ -6848,8 +6863,10 @@ const ARC = (() => {
       px.drawImage(sp.c, x0, y0);
       if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 2, y0 - 5, 5, 1); px.fillRect(fx - 1, y0 - 4, 3, 1); px.fillRect(fx, y0 - 3, 1, 1);
         // name tag under your player, with the make chance when he has the ball
-        const nm = pl.p.name.split(' '), tag = (nm.length > 1 ? nm[0][0] + '. ' + nm.slice(1).join(' ') : pl.p.name) + (hasB && !pl.oob && game.state === 'live' ? ' ' + Math.round(game.chance(pl) * 100) + '%' : '');
-        labels.push({ x: fx, y: fy + 7, t: tag }); }
+        // colored by the make chance when he has the ball: green above 50%, yellow 33-50%, red below 33%
+        const nm = pl.p.name.split(' '), tag = nm.length > 1 ? nm[0][0] + '. ' + nm.slice(1).join(' ') : pl.p.name;
+        let col = '#ffffff'; if (hasB && !pl.oob && game.state === 'live') { const ch = game.chance(pl); col = ch > 0.5 ? '#4ade80' : ch >= 0.33 ? '#facc15' : '#f87171'; }
+        labels.push({ x: fx, y: fy + 7, t: tag, c: col }); }
       // shot meter beside your shooter: fills as you rise, green at the top of the jump
       const userSide = game.user != null && pl.side === game.user;
       let mv = null, mcol = null;
@@ -6990,13 +7007,14 @@ const HELP = [
 <li><b>Defense pad</b>: <b>Steal</b> swipes at the ball, <b>Block</b> jumps to contest, <b>Charge</b> plants your feet (if the driver runs into you it's an offensive foul, but a late slide is a blocking foul), <b>Switch</b> takes the defender nearest the ball.</li>
 <li><b>Moves beat defenders</b>: a crossover, hesitation, spin or step-back freezes the man guarding you for a moment. Good ball handlers and quick players win more often; a sloppy crossover against a good thief can get stripped.</li>
 <li><b>Energy and substitutions</b>: players tire on the floor (faster when they run hard) and recover on the bench. Tired players are slower and miss more. Pause (II) and open Substitutions to see each player's energy, minutes, points, fouls and ratings, and to swap players (tap a starter, then a bench player). Auto substitutions are on unless you turn them off in Settings. Six fouls and a player is out.</li>
-<li><b>Player card</b> (bottom left): your player's name, energy bar and key ratings. The tag under him shows his make chance with a well-timed shot from where he stands.</li>
+<li><b>Player card</b> (bottom left): your player's name, energy bar and key ratings. The name under him turns green when a well-timed shot from there goes in more than half the time, yellow from a third to half, and red below a third.</li>
 <li><b>Ratings matter about as much as your play</b>: speed, shooting, passing, steals, blocks and rebounding all come from the players' real numbers. Good defenders make shots harder, and the three-point line appears from 1979-80.</li>
 <li><b>Tonight's matchup</b>: before tip-off you see both starting fives (portraits, star ratings from overall, positions and numbers), both records and the arena. Pick your jersey: Home (white), Away (your color) or Alternate (your second color); the other team wears the contrast.</li>
 <li><b>Player looks</b>: every player has one of 20 looks (afro, locks, high-top, cornrows, mohawk, man bun and more, some with beards, headbands, goggles, sleeves or high socks), one of 7 skin tones and a hair color, the same every game. Taller players are drawn taller.</li>
 <li><b>Jump ball</b>: the game and each overtime start with a tip-off. You control your center: tap <b>Jump</b> just before the ball peaks. Timing matters most; height and leaping help. The team that loses the opening tip gets the ball to start the 2nd and 3rd quarters, the winner the 4th.</li>
 <li><b>Inbounds</b>: every possession starts with a pass in from under the basket. Tap <b>Pass</b> to inbound right away.</li>
 <li><b>Shot meter</b>: the bar next to your shooter fills as he rises and turns green at the top of the jump. Close to the rim, players drive in for a layup, and dunkers slam it and hang on the rim.</li>
+<li><b>Half court</b>: get the ball across half court in 8 seconds (10 before 2001-02), and once it's across you can't take it or pass it back (backcourt violation). Shot clocks sit on top of both backboards and flash in the last 5 seconds.</li>
 <li>The shot clock is 24 seconds. Shooting fouls send a player to the line (and to the floor). Tied after four quarters means overtime.</li>
 </ul>` },
 
@@ -7224,7 +7242,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23k';
+const APP_VERSION = '2026-11-23l';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
