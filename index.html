@@ -5971,7 +5971,7 @@ const ARC = (() => {
       this.T[side].P.forEach((pl, i) => { pl.x = own.x + d * (8 + i * 6); pl.y = 10 + i * 7; pl.z = 0; pl.vz = 0; });
       this.T[1 - side].P.forEach((pl, i) => { pl.x = own.x + d * (30 + i * 3); pl.y = 12 + i * 6.5; pl.z = 0; pl.vz = 0; });
       // the ball is passed in from out of bounds under your own basket: a forward takes it out, the point guard comes to get it
-      const pg = this.T[side].P[0], inb = this.T[side].P[3]; this.T[side].P.forEach(p => { p.anim = null; p.glide = null; p.hang = 0; p.oob = false; });
+      const pg = this.T[side].P[0], inb = this.T[side].P[3]; this.all().forEach(p => { p.anim = null; p.glide = null; p.hang = 0; p.oob = false; p.blocking = false; p.landing = null; p.shooting = null; p.stepTo = null; p.charge = 0; });
       const base = side === 0 ? 0 : LEN;
       inb.x = base - d * 1.8; inb.y = HY + 7; inb.oob = true;
       pg.x = own.x + d * 9; pg.y = HY - 3;
@@ -6030,6 +6030,7 @@ const ARC = (() => {
       const ctrl = user != null ? this.ctrl[user] : null;
       for (const pl of this.all()) {
         // jumping
+        if (pl.blocking && pl.z === 0 && !(pl.vz > 0)) { pl.blocking = false; pl.landing = null; }   // landed (or was moved to the floor): hands come down
         if (pl.hang > 0) { pl.hang -= dt; pl.vz = 0; if (pl.glide && pl.glide.z != null) pl.z += (pl.glide.z - pl.z) * Math.min(1, dt * 14); if (pl.hang <= 0) pl.glide = null; }
         else if (pl.z > 0 || pl.vz > 0) { pl.z += pl.vz * dt; pl.vz -= G_ACC * dt; if (pl.z <= 0) { pl.z = 0; pl.vz = 0; pl.glide = null; if (pl.landing) { const f = pl.landing; pl.landing = null; f(); } } }
         let tx = pl.x, ty = pl.y, sp = pl.r.spd * PACE;
@@ -6333,7 +6334,7 @@ const ARC = (() => {
       const b = this.ball; b.holder = null; b.flight = null; b.x = 47; b.y = HY; b.z = 4; b.vz = 0; b.lastPasser = null;
       const spots = [[-8, -7], [-8, 7], [-3, -11], [-3, 11]];
       this.T.forEach((T, side) => { const d = side === 0 ? -1 : 1;
-        T.P.forEach(pl => { pl.z = 0; pl.vz = 0; pl.anim = null; pl.glide = null; pl.hang = 0; pl.oob = false; pl.jumpAt = null; });
+        T.P.forEach(pl => { pl.z = 0; pl.vz = 0; pl.anim = null; pl.glide = null; pl.hang = 0; pl.oob = false; pl.jumpAt = null; pl.blocking = false; pl.landing = null; pl.shooting = null; });
         const c = T.P[4]; c.x = 47 + d * 1.3; c.y = HY;
         T.P.slice(0, 4).forEach((pl, i) => { pl.x = 47 + d * Math.abs(spots[i][0]) * (i < 2 ? 1 : -1); pl.y = HY + spots[i][1] + (side ? 1.5 : -1.5); });
         // jump-ball AI: the computer's center jumps around the right moment
@@ -7353,7 +7354,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23q';
+const APP_VERSION = '2026-11-23r';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
