@@ -491,6 +491,10 @@ table.ts { width: 100%; border-collapse: separate; border-spacing: 0 3px; margin
 .arc-end.pog .arc-row { position: sticky; bottom: -18px; background: #1150a8; padding: 8px 0 4px; margin-bottom: -4px; z-index: 2; }
 @media (max-height: 500px) { .arc-end.pog .arc-row { bottom: -8px; } }
 .arc-half .arc-row { justify-content: center; } .arc-half .arc-row button { min-width: 220px; }
+/* overlay header with its main button, always on screen */
+.arc-end.pog .mh.mhb { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: -18px; z-index: 3; padding: 6px 6px 6px 18px; }
+.arc-end.pog .mh.mhb button { font: 800 15px/1.1 system-ui, sans-serif; letter-spacing: 0; padding: 10px 16px; background: #1a8f4a; border: 3px solid #4ade80; color: #fff; }
+@media (max-height: 500px) { .arc-end.pog .mh.mhb { top: -8px; } .arc-end.pog .mh.mhb button { padding: 6px 12px; font-size: 13px; } }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -6979,8 +6983,8 @@ const ARC = (() => {
       const A = tot(B[0]), H = tot(B[1]), pc = (m, a) => `${m}/${a}${a ? ' (' + Math.round(m / a * 100) + '%)' : ''}`;
       const rows = [['Field goals', pc(A.fgm, A.fga), pc(H.fgm, H.fga)], ['3-pointers', pc(A.tpm, A.tpa), pc(H.tpm, H.tpa)], ['Free throws', pc(A.ftm, A.fta), pc(H.ftm, H.fta)], ['Rebounds', A.reb, H.reb], ['Assists', A.ast, H.ast], ['Steals', A.stl, H.stl], ['Blocks', A.blk, H.blk], ['Turnovers', A.tov, H.tov]];
       const d = document.createElement('div'); d.className = 'arc-end pog arc-half';
-      d.innerHTML = `<div class="mh">HALFTIME</div>${teamHead()}${lineScore()}<table class="ts"><tr class="h"><th>${game.T[0].abbr}</th><th>TEAM STATS</th><th>${game.T[1].abbr}</th></tr>${rows.map(r => `<tr><td>${r[1]}</td><td class="m">${r[0]}</td><td>${r[2]}</td></tr>`).join('')}</table>
-        <div class="tops">${topCard(game.T[0])}${topCard(game.T[1])}</div><div class="arc-row"><button class="go" data-y="half">Start 2nd half</button></div>`;
+      d.innerHTML = `<div class="mh mhb"><span>HALFTIME</span><button class="go" data-y="half">Start 2nd half ▶</button></div>${teamHead()}${lineScore()}<table class="ts"><tr class="h"><th>${game.T[0].abbr}</th><th>TEAM STATS</th><th>${game.T[1].abbr}</th></tr>${rows.map(r => `<tr><td>${r[1]}</td><td class="m">${r[0]}</td><td>${r[2]}</td></tr>`).join('')}</table>
+        <div class="tops">${topCard(game.T[0])}${topCard(game.T[1])}</div>`;
       fillPortraits(d);
       d.querySelector('[data-y="half"]').addEventListener('click', () => { game.half = false; game.wait = 0.4; d.remove(); });
       ui.appendChild(d);
@@ -6991,7 +6995,7 @@ const ARC = (() => {
       const gs = pl => pl.st.pts + 1.2 * pl.st.reb + 1.5 * pl.st.ast + 2 * (pl.st.stl + pl.st.blk) - 0.7 * (pl.st.fga - pl.st.fgm) - pl.st.tov + (pl.side === (B[0].score > B[1].score ? 0 : 1) ? 3 : 0);
       const pog = all.slice().sort((a, b) => gs(b) - gs(a))[0], T = game.T[pog.side], s = pog.st, pct = (m, a) => a ? Math.round(m / a * 100) + '%' : '-';
       const d = document.createElement('div'); d.className = 'arc-end pog';
-      d.innerHTML = `<div class="mh">${won ? 'YOU WIN' : 'FINAL'}</div>${teamHead()}${lineScore()}
+      d.innerHTML = `<div class="mh mhb"><span>${won ? 'YOU WIN' : 'FINAL'}</span><button class="go" data-x="quit">Continue ▶</button></div>${teamHead()}${lineScore()}
         <div class="pg"><div class="pc"><div class="tt" style="background:${T.pri}">PLAYER OF THE GAME</div><div class="pb"><div class="pf"></div><div><b class="nm">${pog.p.name}</b><span>${pog.p.pos}${pog.num != null ? ' · #' + pog.num : ''} · ${(T.city ? T.city + ' ' : '') + (T.nick || T.name || T.abbr)}</span></div></div>
           <div class="st"><div><b>${s.pts}</b>PTS</div><div><b>${s.reb}</b>REB</div><div><b>${s.ast}</b>AST</div><div><b>${s.stl}</b>STL</div><div><b>${s.blk}</b>BLK</div></div>
           <div class="st sm"><div><b>${s.fgm}/${s.fga}</b>FG ${pct(s.fgm, s.fga)}</div><div><b>${s.tpm}/${s.tpa}</b>3PT</div><div><b>${s.ftm}/${s.fta}</b>FT</div></div></div>
@@ -7764,7 +7768,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24d';
+const APP_VERSION = '2026-11-24e';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
