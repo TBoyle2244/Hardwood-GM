@@ -7126,7 +7126,9 @@ const ARC = (() => {
         for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
         px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
       } }
-      drawMeter(); for (const L2 of labels) { px.save(); px.setTransform(1, 0, 0, 1, 0, 0); const tw = Math.round(L2.t.length * 6.2) + 8, lx = Math.round(L2.x * RS), ly2 = Math.round(L2.y * RS); px.fillStyle = 'rgba(6,8,16,.72)'; px.fillRect(lx - Math.round(tw / 2), ly2 - 7, tw, 14); pixText(px, L2.t, lx, ly2, 11, L2.c || '#ffffff', 0, null, '600 11px system-ui, -apple-system, "Helvetica Neue", sans-serif'); px.restore(); } labels = [];
+      drawMeter(); for (const L2 of labels) { px.save(); px.setTransform(1, 0, 0, 1, 0, 0); const tw = Math.round(L2.t.length * 6.2) + 8, lx = Math.round(L2.x * RS), ly2 = Math.round(L2.y * RS); px.fillStyle = 'rgba(6,8,16,.72)'; px.fillRect(lx - Math.round(tw / 2), ly2 - 7, tw, 14); pixText(px, L2.t, lx, ly2, 11, L2.c || '#ffffff', 0, null, '600 11px system-ui, -apple-system, "Helvetica Neue", sans-serif');
+        if (L2.ar != null) { const ax = lx + Math.round(tw / 2) + 7, ca = Math.cos(L2.ar), sa = Math.sin(L2.ar); px.fillStyle = 'rgba(6,8,16,.72)'; px.fillRect(ax - 7, ly2 - 7, 14, 14); px.translate(ax, ly2); px.fillStyle = '#ffd34d'; px.beginPath(); px.moveTo(ca * 6, sa * 6); px.lineTo(-ca * 4 - sa * 4, -sa * 4 + ca * 4); px.lineTo(-ca * 1.5, -sa * 1.5); px.lineTo(-ca * 4 + sa * 4, -sa * 4 - ca * 4); px.closePath(); px.fill(); }
+        px.restore(); } labels = [];
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
       if (game.rimShake > 0) game.rimShake -= 1 / 60;
       scoreboard(shift);
@@ -7165,7 +7167,9 @@ const ARC = (() => {
       const [fx0, fy] = toScr(pl.x, pl.y, 0), [, hy] = toScr(pl.x, pl.y, pl.z), fx = fx0 + sh;
       const me = game.user != null && game.ctrl[game.user] === pl, moving = Math.hypot(pl.vx, pl.vy) > 2 && pl.z === 0;
       const spd2 = Math.hypot(pl.vx, pl.vy);
-      const frame = moving ? 1 + Math.floor(game.t * (6 + spd2 * 0.9) + pl.i * 1.7) % 6 : 0;   // faster runners take quicker strides
+      const now = performance.now() / 1000, dtS = Math.min(0.1, now - (pl.phT || now)); pl.phT = now;
+      if (moving && !paused) pl.ph = (pl.ph == null ? pl.i * 1.7 : pl.ph) + dtS * (4.5 + spd2 * 0.55) * clamp(0.75 + (pl.r.height - 6.25) * 0.35, 0.72, 1);   // stride rate: steady, a bit slower for small players
+      const frame = moving ? 1 + Math.floor(pl.ph || 0) % 6 : 0;
       const hasB = game.ball.holder === pl; let faceL = Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);
       if (pl.anim && pl.anim.k === 'spin') faceL = Math.floor(pl.anim.t / 0.1) % 2 === 0;
       const an = pl.anim && pl.anim.k;
@@ -7187,7 +7191,8 @@ const ARC = (() => {
         // colored by the make chance when he has the ball: green above 50%, yellow 33-50%, red below 33%
         const nm = pl.p.name.split(' '), tag = nm.length > 1 ? nm.slice(1).join(' ') : pl.p.name;
         let col = '#ffffff'; if (hasB && !pl.oob && game.state === 'live') { const ch = game.chance(pl); col = ch > 0.5 ? '#4ade80' : ch >= 0.33 ? '#facc15' : '#f87171'; }
-        labels.push({ x: fx, y: fy + 9, t: tag, c: col }); }
+        let ar = null; if (pl.side !== game.poss && ['live', 'inbound', 'shot'].includes(game.state)) { const m = game.markOf(pl); if (m) { const [mx, my] = toScr(m.x, m.y, 0); ar = Math.atan2(my - fy, mx - fx0); } }
+        labels.push({ x: fx, y: fy + 9, t: tag, c: col, ar }); }
       // shot meter beside your shooter: fills as you rise, green at the top of the jump
       const userSide = game.user != null && pl.side === game.user;
       let mv = null, mcol = null;
@@ -7332,6 +7337,7 @@ const HELP = [
 <li><b>Pause menu</b>: Call Timeout (7 a game; only when you have the ball or play is dead; it gives your whole team a breather), Team Stats (line score by quarter and each team's top performer), Box Score, Shot Chart (made and missed shots for either team), Play by Play, Substitutions, Controls and Settings. Sim / Quit lets you sim the rest of the game or leave it.</li>
 <li><b>Movement</b>: players speed up and slow down instead of snapping to full speed. In the half court your teammates swap spots every few seconds and the big man comes up to set a screen for the ball handler, then rolls to the rim. A defender caught on the screen slows down.</li>
 <li><b>Auto defense</b> (Settings, on by default): your defender guards his man by himself until you move the joystick. You still press Block, Steal and Charge yourself.</li>
+<li><b>Who to guard</b>: on defense, a small yellow arrow beside your player's name points at the man you're guarding.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7573,7 +7579,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23x';
+const APP_VERSION = '2026-11-23y';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
