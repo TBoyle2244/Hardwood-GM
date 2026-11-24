@@ -6442,13 +6442,14 @@ const ARC = (() => {
     root.appendChild(cv); root.appendChild(ui);
     let w = 0, h = 0, dpr = 1, camX = 47;
     const inp = { jx: 0, jy: 0 }, edge = {}, keys = {};
-    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; PH = clamp(Math.round(h / 2.7), 140, 320); PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW; pc.height = PH; }
+    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; PH = clamp(Math.round(h / 2.7), 140, 320); PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW * RS; pc.height = PH * RS; }
     // Pixel-art view: everything is drawn into a small canvas (PH pixels tall) and scaled up with no smoothing.
     // 3/4 top-down camera that follows the ball along the length of the court.
     // SC = pixels per foot. Players are drawn small next to the court (about 3.5 ft tall) like classic arcade games.
     let PH = 240; const SC = 5, SYF = 0.66, MARGIN = 9, CROWD = 70;
     const pc = document.createElement('canvas'), px = pc.getContext('2d');
     let PW = 320, world = null, camY = 25;
+    const RS = 2;   // the pixel canvas is drawn at 2x: court and ball in 2x2 blocks, players in single pixels for more detail
     const S = () => SC, SY = () => SC * SYF;
     const wx = x => (x + MARGIN) * SC, wy = (y, z) => CROWD + 3 * SC * SYF + y * SC * SYF - (z || 0) * SC * 0.8;
     const WORLD_H = Math.ceil(wy(W) + 3 * SC * SYF + CROWD);
@@ -6778,8 +6779,8 @@ const ARC = (() => {
       else if (L.hair !== 1) R(faceL ? 1 : 5, eyeY, 1, 1, '#1b1209');
     }
     // court sprites use a bigger cartoon head: 8 wide, 7 tall, two big eyes turned the way he faces
-    function toonHead(g, ox, oy, lk, band, faceL) {
-      const { sk, hc, L } = lk, R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(ox + x, oy + y, a, b); };
+    function toonHead(g, ox, oy, lk, band, faceL, k) {
+      k = k || 1; const { sk, hc, L } = lk, R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(Math.round((ox + x) * k), Math.round((oy + y) * k), Math.round(a * k), Math.round(b * k)); };
       R(0, 0, 8, 7, sk); R(-1, 3, 1, 2, shade(sk, -0.1)); R(8, 3, 1, 2, shade(sk, -0.1));
       switch (L.hair) {
         case 0: R(0, 0, 8, 2, hc); R(0, 2, 1, 1, hc); R(7, 2, 1, 1, hc); break;
@@ -6797,6 +6798,18 @@ const ARC = (() => {
       }
       if (L.acc === 1) R(0, 1, 8, 1, band);
       const sh2 = faceL ? -1 : 1, e1 = faceL ? 1 : 2, e2 = faceL ? 4 : 5;
+      if (k >= 2) {   // full-detail face: eyes with whites, pupils and brows, nose shading, mouth, ear shading, hair shine
+        const P = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(Math.round(ox * k + x), Math.round(oy * k + y), a, b); };
+        P(-2, 7, 1, 2, shade(sk, -0.3)); P(16, 7, 1, 2, shade(sk, -0.3));
+        if (L.hair !== 3 && L.hair !== 7) P(2, 0, 10, 1, shade(hc, 0.35));
+        if (L.acc === 2) { P(0, 6, 16, 4, '#262626'); P(e1 * 2 + 1, 7, 3, 2, '#8fc8e8'); P(e2 * 2 + 1, 7, 3, 2, '#8fc8e8'); P(e1 * 2 + 1, 7, 1, 1, '#e8f6ff'); P(e2 * 2 + 1, 7, 1, 1, '#e8f6ff'); }
+        else for (const ex of [e1, e2]) { const X = ex * 2; P(X, 5, 4, 1, shade(hc, -0.1)); P(X, 7, 4, 3, '#ffffff'); P(X + (sh2 > 0 ? 2 : 0), 7, 2, 3, '#2a1a10'); P(X + (sh2 > 0 ? 2 : 0), 7, 1, 1, '#ffffff'); }
+        const nx = faceL ? 1 : 14; P(nx, 8, 1, 3, shade(sk, -0.2)); P(faceL ? 0 : 15, 10, 1, 1, shade(sk, -0.3));
+        P(faceL ? 2 : 10, 10, 3, 1, shade(sk, 0.15));   // cheek
+        if (L.fac === 1) { R(0, 5, 8, 2, hc); P(faceL ? 4 : 8, 11, 4, 1, '#5a2018'); for (let i = 0; i < 6; i++) P(1 + i * 2 + (i % 2), 12 + (i % 2), 1, 1, shade(hc, -0.3)); }
+        else { P(faceL ? 4 : 8, 12, 4, 1, '#6b2a20'); P(faceL ? 4 : 8, 13, 4, 1, shade(sk, -0.12)); if (L.fac === 2) P(faceL ? 4 : 8, 13, 4, 1, hc); if (L.fac === 3) P(faceL ? 3 : 7, 11, 6, 1, hc); }
+        return;
+      }
       if (L.acc === 2) { R(0, 3, 8, 2, '#2a2a2a'); R(e1, 3, 2, 1, '#8fc8e8'); R(e2, 3, 2, 1, '#8fc8e8'); }
       else for (const ex of [e1, e2]) { R(ex, 3, 2, 2, '#ffffff'); R(ex + (sh2 > 0 ? 1 : 0), 3, 1, 2, '#1b1209'); }
       R(faceL ? 0 : 7, 4, 1, 1, shade(sk, -0.18));   // nose on the side he faces
@@ -6823,8 +6836,8 @@ const ARC = (() => {
       const T = game.T[pl.side], id = pl.p.id || (pl.side * 10 + pl.i), key = id + '|' + pl.side + '|' + frame + '|' + pose + '|' + (faceL ? 1 : 0) + '|' + pl.num;
       if (cache[key]) return cache[key];
       const num = pl.num != null ? pl.num : 0, lk = lookOf(pl), sk = lk.sk, LK = lk.L;
-      const tall = (pl.r.height - 6.6) * 12, leg = clamp(Math.round(tall * 0.55), -3, 5), tor = clamp(Math.round(tall * 0.3), -2, 3), H = 30 + leg + tor, Wd = 18, c = document.createElement('canvas'); c.width = Wd; c.height = H + 2;
-      const g = c.getContext('2d'), R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(x, y, a, b); };
+      const tall = (pl.r.height - 6.6) * 12, leg = clamp(Math.round(tall * 0.55), -3, 5), tor = clamp(Math.round(tall * 0.3), -2, 3), H = 30 + leg + tor, Wd = 18, K = RS, c = document.createElement('canvas'); c.width = Wd * K; c.height = (H + 2) * K;
+      const g = c.getContext('2d'), R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(Math.round(x * K), Math.round(y * K), Math.round(a * K), Math.round(b * K)); }, P = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(x, y, a, b); };
       const jer = T.color, trim = T.trim, shorts = T.kit === 'home' ? '#ece8df' : shade(T.color, -0.12), shoe = lk.shoe;
       const o = 4, top = 6;
       // legs and shoes (two run frames)
@@ -6843,10 +6856,14 @@ const ARC = (() => {
       R(o, top + 12 + tor, 8, 5, shorts); R(o, top + 12 + tor, 1, 5, trim); R(o + 7, top + 12 + tor, 1, 5, trim);
       // jersey
       R(o, top + 6, 8, 7 + tor, jer); R(o, top + 6, 8, 1, trim); R(o + 2, top + 6, 4, 1, sk);
-      { // jersey number in the trim color: 3x5 pixel digits
-        const ns = String(num); g.fillStyle = trim;
-        if (ns.length === 1) { const m = MF[ns]; for (let i = 0; i < 15; i++) if (m[i] === '1') g.fillRect(o + 3 + (i % 3), top + 7 + Math.floor(i / 3), 1, 1); }
-        else for (let k = 0; k < 2; k++) { const m = MF[ns[k]]; for (let i = 0; i < 15; i++) if (m[i] === '1') g.fillRect(o + k * 4 + (i % 3) + (k ? 1 : 0) - (k ? 1 : 0), top + 7 + Math.floor(i / 3), 1, 1); }
+      { // full-detail jersey: v-neck, armhole trim, side panels, the number with a shadow, shorts waistband, side stripe and hem
+        const X = o * K, Y = (top + 6) * K, JW = 8 * K, JH = (7 + tor) * K, dk = shade(jer, -0.18);
+        P(X + 6, Y + 1, 4, 2, sk); P(X + 7, Y + 3, 2, 1, sk); P(X + 5, Y + 1, 1, 2, trim); P(X + 10, Y + 1, 1, 2, trim); P(X + 6, Y + 3, 1, 1, trim); P(X + 9, Y + 3, 1, 1, trim); P(X + 7, Y + 4, 2, 1, trim);
+        P(X, Y, 1, 5, trim); P(X + JW - 1, Y, 1, 5, trim); P(X + 1, Y + JH - 2, JW - 2, 1, dk);
+        const ns = String(num), nw = ns.length * 4 - 1, nx = X + Math.round((JW - nw) / 2), ny = Y + 5;
+        for (let q = 0; q < ns.length; q++) { const m = MF[ns[q]]; for (let i = 0; i < 15; i++) if (m[i] === '1') { P(nx + q * 4 + (i % 3) + 1, ny + Math.floor(i / 3) + 1, 1, 1, shade(trim === '#f4f1ea' ? jer : trim, -0.45)); P(nx + q * 4 + (i % 3), ny + Math.floor(i / 3), 1, 1, trim); } }
+        const SY2 = (top + 12 + tor) * K, sd = shade(shorts, -0.15);
+        P(X, SY2, JW, 2, sd); P(X + 2, SY2 + 1, JW - 4, 1, shade(shorts, 0.1)); P(X + 1, SY2 + 10 - 1, JW - 2, 1, trim); P(X + 7, SY2 + 3, 2, 6, shade(shorts, -0.25));
       }
       // arms: down, up (shooting / contesting) or one out (dribbling)
       if (pose === 'up' || pose === 'dunk' || pose === 'hang') { R(o - 1, top - 3, 2, 9, sk); R(o + 7, top - 3, 2, 9, sk); }
@@ -6856,19 +6873,29 @@ const ARC = (() => {
       else { R(o - 1, top + 6, 2, 6 + tor, sk); R(o + 7, top + 6, 2, 6 + tor, sk); }
       if (lk.bands) { R(o - 1, top + 10 + tor, 2, 1, trim); R(o + 7, top + 10 + tor, 2, 1, trim); }   // wristbands
       if (LK.acc === 3 && pose !== 'up' && pose !== 'dunk') R(o - 1, top + 6, 2, 5 + tor, '#1f1f1f');   // shooting sleeve
-      // head and hair
-      toonHead(g, o, top - 1, lk, trim === '#f4f1ea' ? '#f4f1ea' : trim, faceL);
+      // head and hair, in full detail
+      toonHead(g, o, top - 1, lk, trim === '#f4f1ea' ? '#f4f1ea' : trim, faceL, K);
+      // shoes: white soles and a stripe; light from the upper left, shadow on the right edge of every shape
+      { const id3 = g.getImageData(0, 0, c.width, c.height), d3 = id3.data, Wc = c.width, Hc = c.height, a = (x, y) => x >= 0 && y >= 0 && x < Wc && y < Hc && d3[(y * Wc + x) * 4 + 3] > 0;
+        const mul = (i, f) => { d3[i] = clamp(Math.round(d3[i] * f), 0, 255); d3[i + 1] = clamp(Math.round(d3[i + 1] * f), 0, 255); d3[i + 2] = clamp(Math.round(d3[i + 2] * f), 0, 255); };
+        const copy = new Uint8ClampedArray(d3);
+        for (let y = 0; y < Hc; y++) for (let x = 0; x < Wc; x++) { const i = (y * Wc + x) * 4; if (!copy[i + 3]) continue;
+          const r1 = !(x + 1 < Wc && copy[i + 7]), r2 = !(x + 2 < Wc && copy[i + 11]), l1 = !(x > 0 && copy[i - 1]), t1 = !(y > 0 && copy[i - Wc * 4 + 3]);
+          if (r1) mul(i, 0.72); else if (r2) mul(i, 0.86); else if (l1 || t1) mul(i, 1.14); }
+        g.putImageData(id3, 0, 0);
+        const fy3 = (ly + ll + 2) * K - 1; for (let x = 0; x < Wc; x++) if (a(x, fy3) && a(x, fy3 - 1)) P(x, fy3, 1, 1, shoe === '#f4f4f4' ? '#c9c9c9' : '#f4f4f4');
+      }
       const out = outlined(c);
       let res = out;
-      if (faceL) { const f = document.createElement('canvas'); f.width = Wd; f.height = H + 2; const fc = f.getContext('2d'); fc.translate(Wd, 0); fc.scale(-1, 1); fc.drawImage(out, 0, 0); res = f; }
-      cache[key] = { c: res, foot: ly + ll + 2 }; return cache[key];
+      if (faceL) { const f = document.createElement('canvas'); f.width = Wd * K; f.height = (H + 2) * K; const fc = f.getContext('2d'); fc.translate(Wd * K, 0); fc.scale(-1, 1); fc.drawImage(out, 0, 0); res = f; }
+      cache[key] = { c: res, foot: (ly + ll + 2) * K }; return cache[key];
     }
     function draw() {
       if (!world) world = buildWorld();
       const b = game.ball;
       camX += (clamp(b.x, 0, LEN) - camX) * 0.12; camY += (clamp(b.y, 0, W) - camY) * 0.1;
       px.imageSmoothingEnabled = false;
-      px.fillStyle = '#1c1f2e'; px.fillRect(0, 0, PW, PH);
+      px.setTransform(RS, 0, 0, RS, 0, 0); px.fillStyle = '#1c1f2e'; px.fillRect(0, 0, PW, PH);
       const cp = Math.round(camPx()), off = world.width < PW ? Math.round((PW - world.width) / 2) : 0;
       px.drawImage(world, off - cp, -Math.round(camPy()));
       const shift = off;
@@ -6881,17 +6908,17 @@ const ARC = (() => {
       items.sort((a, bb) => a.y - bb.y).forEach(it => it.f());
       // alley-oop hint: a thought bubble with a ball over teammates who'd catch a lob and slam it
       if (game.user != null && game.poss === game.user && game.state === 'live') { const hb2 = game.ball.holder; if (hb2 && hb2.side === game.user && hb2 === game.ctrl[game.user]) for (const m of game.oopMates(hb2)) {
-        const sp2 = sprite(m, 0, 'down', false), [mx2, my2] = toScr(m.x, m.y, 0), bx2 = Math.round(mx2 + shift + 6), by2 = Math.round(my2 - sp2.foot - 14 + Math.sin(game.t * 5) * 1.5);
+        const sp2 = sprite(m, 0, 'down', false), [mx2, my2] = toScr(m.x, m.y, 0), bx2 = Math.round(mx2 + shift + 6), by2 = Math.round(my2 - sp2.foot / RS - 14 + Math.sin(game.t * 5) * 1.5);
         const BUB = ['..#######..', '.#.......#.', '#...ooo...#', '#..ohoso..#', '#..ossso..#', '#...ooo...#', '.#.......#.', '..#######..'], BC2 = { '#': '#1b1209', '.': '#ffffff', o: '#e8721c', h: '#ffb066', s: '#9a3f0c' };
         for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
         px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
       } }
-      drawMeter(); for (const L2 of labels) { const tw = Math.round(L2.t.length * 4) + 4; px.fillStyle = 'rgba(6,8,16,.7)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 4, tw, 8); pixText(px, L2.t, L2.x, L2.y, 7, L2.c || '#ffffff'); } labels = [];
+      drawMeter(); for (const L2 of labels) { px.save(); px.setTransform(1, 0, 0, 1, 0, 0); const tw = Math.round(L2.t.length * 6.2) + 8, lx = Math.round(L2.x * RS), ly2 = Math.round(L2.y * RS); px.fillStyle = 'rgba(6,8,16,.72)'; px.fillRect(lx - Math.round(tw / 2), ly2 - 7, tw, 14); pixText(px, L2.t, lx, ly2, 11, L2.c || '#ffffff'); px.restore(); } labels = [];
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
       if (game.rimShake > 0) game.rimShake -= 1 / 60;
       scoreboard(shift);
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(pc, 0, 0, PW, PH, 0, 0, cv.width, cv.height);
+      ctx.drawImage(pc, 0, 0, PW * RS, PH * RS, 0, 0, cv.width, cv.height);
     }
     function drawHoop(side, sh) {
       const hx = HOOP[side], d = side ? -1 : 1, T0 = game.T[0];
@@ -6932,12 +6959,12 @@ const ARC = (() => {
       px.fillStyle = 'rgba(0,0,0,.28)'; px.beginPath(); px.ellipse(fx, fy, an === 'fall' ? 11 : 6, 2, 0, 0, Math.PI * 2); px.fill();
       if (an === 'fall') {   // knocked to the floor: the sprite lies on its side, then pops back up
         const k = pl.anim.t, ang = k < 0.12 ? (k / 0.12) * Math.PI / 2 : k > pl.anim.T - 0.15 ? ((pl.anim.T - k) / 0.15) * Math.PI / 2 : Math.PI / 2;
-        px.save(); px.translate(Math.round(fx), Math.round(fy)); px.rotate((faceL ? 1 : -1) * Math.round(ang / (Math.PI / 4)) * Math.PI / 4); px.drawImage(sp.c, -Math.round(sp.c.width / 2), -sp.foot); px.restore();
+        px.save(); px.setTransform(1, 0, 0, 1, Math.round(fx * RS), Math.round(fy * RS)); px.rotate((faceL ? 1 : -1) * Math.round(ang / (Math.PI / 4)) * Math.PI / 4); px.drawImage(sp.c, -Math.round(sp.c.width / 2), -sp.foot); px.restore();
         return;
       }
       if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 5, fy + 2, 11, 1); px.fillRect(fx - 6, fy + 1, 1, 1); px.fillRect(fx + 6, fy + 1, 1, 1); }
-      const x0 = Math.round(fx - sp.c.width / 2), y0 = Math.round(hy - sp.foot);
-      px.drawImage(sp.c, x0, y0);
+      const x0 = Math.round(fx - sp.c.width / RS / 2), y0 = Math.round(hy - sp.foot / RS);
+      px.save(); px.setTransform(1, 0, 0, 1, 0, 0); px.drawImage(sp.c, Math.round(fx * RS - sp.c.width / 2), Math.round(hy * RS - sp.foot)); px.restore();
       if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 2, y0 - 5, 5, 1); px.fillRect(fx - 1, y0 - 4, 3, 1); px.fillRect(fx, y0 - 3, 1, 1);
         // name tag under your player, with the make chance when he has the ball
         // colored by the make chance when he has the ball: green above 50%, yellow 33-50%, red below 33%
@@ -7005,7 +7032,7 @@ const ARC = (() => {
     function drawBall(sh) {
       const b = game.ball, [sx2, sy2] = toScr(b.x, b.y, 0), [bx0, by] = toScr(b.x, b.y, b.z), bx = bx0 + sh;
       const hb = b.holder; let x = bx, y = by;
-      if (hb && hb.oob) { const [hx2, hy2] = toScr(hb.x, hb.y, 0); const sp = sprite(hb, 0, 'up', game.hoopOf(hb.side).x < hb.x); x = hx2 + sh; y = hy2 - sp.foot + 1; }
+      if (hb && hb.oob) { const [hx2, hy2] = toScr(hb.x, hb.y, 0); const sp = sprite(hb, 0, 'up', game.hoopOf(hb.side).x < hb.x); x = hx2 + sh; y = hy2 - sp.foot / RS + 1; }
       else if (hb && !hb.shooting && hb.z <= 0.3) { const faceL = Math.abs(hb.vx) > 0.5 ? hb.vx < 0 : (game.hoopOf(hb.side).x < hb.x); const [hx2, hy2] = toScr(hb.x, hb.y, 0); const an2 = hb.anim && hb.anim.k, side2 = (faceL ? -1 : 1) * (hb.hand || 1);
         if (an2 === 'cross') { const k3 = hb.anim.t / hb.anim.T; x = hx2 + sh + side2 * 7 * (2 * k3 - 1); y = hy2 - 2; }
         else if (an2 === 'hesi' || an2 === 'pump') { x = hx2 + sh + side2 * 6; y = hy2 - (an2 === 'pump' ? 22 : 9); }
@@ -7321,7 +7348,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23o';
+const APP_VERSION = '2026-11-23p';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
