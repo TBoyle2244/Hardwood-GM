@@ -5936,7 +5936,7 @@ const ARC = (() => {
   // What a player's ratings mean on the floor.
   function rate(p, year) {
     const pr = p.prof || {}, ovr = p.ovr || 50, big = p.pos === 'C' || p.pos === 'PF';
-    const base = { PG: 19.5, SG: 19, SF: 18.3, PF: 17.4, C: 16.6 }[p.pos] || 18;
+    const base = { PG: 20.4, SG: 19.6, SF: 18.3, PF: 17.1, C: 16.0 }[p.pos] || 18;
     const young = p.age <= 27 ? 0.3 : -(p.age - 27) * 0.12;
     const three = year >= 1979 && (pr.t3 || 0) > 0.25;
     return {
@@ -5992,7 +5992,7 @@ const ARC = (() => {
       this.T.forEach(T => T.P.forEach(pl => { pl.home = pl.i; pl.starter = true; }));
       this.k = 720 / this.qsec;
       this.setKit(0, 'home');   // each game second stands for this many real-game seconds (energy, minutes)
-      this.autoSub = [true, true];
+      this.autoSub = [true, true]; this.autoDef = o.autoDef !== false;
       this.T.forEach(T => { const used = new Set(); T.P.concat(T.B).forEach(pl => { let n = pl.p.num != null ? +pl.p.num : null, k = 0; while (n == null || used.has(n)) { const hv = Math.abs(Math.sin((pl.p.id || pl.i + 1) * 12.9898 + k++ * 78.233)) * 43758.5453; n = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 21, 22, 23, 24, 25, 30, 31, 32, 33, 34, 35, 40, 41, 42, 44, 45, 50, 52, 54, 55][Math.floor((hv % 1) * 37)]; } used.add(n); pl.num = n; }); });
       this.q = 1; this.clock = this.qsec; this.shot = 24; this.poss = 0; this.state = 'inbound'; this.wait = 1.2;
       this.ball = { x: 47, y: 25, z: 4, holder: null, flight: null, lastPasser: null };
@@ -6127,7 +6127,8 @@ const ARC = (() => {
         if (pl.hang > 0) { pl.hang -= dt; pl.vz = 0; if (pl.glide && pl.glide.z != null) pl.z += (pl.glide.z - pl.z) * Math.min(1, dt * 14); if (pl.hang <= 0) pl.glide = null; }
         else if (pl.z > 0 || pl.vz > 0) { pl.z += pl.vz * dt; pl.vz -= G_ACC * dt; if (pl.z <= 0) { pl.z = 0; pl.vz = 0; pl.glide = null; if (pl.landing) { const f = pl.landing; pl.landing = null; f(); } } }
         let tx = pl.x, ty = pl.y, sp = pl.r.spd * PACE;
-        if (pl === ctrl && this.state !== 'inbound') {
+        const idle = Math.abs(inp.jx || 0) + Math.abs(inp.jy || 0) <= 0.15, autoD = this.autoDef && pl === ctrl && pl.side === def && idle && this.state !== 'loose';   // auto defense: the computer guards for you until you move
+        if (pl === ctrl && this.state !== 'inbound' && !autoD) {
           const jx = inp.jx || 0, jy = inp.jy || 0;
           if (Math.abs(jx) + Math.abs(jy) > 0.15) { tx = pl.x + jx * 10; ty = pl.y + jy * 10; } else { tx = pl.x; ty = pl.y; }
           sp *= pl === this.ball.holder ? 0.92 : 1;
@@ -6760,6 +6761,7 @@ const ARC = (() => {
             else if (v === 'bs0' || v === 'bs1') boxSide = +v[2];
             else if (v === 'auto') game.autoSub[game.user] = !game.autoSub[game.user];
             else if (v === 'tips') { showTips = !showTips; if (!showTips) tipEl.classList.remove('on'); }
+            else if (v === 'autod') { game.autoDef = !game.autoDef; try { localStorage.setItem('arcAutoD', game.autoDef ? 'on' : 'off'); } catch (e2) {} }
             else if (v === 'cam') { camFar = !camFar; try { localStorage.setItem('arcCam', camFar ? 'far' : 'close'); } catch (e2) {} size(); }
             else { tab = v; toMsg = ''; }
             return renderMenu(); }
@@ -6781,7 +6783,7 @@ const ARC = (() => {
         <p class="note">${T.side === game.user ? (subMsg || 'Tap a starter, then a bench player to swap them. Energy drops while a player is on the floor (faster when he runs hard) and comes back on the bench. Tired players are slower and miss more.') : 'The other coach makes his own changes.'}</p>
         <div class="scroll"><table class="subs"><tr class="h"><th colspan="2">Starters</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${subRows(T, T.P, false)}
         <tr class="h"><th colspan="2">Bench</th><th>Energy</th><th>MIN</th><th>PTS</th><th>FLS</th>${COLS.map(c => `<th>${c}</th>`).join('')}</tr>${T.B.length ? subRows(T, T.B, true) : '<tr><td colspan="18">No bench players.</td></tr>'}</table></div>`;
-      else body = `<div class="set"><button data-m="cam">Camera: <b>${camFar ? 'Full court' : 'Close'}</b></button><p class="note">Full court zooms out so you can see the whole floor, like the original arcade view.</p>
+      else body = `<div class="set"><button data-m="autod">Auto defense: <b>${game.autoDef ? 'On' : 'Off'}</b></button><p class="note">On: your defender guards his man by himself until you move him. You still jump, block and steal.</p><button data-m="cam">Camera: <b>${camFar ? 'Full court' : 'Close'}</b></button><p class="note">Full court zooms out so you can see the whole floor, like the original arcade view.</p>
         <button data-m="auto">Auto substitutions for your team: <b>${game.autoSub[game.user] ? 'On' : 'Off'}</b></button><p class="note">On: your coach rests tired players and brings starters back at dead balls. Off: you make every change yourself (fouled-out players still come out).</p>
         <button data-m="tips">Control tips: <b>${showTips ? 'On' : 'Off'}</b></button></div>`;
       const left = game.timeouts[game.user];
@@ -7268,7 +7270,7 @@ const ARC = (() => {
   // Start a game in a full-screen layer. opts: { home, away (team objects with players), year, qsec, onExit }
   function start(opts) {
     const root = document.createElement('div'); root.className = 'arc-root'; document.body.appendChild(root);
-    const game = new Game({ teams: [opts.home, opts.away], year: opts.year, qsec: opts.qsec, user: 0 });
+    const game = new Game({ teams: [opts.home, opts.away], year: opts.year, qsec: opts.qsec, user: 0, autoDef: (() => { try { return localStorage.getItem('arcAutoD') !== 'off'; } catch (e) { return true; } })() });
     const v = View(root, game, how => { if (how === 'again') start(opts); else if (opts.onExit) opts.onExit(game); });
     if (typeof window !== 'undefined') window.__arcGame = game;   // for automated tests
     return v;
@@ -7329,6 +7331,7 @@ const HELP = [
 <li><b>Moves beat defenders</b>: a crossover, hesitation, spin or step-back freezes the man guarding you for a moment. Good ball handlers and quick players win more often; a sloppy crossover against a good thief can get stripped.</li>
 <li><b>Pause menu</b>: Call Timeout (7 a game; only when you have the ball or play is dead; it gives your whole team a breather), Team Stats (line score by quarter and each team's top performer), Box Score, Shot Chart (made and missed shots for either team), Play by Play, Substitutions, Controls and Settings. Sim / Quit lets you sim the rest of the game or leave it.</li>
 <li><b>Movement</b>: players speed up and slow down instead of snapping to full speed. In the half court your teammates swap spots every few seconds and the big man comes up to set a screen for the ball handler, then rolls to the rim. A defender caught on the screen slows down.</li>
+<li><b>Auto defense</b> (Settings, on by default): your defender guards his man by himself until you move the joystick. You still press Block, Steal and Charge yourself.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7570,7 +7573,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23w';
+const APP_VERSION = '2026-11-23x';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
