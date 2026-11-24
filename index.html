@@ -5843,6 +5843,14 @@ const ARC = (() => {
     };
   }
   function color(tid) { return JERSEY[tid % JERSEY.length]; }
+  // Team colors for the pixel court and uniforms (primary, secondary), by franchise key.
+  const TC = { atl: ['#e03a3e', '#c1d32f'], bos: ['#007a33', '#ba9653'], bkn: ['#1a1a1a', '#c4ced4'], nyk: ['#006bb6', '#f58426'], phi: ['#006bb6', '#ed174c'],
+    tor: ['#ce1141', '#1a1a1a'], chi: ['#ce1141', '#1a1a1a'], cle: ['#860038', '#fdbb30'], det: ['#c8102e', '#1d42ba'], ind: ['#002d62', '#fdbb30'],
+    mil: ['#00471b', '#eee1c6'], mia: ['#98002e', '#f9a01b'], orl: ['#0077c0', '#c4ced4'], was: ['#002b5c', '#e31837'], cha: ['#1d1160', '#00a3b4'],
+    dal: ['#00538c', '#b8c4ca'], hou: ['#ce1141', '#c4ced4'], mem: ['#5d76a9', '#12173f'], nop: ['#00788c', '#1d1160'], sas: ['#3a3f45', '#c4ced4'],
+    den: ['#0e2240', '#fec524'], min: ['#0c2340', '#78be20'], okc: ['#007ac1', '#ef3b24'], por: ['#e03a3e', '#1a1a1a'], uta: ['#002b5c', '#f9a01b'],
+    gsw: ['#1d428a', '#ffc72c'], lac: ['#c8102e', '#1d428a'], lal: ['#552583', '#fdb927'], pho: ['#1d1160', '#e56020'], sac: ['#5a2d81', '#63727a'] };
+  const tcol = (key, tid) => TC[key] || [color(tid), '#f4f1ea'];
 
   /* ---------- the game ---------- */
   class Game {
@@ -5851,7 +5859,7 @@ const ARC = (() => {
       this.year = o.year || 2000; this.qsec = o.qsec || 120; this.user = o.user == null ? null : o.user;
       this.sp = clamp((this.year - 1979) / 35, 0, 1); // how spread out the offense plays (posts early, corners later)
       this.three = this.year >= 1979;
-      this.T = o.teams.map((t, side) => ({ side, tid: t.tid, abbr: t.abbr, name: t.name, color: side === 0 ? '#f4f1ea' : color(t.tid), trim: side === 0 ? color(t.tid) : '#f4f1ea', score: 0,
+      this.T = o.teams.map((t, side) => ({ side, tid: t.tid, key: t.key, city: t.city, nick: t.nick, abbr: t.abbr, name: t.name, pri: tcol(t.key, t.tid)[0], sec: tcol(t.key, t.tid)[1], color: side === 0 ? '#f4f1ea' : tcol(t.key, t.tid)[0], trim: side === 0 ? tcol(t.key, t.tid)[0] : tcol(t.key, t.tid)[1], score: 0,
         P: t.players.slice(0, 5).map((p, i) => ({ p, i, side, r: rate(p, this.year), x: 47, y: 25, z: 0, vz: 0, vx: 0, vy: 0, st: { pts: 0, fga: 0, fgm: 0, tpa: 0, tpm: 0, fta: 0, ftm: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0 } })) }));
       this.q = 1; this.clock = this.qsec; this.shot = 24; this.poss = 0; this.state = 'inbound'; this.wait = 1.2;
       this.ball = { x: 47, y: 25, z: 4, holder: null, flight: null, lastPasser: null };
@@ -6132,11 +6140,20 @@ const ARC = (() => {
     root.appendChild(cv); root.appendChild(ui);
     let w = 0, h = 0, dpr = 1, camX = 47;
     const inp = { jx: 0, jy: 0 }, edge = {}, keys = {};
-    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; }
+    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; PH = clamp(Math.round(h / 2.4), 165, 270); PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW; pc.height = PH; }
+    // Pixel-art view: everything is drawn into a small canvas (PH pixels tall) and scaled up with no smoothing.
+    // 3/4 top-down camera that follows the ball along the length of the court.
+    // SC = pixels per foot. Players are drawn small next to the court (about 3.5 ft tall) like classic arcade games.
+    let PH = 240; const SC = 7.5, SYF = 0.66, MARGIN = 9, CROWD = 70;
+    const pc = document.createElement('canvas'), px = pc.getContext('2d');
+    let PW = 320, world = null, camY = 25;
+    const S = () => SC, SY = () => SC * SYF;
+    const wx = x => (x + MARGIN) * SC, wy = (y, z) => CROWD + 3 * SC * SYF + y * SC * SYF - (z || 0) * SC * 0.8;
+    const WORLD_H = Math.ceil(wy(W) + 3 * SC * SYF + CROWD);
+    const camPx = () => clamp(wx(camX) - PW / 2, 0, Math.max(0, world.width - PW));
+    const camPy = () => clamp(wy(camY) - PH * 0.55, 0, WORLD_H - PH);
+    const toScr = (x, y, z) => [Math.round(wx(x) - camPx()), Math.round(wy(y, z) - camPy())];
     size(); window.addEventListener('resize', size);
-    // layout: s = pixels per foot; the court's depth is squashed for the side view
-    const S = () => Math.min(h / 44, w / 52), SY = () => S() * 0.52;
-    const toScr = (x, y, z) => { const s = S(); return [w / 2 + (x - camX) * s, h * 0.5 - W * SY() / 2 + s * 2.2 + y * SY() - (z || 0) * s * 0.92]; };
     ui.className = 'arc-ui';
     ui.innerHTML = `<div class="arc-score"></div><div class="arc-msg"></div>
       <div class="arc-stick"><div class="arc-knob"></div></div>
@@ -6203,70 +6220,177 @@ const ARC = (() => {
       d.innerHTML = `<h2>${won ? 'You win' : 'You lose'}, ${B[0].score}-${B[1].score}</h2><p>Exhibition game: it doesn't count in the standings.</p>${tbl(B[0])}${tbl(B[1])}<div class="arc-row"><button data-x="again">Play again</button><button data-x="quit">Back to the office</button></div>`;
       ui.appendChild(d);
     }
-    function draw() {
-      const s = S(), b = game.ball;
-      camX += (clamp(b.x, 22, LEN - 22) - camX) * 0.12;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = '#1b1410'; ctx.fillRect(0, 0, w, h);
-      // floor
-      const c = (x, y) => toScr(x, y, 0);
-      const poly = (pts, fill, stroke) => { ctx.beginPath(); pts.forEach(([x, y], i) => { const [a, bb] = c(x, y); i ? ctx.lineTo(a, bb) : ctx.moveTo(a, bb); }); ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); } };
-      poly([[-3, -3], [LEN + 3, -3], [LEN + 3, W + 3], [-3, W + 3]], '#3b2a1e');
-      poly([[0, 0], [LEN, 0], [LEN, W], [0, W]], '#c99a62');
-      ctx.strokeStyle = 'rgba(120,80,40,.18)'; ctx.lineWidth = 1;
-      for (let x = 0; x < LEN; x += 2.5) { ctx.beginPath(); const [a1, b1] = c(x, 0), [a2, b2] = c(x, W); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); ctx.stroke(); }
-      ctx.lineWidth = Math.max(1.5, s * 0.16);
-      for (const side of [0, 1]) { const hx = HOOP[side], d = side ? -1 : 1; poly([[hx - d * 5.25, HY - 8], [hx - d * 5.25 + d * 19, HY - 8], [hx - d * 5.25 + d * 19, HY + 8], [hx - d * 5.25, HY + 8]], side ? 'rgba(160,40,30,.28)' : 'rgba(30,60,140,.25)'); }
-      ctx.strokeStyle = '#fbf3ea';
-      poly([[0, 0], [LEN, 0], [LEN, W], [0, W]], null, '#fbf3ea');
-      ctx.beginPath(); { const [a1, b1] = c(47, 0), [a2, b2] = c(47, W); ctx.moveTo(a1, b1); ctx.lineTo(a2, b2); } ctx.stroke();
-      const ell = (x, y, r, a0, a1) => { const [cx, cy] = c(x, y); ctx.beginPath(); ctx.ellipse(cx, cy, r * s, r * SY(), 0, a0 || 0, a1 == null ? Math.PI * 2 : a1); ctx.stroke(); };
-      ell(47, HY, 6);
+    // ---- pixel helpers ----
+    const hash = n => { n = (n ^ 61) ^ (n >>> 16); n = n + (n << 3); n = n ^ (n >>> 4); n = Math.imul(n, 0x27d4eb2d); return ((n ^ (n >>> 15)) >>> 0) / 4294967296; };
+    const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255; const t = f < 0 ? 0 : 255, a = Math.abs(f); r = Math.round(r + (t - r) * a); g = Math.round(g + (t - g) * a); b = Math.round(b + (t - b) * a); return `rgb(${r},${g},${b})`; };
+    // Text with hard pixel edges: drawn small, then every pixel is either on or off.
+    function pixText(c, text, x, y, size, col, rot, outline) {
+      const t = document.createElement('canvas'), tc = t.getContext('2d'); tc.font = `900 ${size}px "Arial Black", Impact, sans-serif`;
+      const tw = Math.ceil(tc.measureText(text).width) + 4, th = Math.ceil(size * 1.3) + 4; t.width = tw; t.height = th;
+      tc.font = `900 ${size}px "Arial Black", Impact, sans-serif`; tc.textBaseline = 'top'; tc.fillStyle = '#fff'; tc.fillText(text, 2, 2);
+      const id = tc.getImageData(0, 0, tw, th), d = id.data, on = new Uint8Array(tw * th);
+      for (let i = 0; i < tw * th; i++) on[i] = d[i * 4 + 3] > 110 ? 1 : 0;
+      const o = document.createElement('canvas'); o.width = tw + 2; o.height = th + 2; const oc = o.getContext('2d');
+      const put = (col2, dx, dy) => { oc.fillStyle = col2; for (let yy = 0; yy < th; yy++) for (let xx = 0; xx < tw; xx++) if (on[yy * tw + xx]) oc.fillRect(xx + 1 + dx, yy + 1 + dy, 1, 1); };
+      if (outline) { put(outline, -1, 0); put(outline, 1, 0); put(outline, 0, -1); put(outline, 0, 1); }
+      put(col, 0, 0);
+      c.save(); c.translate(Math.round(x), Math.round(y)); if (rot) c.rotate(rot); c.drawImage(o, Math.round(-o.width / 2), Math.round(-o.height / 2)); c.restore();
+    }
+    const SKIN = ['#f1c9a5', '#e0ac85', '#c68863', '#a86b43', '#8a5432', '#6b3f24', '#4e2c19'];
+    const HAIRC = ['#1b1209', '#1b1209', '#1b1209', '#2e1d10', '#4a2e16', '#6b4a2a', '#c9a04c', '#8a3b1d'];
+    // ---- the arena: built once (floor, lines, paint, logos, apron, crowd, photographers) ----
+    function buildWorld() {
+      const T0 = game.T[0], pri = T0.pri, sec = T0.sec, ww = Math.ceil(wx(LEN + MARGIN)), c = document.createElement('canvas'); c.width = ww; c.height = WORLD_H;
+      const g = c.getContext('2d'), R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(Math.round(x), Math.round(y), Math.round(a), Math.round(b)); };
+      R(0, 0, ww, WORLD_H, '#1c1f2e');
+      const cx0 = wx(0), cx1 = wx(LEN), cy0 = wy(0), cy1 = wy(W), ap = 3 * SC;
+      // crowd: rows of fans above and below, and in the stands past each baseline
+      let seed = (T0.tid + 1) * 7919;
+      const rnd2 = () => hash(seed++);
+      const fan = (x, y, back) => {
+        const sk = SKIN[Math.floor(rnd2() * SKIN.length)], hc = HAIRC[Math.floor(rnd2() * 5)], shirt = rnd2() < 0.35 ? pri : rnd2() < 0.3 ? sec : ['#d9d4c7', '#3d4a6b', '#7a3b3b', '#4b6b3d', '#2c2c34', '#9a8a5a'][Math.floor(rnd2() * 6)];
+        R(x, y + 4, 5, 4, shirt); R(x + 1, y, 3, 4, sk); R(x + 1, y, 3, back ? 3 : 1, hc); if (rnd2() < 0.15) R(x - 1, y + 3 - Math.floor(rnd2() * 3), 1, 3, sk);
+      };
+      for (let row = 0; row * 8 < cy0 - ap - 6; row++) { const y = cy0 - ap - 12 - row * 8; R(0, y + 8, ww, 1, '#262a3d'); for (let x = 2 + (row % 2) * 3; x < ww; x += 6 + Math.floor(rnd2() * 2)) if (rnd2() < 0.93) fan(x, y, false); }
+      for (let row = 0; cy1 + ap + 4 + row * 9 < WORLD_H; row++) { const y = cy1 + ap + 4 + row * 9; R(0, y + 8, ww, 1, '#262a3d'); for (let x = 2 + (row % 2) * 3; x < ww; x += 6 + Math.floor(rnd2() * 2)) if (rnd2() < 0.93) fan(x, y, true); }
+      // apron in team color, with the team's name along each baseline
+      R(cx0 - ap, cy0 - ap, cx1 - cx0 + 2 * ap, cy1 - cy0 + 2 * ap, pri);
+      R(cx0 - ap, cy0 - ap, cx1 - cx0 + 2 * ap, 1, shade(pri, 0.25));
+      // the floor: maple planks running the length of the court
+      const fl = ['#e6b87e', '#ddae73', '#e9be86', '#d9a86d'];
+      for (let y = Math.floor(cy0); y < cy1; y += 3) { let x = cx0; while (x < cx1) { const len = 14 + Math.floor(rnd2() * 26), col = fl[Math.floor(rnd2() * fl.length)]; R(x, y, Math.min(len, cx1 - x), Math.min(3, cy1 - y), col); R(x, y, 1, Math.min(3, cy1 - y), '#c9955c'); x += len; } R(cx0, y, cx1 - cx0, 1, 'rgba(160,110,60,.18)'); }
+      // painted keys
+      for (const side of [0, 1]) { const base = side ? LEN : 0, d = side ? -1 : 1, x0 = wx(Math.min(base, base + d * 19)), y0 = wy(HY - 8); R(x0, y0, 19 * SC, 16 * SC * SYF, pri); R(x0, y0, 19 * SC, 1, shade(pri, 0.2)); }
+      // lines
+      g.strokeStyle = '#fbf6ee'; g.lineWidth = 1; g.imageSmoothingEnabled = false;
+      const line = (x1, y1, x2, y2) => { R(Math.min(wx(x1), wx(x2)), Math.min(wy(y1), wy(y2)), Math.max(1, Math.abs(wx(x2) - wx(x1))), Math.max(1, Math.abs(wy(y2) - wy(y1))), '#fbf6ee'); };
+      line(0, 0, LEN, 0); line(0, W, LEN, W); line(0, 0, 0, W); line(LEN, 0, LEN, W); line(47, 0, 47, W);
+      const arcPts = (cx, cy, r, a0, a1, clip) => { let last = null; for (let a = a0; a <= a1 + 1e-6; a += 0.01) { const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r; if (clip && !clip(x, y)) continue; const p = [Math.round(wx(x)), Math.round(wy(y))]; if (!last || p[0] !== last[0] || p[1] !== last[1]) R(p[0], p[1], 1, 1, '#fbf6ee'); last = p; } };
+      arcPts(47, HY, 6, 0, Math.PI * 2);
       for (const side of [0, 1]) {
-        const hx = HOOP[side], d = side ? -1 : 1, base = side ? LEN : 0;
-        poly([[base, HY - 8], [base + d * 19, HY - 8], [base + d * 19, HY + 8], [base, HY + 8]], null, '#fbf3ea');
-        ell(base + d * 19, HY, 6, side ? Math.PI / 2 : -Math.PI / 2, side ? Math.PI * 1.5 : Math.PI / 2);
-        if (game.three) {
-          ctx.beginPath(); const pts = [];
-          for (let a = -Math.PI / 2; a <= Math.PI / 2 + 0.001; a += Math.PI / 60) { const yy = HY + Math.sin(a) * 23.75; if (Math.abs(yy - HY) > 22) continue; pts.push([hx + d * Math.cos(a) * 23.75, yy]); }
-          const top = pts[0], bot = pts[pts.length - 1];
-          [[base, HY - 22], [top[0], HY - 22]].concat(pts, [[bot[0], HY + 22], [base, HY + 22]]).forEach(([x, y], i) => { const [a, bb] = c(x, y); i ? ctx.lineTo(a, bb) : ctx.moveTo(a, bb); }); ctx.stroke();
-        }
+        const base = side ? LEN : 0, d = side ? -1 : 1, hx = HOOP[side];
+        line(base, HY - 8, base + d * 19, HY - 8); line(base, HY + 8, base + d * 19, HY + 8); line(base + d * 19, HY - 8, base + d * 19, HY + 8);
+        arcPts(base + d * 19, HY, 6, side ? Math.PI / 2 : -Math.PI / 2, side ? Math.PI * 1.5 : Math.PI / 2);
+        arcPts(hx, HY, 4, side ? Math.PI / 2 : -Math.PI / 2, side ? Math.PI * 1.5 : Math.PI / 2);
+        if (game.three) { arcPts(hx, HY, 23.75, side ? Math.PI / 2 : -Math.PI / 2, side ? Math.PI * 1.5 : Math.PI / 2, (x, y) => Math.abs(y - HY) <= 22); const cut = Math.sqrt(23.75 * 23.75 - 22 * 22); line(base, HY - 22, hx + d * cut, HY - 22); line(base, HY + 22, hx + d * cut, HY + 22); }
       }
+      // center-court logo and baseline names
+      const nick = (T0.nick || T0.name || T0.abbr).toUpperCase(), city = (T0.city || '').toUpperCase();
+      pixText(g, nick, wx(47), wy(HY) - 1, Math.max(9, Math.round(SC * 3)), sec, 0, shade(pri, -0.35));
+      for (const side of [0, 1]) { const x = side ? cx1 + ap / 2 : cx0 - ap / 2; pixText(g, (city + ' ' + nick).trim(), x, (cy0 + cy1) / 2, Math.max(7, Math.round(ap * 0.75)), '#ffffff', side ? Math.PI / 2 : -Math.PI / 2); }
+      pixText(g, T0.abbr, wx(23), cy0 - ap / 2, Math.max(7, Math.round(ap * 0.7)), '#ffffff'); pixText(g, T0.abbr, wx(71), cy0 - ap / 2, Math.max(7, Math.round(ap * 0.7)), '#ffffff');
+      // fans in the end stands past each baseline
+      for (const side of [0, 1]) { const x0 = side ? cx1 + ap + 14 : 0, x1 = side ? ww : cx0 - ap - 14; for (let y = 4; y < WORLD_H - 10; y += 8) for (let x = x0 + 1 + ((y / 8) % 2) * 3; x < x1 - 5; x += 6) if (rnd2() < 0.9) fan(x, y, false); }
+      // photographers sitting along each baseline
+      for (const side of [0, 1]) for (const yy of [HY - 18, HY - 12, HY + 10, HY + 16]) {
+        const x = side ? cx1 + ap + 3 : cx0 - ap - 9, y = wy(yy);
+        R(x, y + 4, 6, 5, ['#2b3a5c', '#3a3a3a', '#5c2b2b'][Math.floor(rnd2() * 3)]); R(x + 1, y, 4, 4, SKIN[Math.floor(rnd2() * SKIN.length)]); R(x + (side ? -2 : 4), y + 2, 4, 3, '#111'); R(x + (side ? -3 : 7), y + 3, 1, 1, '#9ad');
+      }
+      return c;
+    }
+    // ---- player sprites (cached per look, frame and pose) ----
+    const cache = {};
+    function sprite(pl, frame, pose, faceL) {
+      const T = game.T[pl.side], id = pl.p.id || (pl.side * 10 + pl.i), key = id + '|' + pl.side + '|' + frame + '|' + pose + '|' + (faceL ? 1 : 0);
+      if (cache[key]) return cache[key];
+      const hv = k => hash((id + 1) * 131 + k * 977), sk = SKIN[Math.floor(hv(1) * SKIN.length)], style = Math.floor(hv(2) * 7), hc = HAIRC[Math.floor(hv(3) * HAIRC.length)];
+      const leg = clamp(Math.round((pl.r.height - 6.6) * 4), -1, 2), H = 27 + leg, Wd = 16, c = document.createElement('canvas'); c.width = Wd; c.height = H + 2;
+      const g = c.getContext('2d'), R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(x, y, a, b); };
+      const jer = T.color, trim = T.trim, shorts = T.side === 0 ? '#ece8df' : shade(T.color, -0.12), shoe = hv(4) < 0.5 ? '#f4f4f4' : '#202020';
+      const o = 4, top = 3 + (style === 1 ? 1 : 0);   // head top; afro sits higher
+      // legs and shoes (two run frames)
+      const ly = top + 16, ll = 6 + leg, s1 = frame === 1 ? 1 : frame === 2 ? -1 : 0;
+      R(o + 1 + s1, ly, 2, ll, sk); R(o + 5 - s1, ly, 2, ll, sk);
+      R(o + 1 + s1, ly + ll - 2, 2, 1, '#f4f4f4'); R(o + 5 - s1, ly + ll - 2, 2, 1, '#f4f4f4');
+      R(o + s1, ly + ll, 3, 2, shoe); R(o + 5 - s1, ly + ll, 3, 2, shoe);
+      // shorts
+      R(o, top + 12, 8, 5, shorts); R(o, top + 12, 1, 5, trim); R(o + 7, top + 12, 1, 5, trim);
+      // jersey
+      R(o, top + 6, 8, 7, jer); R(o, top + 6, 8, 1, trim); R(o + 2, top + 6, 4, 1, sk);
+      if (style !== 6) { R(o + 3, top + 8, 1, 3, trim); R(o + 5, top + 8, 1, 3, trim); R(o + 4, top + 8, 1, 1, trim); R(o + 4, top + 10, 1, 1, trim); }
+      // arms: down, up (shooting / contesting) or one out (dribbling)
+      if (pose === 'up') { R(o - 1, top - 2, 2, 8, sk); R(o + 7, top - 2, 2, 8, sk); R(o - 1, top - 3, 2, 1, sk); R(o + 7, top - 3, 2, 1, sk); }
+      else if (pose === 'drib') { R(faceL ? o + 7 : o - 1, top + 6, 2, 6, sk); R(faceL ? o - 2 : o + 7, top + 7, 3, 2, sk); R(faceL ? o - 3 : o + 9, top + 8, 2, 3, sk); }
+      else { R(o - 1, top + 6, 2, 6, sk); R(o + 7, top + 6, 2, 6, sk); }
+      if (hv(5) < 0.3) { R(o - 1, top + 10, 2, 1, trim); R(o + 7, top + 10, 2, 1, trim); }   // wristbands
+      // head and hair
+      R(o + 1, top, 6, 6, sk); R(o + 3, top + 5, 2, 1, shade(sk, -0.15));
+      if (style === 0) R(o + 1, top, 6, 2, hc);
+      else if (style === 1) { R(o, top - 2, 8, 4, hc); R(o + 1, top - 3, 6, 1, hc); }
+      else if (style === 2) { R(o + 1, top - 1, 6, 2, hc); R(o, top, 1, 6, hc); R(o + 7, top, 1, 6, hc); R(o + 1, top + 1, 1, 4, hc); }
+      else if (style === 3) { R(o + 1, top, 6, 1, shade(sk, -0.12)); }
+      else if (style === 4) { R(o + 1, top - 1, 6, 2, hc); R(o + 1, top + 1, 6, 1, trim === '#f4f1ea' ? '#f4f1ea' : trim); }
+      else if (style === 5) { R(o + 1, top - 2, 6, 3, hc); }
+      else { R(o + 1, top, 6, 1, hc); }
+      if (style !== 1 && style !== 3) R(faceL ? o + 1 : o + 5, top + 2, 1, 1, '#1b1209');
+      // 1-pixel dark outline around the whole figure
+      const id2 = g.getImageData(0, 0, Wd, H + 2), d = id2.data, out = document.createElement('canvas'); out.width = Wd; out.height = H + 2; const oc = out.getContext('2d');
+      oc.fillStyle = 'rgba(20,14,10,.85)';
+      for (let y = 0; y < H + 2; y++) for (let x = 0; x < Wd; x++) { if (d[(y * Wd + x) * 4 + 3]) continue; if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => { const X = x + a, Y = y + b; return X >= 0 && Y >= 0 && X < Wd && Y < H + 2 && d[(Y * Wd + X) * 4 + 3]; })) oc.fillRect(x, y, 1, 1); }
+      oc.drawImage(c, 0, 0);
+      let res = out;
+      if (faceL) { const f = document.createElement('canvas'); f.width = Wd; f.height = H + 2; const fc = f.getContext('2d'); fc.translate(Wd, 0); fc.scale(-1, 1); fc.drawImage(out, 0, 0); res = f; }
+      cache[key] = { c: res, foot: ly + ll + 2 }; return cache[key];
+    }
+    function draw() {
+      if (!world) world = buildWorld();
+      const b = game.ball;
+      camX += (clamp(b.x, 0, LEN) - camX) * 0.12; camY += (clamp(b.y, 0, W) - camY) * 0.1;
+      px.imageSmoothingEnabled = false;
+      px.fillStyle = '#1c1f2e'; px.fillRect(0, 0, PW, PH);
+      const cp = Math.round(camPx()), off = world.width < PW ? Math.round((PW - world.width) / 2) : 0;
+      px.drawImage(world, off - cp, -Math.round(camPy()));
+      const shift = off;
       // things sorted by depth: players, ball, hoops
-      const items = game.all().map(pl => ({ y: pl.y, f: () => drawPlayer(pl) }));
-      items.push({ y: b.y + 0.05, f: drawBall });
-      items.push({ y: HY - 0.5, f: () => { drawHoop(0); drawHoop(1); } });
+      const items = game.all().map(pl => ({ y: pl.y, f: () => drawPlayer(pl, shift) }));
+      items.push({ y: b.y + 0.05, f: () => drawBall(shift) });
+      items.push({ y: HY - 1.5, f: () => { drawHoop(0, shift); drawHoop(1, shift); } });
       items.sort((a, bb) => a.y - bb.y).forEach(it => it.f());
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(pc, 0, 0, PW, PH, 0, 0, cv.width, cv.height);
     }
-    function drawHoop(side) {
-      const s = S(), hx = HOOP[side], d = side ? -1 : 1, bx = hx - d * 1.25;
-      const [px, py] = toScr(bx - d * 2, HY, 0), [tx, ty] = toScr(bx - d * 2, HY, 13.5);
-      ctx.strokeStyle = '#555'; ctx.lineWidth = s * 0.5; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(tx, ty); ctx.lineTo(...toScr(bx, HY, 13.5)); ctx.stroke();
-      const [b1x, b1y] = toScr(bx, HY - 3, 13.5), [b2x, b2y] = toScr(bx, HY + 3, 9.5);
-      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fillRect(Math.min(b1x, b2x) - s * 0.3, b1y, s * 0.6, b2y - b1y);
-      const [rx, ry] = toScr(hx, HY, RIM_Z);
-      ctx.strokeStyle = '#e4572e'; ctx.lineWidth = Math.max(2, s * 0.22); ctx.beginPath(); ctx.ellipse(rx, ry, s * 0.9, SY() * 0.9, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(rx + i * s * 0.4, ry); ctx.lineTo(rx + i * s * 0.25, ry + s * 1.6); ctx.stroke(); }
+    function drawHoop(side, sh) {
+      const hx = HOOP[side], d = side ? -1 : 1, T0 = game.T[0];
+      const P = (x, y, z) => { const [a, bb] = toScr(x, y, z); return [a + sh, bb]; };
+      const R = (x, y, a, b2, col) => { px.fillStyle = col; px.fillRect(Math.round(x), Math.round(y), Math.round(a), Math.round(b2)); };
+      // stanchion: padded base behind the baseline, arm out to the backboard
+      const [bx, by] = P(side ? LEN + 2.5 : -2.5, HY, 0);
+      const pw = Math.round(SC * 1.6), ph2 = Math.round(SC * 1.3);
+      R(bx - pw / 2, by - ph2, pw, ph2 + 1, T0.pri); R(bx - pw / 2, by - ph2, pw, 1, shade(T0.pri, 0.3)); R(bx - pw / 2, by, pw, 1, shade(T0.pri, -0.4));
+      const [ax, ay] = P(side ? LEN + 2 : -2, HY, 12), [bbx] = P(hx - d * 1.25, HY, 12);
+      R(bx - 1, ay, 3, by - ph2 - ay, '#5a5f6b'); R(Math.min(ax, bbx), ay, Math.abs(bbx - ax), 3, '#5a5f6b'); R(Math.min(ax, bbx), ay, Math.abs(bbx - ax), 1, '#8a8f9b');
+      // glass backboard (seen from above at an angle) and the rim and net
+      const [g1x, g1y] = P(hx - d * 1.25, HY - 3, 13.5), [, g2y] = P(hx - d * 1.25, HY + 3, 9.5);
+      const gw = 5, gx = g1x - (side ? 1 : gw - 1);
+      px.fillStyle = 'rgba(190,225,255,.5)'; px.fillRect(gx, g1y, gw, g2y - g1y);
+      R(gx, g1y, gw, 1, '#ffffff'); R(gx, g2y, gw, 1, '#ffffff'); R(gx, g1y, 1, g2y - g1y, '#ffffff'); R(gx + gw - 1, g1y, 1, g2y - g1y, '#ffffff');
+      R(gx + 1, g1y + Math.round((g2y - g1y) * 0.45), gw - 2, 1, '#ff6a3d');
+      const [rx, ry] = P(hx, HY, RIM_Z), rw = Math.round(1.6 * SC), rh = Math.max(3, Math.round(1.6 * SC * SYF)), nl = Math.round(SC * 1.1);
+      for (let i = 0; i <= nl; i++) { const k = i / nl, half = rw / 2 - k * rw * 0.18; R(rx - half, ry + rh / 2 + i, 1, 1, '#f4f4f4'); R(rx + half - 1, ry + rh / 2 + i, 1, 1, '#f4f4f4'); if (i % 3 === 0) for (let q = rx - half + 2; q < rx + half - 1; q += 2) R(q, ry + rh / 2 + i, 1, 1, 'rgba(255,255,255,.75)'); }
+      R(rx - rw / 2, ry - 1, rw, 1, '#f0641e'); R(rx - rw / 2, ry + rh - 1, rw, 1, '#c84a12'); R(rx - rw / 2 - 1, ry, 1, rh - 1, '#f0641e'); R(rx + rw / 2, ry, 1, rh - 1, '#f0641e');
     }
-    function drawPlayer(pl) {
-      const s = S(), T = game.T[pl.side], [fx, fy] = toScr(pl.x, pl.y, 0), [, hy] = toScr(pl.x, pl.y, pl.z);
-      const me = game.user != null && game.ctrl[game.user] === pl, hgt = pl.r.height * s * 0.95, bw = s * 1.5;
-      ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(fx, fy, s * 1.2, SY() * 1.1, 0, 0, Math.PI * 2); ctx.fill();
-      if (me) { ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(fx, fy, s * 1.6, SY() * 1.5, 0, 0, Math.PI * 2); ctx.stroke(); }
-      const top = hy - hgt, run = Math.sin(game.t * 14 + pl.i) * (Math.hypot(pl.vx, pl.vy) > 2 && pl.z === 0 ? 1 : 0);
-      ctx.strokeStyle = '#3a2618'; ctx.lineWidth = s * 0.45; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(fx - bw * 0.25, hy - hgt * 0.42); ctx.lineTo(fx - bw * 0.25 + run * s * 0.6, hy); ctx.moveTo(fx + bw * 0.25, hy - hgt * 0.42); ctx.lineTo(fx + bw * 0.25 - run * s * 0.6, hy); ctx.stroke();
-      ctx.fillStyle = T.color; ctx.strokeStyle = T.trim; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(fx - bw / 2, top + hgt * 0.16, bw, hgt * 0.46, s * 0.3) : ctx.rect(fx - bw / 2, top + hgt * 0.16, bw, hgt * 0.46); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#3a2618'; ctx.beginPath(); ctx.arc(fx, top + hgt * 0.08, s * 0.55, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = T.trim; ctx.font = `700 ${Math.max(9, s * 0.8)}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.fillText(String((pl.i + 1) * (pl.side ? 11 : 3) % 99), fx, top + hgt * 0.45);
-      if (me) { ctx.fillStyle = '#ffd34d'; ctx.font = `700 ${Math.max(11, s * 0.9)}px system-ui, sans-serif`; ctx.fillText(short(pl.p), fx, top - s * 0.6); }
+    function drawPlayer(pl, sh) {
+      const [fx0, fy] = toScr(pl.x, pl.y, 0), [, hy] = toScr(pl.x, pl.y, pl.z), fx = fx0 + sh;
+      const me = game.user != null && game.ctrl[game.user] === pl, moving = Math.hypot(pl.vx, pl.vy) > 2 && pl.z === 0;
+      const frame = moving ? (Math.floor(game.t * 8 + pl.i) % 4 === 1 ? 1 : Math.floor(game.t * 8 + pl.i) % 4 === 3 ? 2 : 0) : 0;
+      const hasB = game.ball.holder === pl, faceL = Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);
+      const pose = pl.shooting || pl.z > 0.3 || pl.blocking ? 'up' : hasB ? 'drib' : 'down';
+      const sp = sprite(pl, frame, pose, faceL);
+      px.fillStyle = 'rgba(0,0,0,.28)'; px.beginPath(); px.ellipse(fx, fy, 6, 2, 0, 0, Math.PI * 2); px.fill();
+      if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 5, fy + 2, 11, 1); px.fillRect(fx - 6, fy + 1, 1, 1); px.fillRect(fx + 6, fy + 1, 1, 1); }
+      const x0 = Math.round(fx - sp.c.width / 2), y0 = Math.round(hy - sp.foot);
+      px.drawImage(sp.c, x0, y0);
+      if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 2, y0 - 5, 5, 1); px.fillRect(fx - 1, y0 - 4, 3, 1); px.fillRect(fx, y0 - 3, 1, 1); }
     }
-    function drawBall() {
-      const s = S(), b = game.ball, [sx2, sy2] = toScr(b.x, b.y, 0), [bx, by] = toScr(b.x, b.y, b.z);
-      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(sx2, sy2, s * 0.5, SY() * 0.4, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#e8721c'; ctx.strokeStyle = '#4a2408'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(bx, by, Math.max(4, s * 0.55), 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    function drawBall(sh) {
+      const b = game.ball, [sx2, sy2] = toScr(b.x, b.y, 0), [bx0, by] = toScr(b.x, b.y, b.z), bx = bx0 + sh;
+      const hb = b.holder; let x = bx, y = by;
+      if (hb && !hb.shooting && hb.z <= 0.3) { const faceL = Math.abs(hb.vx) > 0.5 ? hb.vx < 0 : (game.hoopOf(hb.side).x < hb.x); const [hx2, hy2] = toScr(hb.x, hb.y, 0); x = hx2 + sh + (faceL ? -7 : 7); y = hy2 - 4 - Math.abs(Math.sin(game.t * 9)) * 7; }
+      px.fillStyle = 'rgba(0,0,0,.25)'; px.fillRect(sx2 + sh - 2, sy2, 4, 1);
+      x = Math.round(x); y = Math.round(y);
+      px.fillStyle = '#2a1206'; px.fillRect(x - 2, y - 1, 4, 3); px.fillRect(x - 1, y - 2, 2, 5);
+      px.fillStyle = '#e8721c'; px.fillRect(x - 1, y - 1, 2, 3); px.fillRect(x - 2, y, 4, 1);
+      px.fillStyle = '#ffa04a'; px.fillRect(x - 1, y - 1, 1, 1);
     }
     function stop(exit) { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', size); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); root.remove(); if (exit) onExit('quit'); }
     raf = requestAnimationFrame(frame);
@@ -6559,7 +6683,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23a';
+const APP_VERSION = '2026-11-23b';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
@@ -7048,7 +7172,7 @@ function waivedMsg(p, stretched) {
   return d.length ? `Player released. You still owe him ${G.money(d.reduce((a, x) => a + Object.values(x.pay).reduce((b, c) => b + c, 0), 0))} in dead money${stretched ? ', stretched' : ''}.` : 'Player released.';
 }
 /* ---------- Arcade mode ---------- */
-function arcTeam(tid) { const t = L.teams[tid], st = G.ratings(L, tid).mins.filter(x => x.start).map(x => x.p); const five = st.length >= 5 ? st : G.roster(L, tid).filter(p => !p.inj).sort((a, b) => b.ovr - a.ovr).slice(0, 5); return { tid, abbr: t.abbr, name: tname(t), players: five }; }
+function arcTeam(tid) { const t = L.teams[tid], st = G.ratings(L, tid).mins.filter(x => x.start).map(x => x.p); const five = st.length >= 5 ? st : G.roster(L, tid).filter(p => !p.inj).sort((a, b) => b.ovr - a.ovr).slice(0, 5); return { tid, key: t.key, city: t.city, nick: t.name, abbr: t.abbr, name: tname(t), players: five }; }
 function arcadeCard() {
   if (typeof ARC === 'undefined' || G.roster(L, L.user).length < 5) return '';
   const others = L.teams.filter(t => t.id !== L.user).sort((a, b) => tname(a).localeCompare(tname(b))), opp = others.find(t => t.id === ui.arcOpp) || others[0], q = ui.arcQ || 120;
