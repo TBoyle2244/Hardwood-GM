@@ -5983,6 +5983,7 @@ const ARC = (() => {
       if (this.over) return;
       inp = inp || {}; this.t += dt; if (this.msgT > 0) this.msgT -= dt;
       for (const pl of this.all()) if (pl.anim) { pl.anim.t += dt; if (pl.anim.t >= pl.anim.T) pl.anim = null; }
+      if (this.rimHit) { this.rimHit.t -= dt; if (this.rimHit.t <= 0) this.rimHit = null; }
       if (this.state === 'jump') { this.jumpStep(dt, inp); return; }
       if (this.state === 'made') {   // a short pause after a basket: the ball drops through the net, a dunker hangs on the rim
         this.wait -= dt; const b = this.ball; b.z = Math.max(0, b.z - dt * 14); this.moveAll(dt, {});
@@ -6024,7 +6025,7 @@ const ARC = (() => {
           sp *= pl === this.ball.holder ? 0.92 : 1;
         } else if (this.state === 'loose') {
           const near = this.all().slice().sort((a, b) => dist(a, this.ball) - dist(b, this.ball)).slice(0, 4);
-          if (near.includes(pl)) { tx = this.ball.x; ty = this.ball.y; }
+          if (near.includes(pl)) { const bb = this.ball, lead = bb.z > 4 ? 0.45 : 0.15; tx = bb.x + (bb.vx || 0) * lead; ty = bb.y + (bb.vy || 0) * lead; sp *= 1.1; }
           else { const s = spots[pl.i]; tx = pl.side === off ? s.x : (s.x + h.x) / 2; ty = pl.side === off ? s.y : (s.y + HY) / 2; }
         } else if (pl.side === off) {
           if (pl === this.ball.holder) { const a = this.aiHandler(pl, dt); tx = a.x; ty = a.y; if (this.frontcourt && this.fcSide === pl.side) tx = pl.side === 0 ? Math.max(tx, 49) : Math.min(tx, 45); }
@@ -6242,7 +6243,7 @@ const ARC = (() => {
         f.t += dt; const k = clamp(f.t / f.T, 0, 1), h = this.hoopOf(f.by.side);
         b.x = f.from.x + (h.x - f.from.x) * k; b.y = f.from.y + (h.y - f.from.y) * k;
         b.z = f.from.z + (RIM_Z + 0.4 - f.from.z) * k + Math.sin(k * Math.PI) * (f.dunk ? 1 : 7);
-        if (f.blocked && k > 0.25) { b.flight = null; this.loose(b.x - this.dir(f.by.side) * rnd(6, 14), clamp(b.y + rnd(-8, 8), 3, W - 3)); return; }
+        if (f.blocked && k > 0.25) { b.flight = null; this.looseV(b.x, b.y, b.z, -this.dir(f.by.side) * rnd(8, 15), rnd(-7, 7), rnd(-1, 5), 1 - f.by.side); return; }
         if (k >= 1) {
           if (f.make) {
             const pts = f.three ? 3 : 2; f.by.st.fgm++; f.by.st.pts += pts; if (f.three) f.by.st.tpm++; this.T[f.by.side].score += pts;
@@ -6254,15 +6255,26 @@ const ARC = (() => {
           }
           b.flight = null; this.ball.lastPasser = null;
           if (this.clock <= 0) return this.endQuarter();
-          const ang = rnd(0, Math.PI * 2), r = rnd(3, 11);
-          this.loose(clamp(h.x + Math.cos(ang) * r, 1, LEN - 1), clamp(HY + Math.sin(ang) * r, 2, W - 2));
+          // the miss bounces: off the glass (more often from the wings and from long range) or off the rim, away from the basket
+          const dsh = Math.hypot(f.from.x - h.x, f.from.y - h.y), back = -this.dir(f.by.side), glass = Math.random() < (Math.abs(f.from.y - h.y) > 6 ? 0.35 : 0.18) + (dsh > 20 ? 0.1 : 0);
+          const ux = (f.from.x - h.x) / (dsh || 1), uy = (f.from.y - h.y) / (dsh || 1), ang = Math.atan2(uy, ux) + rnd(-1.1, 1.1), sp2 = rnd(5, 10) + dsh * 0.18;
+          if (glass) { this.rimHit = { side: h.x > 47 ? 1 : 0, t: 0.25, glass: true }; this.looseV(h.x - back * 0.9, h.y + rnd(-1, 1), RIM_Z + rnd(1, 2.5), back * rnd(4, 9) + Math.cos(ang) * 2, Math.sin(ang) * sp2 * 0.6, rnd(1, 5), f.by.side); }
+          else { this.rimHit = { side: h.x > 47 ? 1 : 0, t: 0.25 }; this.looseV(h.x + Math.cos(ang) * 0.8, h.y + Math.sin(ang) * 0.8, RIM_Z + 0.3, Math.cos(ang) * sp2, Math.sin(ang) * sp2, rnd(5, 11), f.by.side); }
         }
         return;
       }
       if (this.state === 'loose') {
-        b.z = Math.max(0, b.z - 9 * dt);
-        for (const pl of this.all().sort(() => Math.random() - 0.5)) {
-          if (dist(pl, b) < 2.4 && Math.random() < (0.22 + pl.r.reb * 0.25) * (pl.side === this.poss ? 0.85 : 1.15) * dt * 10) {
+        // a live ball: gravity, bounces off the floor, rolls; out of bounds goes to the team that didn't touch it last
+        b.vz = (b.vz || 0) - G_ACC * dt; b.x += (b.vx || 0) * dt; b.y += (b.vy || 0) * dt; b.z += b.vz * dt;
+        if (b.z <= 0) { b.z = 0; if (Math.abs(b.vz) > 2.5) { b.vz = -b.vz * 0.55; b.vx *= 0.82; b.vy *= 0.82; } else { b.vz = 0; b.vx *= 1 - 1.6 * dt; b.vy *= 1 - 1.6 * dt; } }
+        if (b.x < -1 || b.x > LEN + 1 || b.y < -1 || b.y > W + 1) { const side = 1 - (b.lastTouch != null ? b.lastTouch : this.poss); this.say('Out of bounds', 1.2); this.setupInbound(side); return; }
+        // whoever gets a hand on it first: close enough, and the ball low enough for his reach (jumping helps)
+        const reach = pl => (this.spriteFt || 6) * 0.9 + pl.z + pl.r.height - 6;
+        for (const pl of this.all()) if (pl.z === 0 && b.vz < 0 && dist(pl, b) < 2.2 && b.z > reach(pl) && b.z < reach(pl) + 3.5 && !(this.user != null && pl === this.ctrl[this.user]) && Math.random() < (0.3 + pl.r.reb * 0.4) * dt * 8) { pl.vz = 11 + pl.r.reb * 3; pl.z = 0.01; }
+        const eff2 = pl => dist(pl, b) - pl.r.reb * 0.9 - (pl.side === this.poss ? 0.9 : 0) + Math.random() * 0.8;   // good rebounders and crashing offensive players get there first more often
+        const cand = this.all().filter(pl => dist(pl, b) < 1.4 + pl.r.reb * 0.5 + (pl.side === this.poss ? 0.4 : 0) && b.z <= reach(pl)).sort((a, c) => eff2(a) - eff2(c));
+        for (const pl of cand.length ? [cand[0]] : []) {
+          if (true) {
             pl.st.reb++; const offReb = pl.side === this.poss;
             this.give(pl); this.state = 'live'; this.poss = pl.side; if (!offReb) this.shot = 24; else this.shot = Math.max(this.shot, 14);
             this.say(`${offReb ? 'Offensive' : 'Defensive'} rebound: ${short(pl.p)}`, 1.1); this.pickCtrl(true); return;
@@ -6270,6 +6282,7 @@ const ARC = (() => {
         }
       }
     }
+    looseV(x, y, z, vx, vy, vz, lastSide) { const b = this.ball; this.state = 'loose'; b.holder = null; b.flight = null; Object.assign(b, { x, y, z, vx, vy, vz, lastTouch: lastSide }); this.pickCtrl(true); }
     loose(x, y) { this.state = 'loose'; this.ball.holder = null; this.ball.flight = null; this.ball.x = x; this.ball.y = y; this.ball.z = 6; this.pickCtrl(true); }
     endQuarter() {
       if (this.q >= 4 && this.T[0].score !== this.T[1].score) { this.over = true; this.state = 'end'; this.say('Final', 99); return; }
@@ -6811,7 +6824,7 @@ const ARC = (() => {
         for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
         px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
       } }
-      drawMeter(); for (const L2 of labels) { const tw = L2.t.length * 4 + 4; px.fillStyle = 'rgba(10,12,20,.72)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 4, tw, 9); pixText(px, L2.t, L2.x, L2.y, 7, L2.c || '#ffffff'); } labels = [];
+      drawMeter(); for (const L2 of labels) { const tw = Math.round(L2.t.length * 5.6) + 8; px.fillStyle = 'rgba(6,8,16,.85)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 6, tw, 13); px.fillStyle = L2.c || '#ffffff'; px.fillRect(Math.round(L2.x - tw / 2), L2.y + 6, tw, 1); pixText(px, L2.t, L2.x, L2.y, 10, L2.c || '#ffffff', 0, '#000000'); } labels = [];
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
       if (game.rimShake > 0) game.rimShake -= 1 / 60;
       scoreboard(shift);
@@ -6838,7 +6851,7 @@ const ARC = (() => {
       { const st2 = String(Math.max(0, Math.ceil(game.shot))), sw2 = microW(st2, 1) + 4, sx3 = gx + Math.round(gw / 2 - sw2 / 2), sy3 = g1y - 9;
         R(sx3 - 1, sy3 - 1, sw2 + 2, 9, '#5a5f6b'); R(sx3, sy3, sw2, 7, '#0b0c12');
         if (!(game.shot <= 5 && game.state === 'live' && Math.floor(game.t * 4) % 2)) micro(px, st2, sx3 + 2, sy3 + 1, 1, '#ff3b2f'); }
-      const shk = game.rimShake > 0 && game.hoopOf(game.madeBy != null ? game.madeBy : 0).x === hx ? Math.round(Math.sin(game.t * 60) * 1.4) : 0;
+      const shk = game.rimShake > 0 && game.hoopOf(game.madeBy != null ? game.madeBy : 0).x === hx ? Math.round(Math.sin(game.t * 60) * 1.4) : (game.rimHit && !game.rimHit.glass && game.rimHit.side === side ? Math.round(Math.sin(game.t * 70)) : 0);
       const [rx, ry0] = P(hx, HY, RIM_Z), ry = ry0 + shk, rw = 12, rh = 5, nl = 7;
       for (let i = 0; i <= nl; i++) { const k = i / nl, half = rw / 2 - k * rw * 0.18; R(rx - half, ry + rh / 2 + i, 1, 1, '#f4f4f4'); R(rx + half - 1, ry + rh / 2 + i, 1, 1, '#f4f4f4'); if (i % 3 === 0) for (let q = rx - half + 2; q < rx + half - 1; q += 2) R(q, ry + rh / 2 + i, 1, 1, 'rgba(255,255,255,.75)'); }
       R(rx - rw / 2, ry - 1, rw, 1, '#f0641e'); R(rx - rw / 2, ry + rh - 1, rw, 1, '#c84a12'); R(rx - rw / 2 - 1, ry, 1, rh - 1, '#f0641e'); R(rx + rw / 2, ry, 1, rh - 1, '#f0641e');
@@ -6866,7 +6879,7 @@ const ARC = (() => {
         // colored by the make chance when he has the ball: green above 50%, yellow 33-50%, red below 33%
         const nm = pl.p.name.split(' '), tag = nm.length > 1 ? nm[0][0] + '. ' + nm.slice(1).join(' ') : pl.p.name;
         let col = '#ffffff'; if (hasB && !pl.oob && game.state === 'live') { const ch = game.chance(pl); col = ch > 0.5 ? '#4ade80' : ch >= 0.33 ? '#facc15' : '#f87171'; }
-        labels.push({ x: fx, y: fy + 7, t: tag, c: col }); }
+        labels.push({ x: fx, y: fy + 9, t: tag, c: col }); }
       // shot meter beside your shooter: fills as you rise, green at the top of the jump
       const userSide = game.user != null && pl.side === game.user;
       let mv = null, mcol = null;
@@ -7014,6 +7027,7 @@ const HELP = [
 <li><b>Jump ball</b>: the game and each overtime start with a tip-off. You control your center: tap <b>Jump</b> just before the ball peaks. Timing matters most; height and leaping help. The team that loses the opening tip gets the ball to start the 2nd and 3rd quarters, the winner the 4th.</li>
 <li><b>Inbounds</b>: every possession starts with a pass in from under the basket. Tap <b>Pass</b> to inbound right away.</li>
 <li><b>Shot meter</b>: the bar next to your shooter fills as he rises and turns green at the top of the jump. Close to the rim, players drive in for a layup, and dunkers slam it and hang on the rim.</li>
+<li><b>Rebounds</b>: a miss really bounces, off the rim (it shakes) or off the glass, farther on long shots. It bounces on the floor and rolls; the first player to get a hand on it (close enough, and the ball low enough to reach) gets the rebound. Good rebounders and players crashing the glass get there first more often. Off the court, it goes to the team that didn't touch it last.</li>
 <li><b>Half court</b>: get the ball across half court in 8 seconds (10 before 2001-02), and once it's across you can't take it or pass it back (backcourt violation). Shot clocks sit on top of both backboards and flash in the last 5 seconds.</li>
 <li>The shot clock is 24 seconds. Shooting fouls send a player to the line (and to the floor). Tied after four quarters means overtime.</li>
 </ul>` },
@@ -7242,7 +7256,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23l';
+const APP_VERSION = '2026-11-23m';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
