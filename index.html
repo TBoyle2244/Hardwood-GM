@@ -5997,6 +5997,7 @@ const ARC = (() => {
       inp = inp || {}; this.t += dt; if (this.msgT > 0) this.msgT -= dt;
       for (const pl of this.all()) if (pl.anim) { pl.anim.t += dt; if (pl.anim.t >= pl.anim.T) pl.anim = null; }
       if (this.rimHit) { this.rimHit.t -= dt; if (this.rimHit.t <= 0) this.rimHit = null; }
+      if (this.netSwish) { this.netSwish.t -= dt; if (this.netSwish.t <= 0) this.netSwish = null; }
       if (this.state === 'jump') { this.jumpStep(dt, inp); return; }
       if (this.state === 'made') {   // a short pause after a basket: the ball drops through the net, a dunker hangs on the rim
         this.wait -= dt; const b = this.ball; b.z = Math.max(0, b.z - dt * 14); this.moveAll(dt, {});
@@ -6199,6 +6200,7 @@ const ARC = (() => {
       const { pl, n } = this.fts; let made = 0;
       for (let i = 0; i < n; i++) { pl.st.fta++; if (Math.random() < pl.r.ft) { made++; pl.st.ftm++; } }
       pl.st.pts += made; this.T[pl.side].score += made;
+      if (made) { const hh = this.hoopOf(pl.side); this.netSwish = { side: hh.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; }
       this.say(`${short(pl.p)} makes ${made} of ${n} free throw${n > 1 ? 's' : ''}`);
       this.setupInbound(1 - pl.side);
     }
@@ -6286,7 +6288,7 @@ const ARC = (() => {
             this.say(f.dunk ? `${short(f.by.p)}: ${f.style ? f.style.name : 'slam'}!` : f.three ? `${short(f.by.p)} hits the three!` : `${short(f.by.p)} scores`);
             b.flight = null; this.ball.lastPasser = null;
             if (this.clock <= 0) return this.endQuarter();
-            b.x = h.x; b.y = h.y; b.z = RIM_Z - 0.5; this.state = 'made'; this.madeBy = f.by.side; this.wait = f.dunk ? 0.9 : 0.6; this.rimShake = f.dunk ? 0.4 : 0; return;
+            this.netSwish = { side: h.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; b.x = h.x; b.y = h.y; b.z = RIM_Z - 0.5; this.state = 'made'; this.madeBy = f.by.side; this.wait = f.dunk ? 0.9 : 0.6; this.rimShake = f.dunk ? 0.4 : 0; return;
           }
           b.flight = null; this.ball.lastPasser = null;
           if (this.clock <= 0) return this.endQuarter();
@@ -6942,7 +6944,10 @@ const ARC = (() => {
         if (!(game.shot <= 5 && game.state === 'live' && Math.floor(game.t * 4) % 2)) micro(px, st2, sx3 + 2, sy3 + 1, 1, '#ff3b2f'); }
       const shk = game.rimShake > 0 && game.hoopOf(game.madeBy != null ? game.madeBy : 0).x === hx ? Math.round(Math.sin(game.t * 60) * 1.4) : (game.rimHit && !game.rimHit.glass && game.rimHit.side === side ? Math.round(Math.sin(game.t * 70)) : 0);
       const [rx, ry0] = P(hx, HY, RIM_Z), ry = ry0 + shk, rw = 12, rh = 5, nl = 7;
-      for (let i = 0; i <= nl; i++) { const k = i / nl, half = rw / 2 - k * rw * 0.18; R(rx - half, ry + rh / 2 + i, 1, 1, '#f4f4f4'); R(rx + half - 1, ry + rh / 2 + i, 1, 1, '#f4f4f4'); if (i % 3 === 0) for (let q = rx - half + 2; q < rx + half - 1; q += 2) R(q, ry + rh / 2 + i, 1, 1, 'rgba(255,255,255,.75)'); }
+      // the net: on a make it snaps down as the ball goes through, then swings back and forth and settles
+      const sw = game.netSwish && game.netSwish.side === side ? game.netSwish : null, sp3 = sw ? 1 - sw.t / sw.T : 1;
+      const stretch = sw ? Math.round(Math.sin(Math.min(1, sp3 * 2.2) * Math.PI) * 4) : 0, sway = sw ? Math.sin(sp3 * 14) * 2.2 * (1 - sp3) : 0, NL = nl + stretch;
+      for (let i = 0; i <= NL; i++) { const k = i / NL, half = rw / 2 - k * rw * (sw ? 0.18 + 0.12 * Math.sin(Math.min(1, sp3 * 2.2) * Math.PI) : 0.18), dx = Math.round(sway * k); R(rx - half + dx, ry + rh / 2 + i, 1, 1, '#f4f4f4'); R(rx + half - 1 + dx, ry + rh / 2 + i, 1, 1, '#f4f4f4'); if (i % 3 === 0) for (let q = rx - half + 2; q < rx + half - 1; q += 2) R(q + dx, ry + rh / 2 + i, 1, 1, 'rgba(255,255,255,.75)'); }
       R(rx - rw / 2, ry - 1, rw, 1, '#f0641e'); R(rx - rw / 2, ry + rh - 1, rw, 1, '#c84a12'); R(rx - rw / 2 - 1, ry, 1, rh - 1, '#f0641e'); R(rx + rw / 2, ry, 1, rh - 1, '#f0641e');
     }
     function drawPlayer(pl, sh) {
@@ -7348,7 +7353,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23p';
+const APP_VERSION = '2026-11-23q';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
