@@ -6128,7 +6128,10 @@ const ARC = (() => {
       this.ball.holder = null; this.ball.lastPasser = from;
       this.ball.flight = { kind: 'pass', from: { x: from.x, y: from.y }, to, t: 0, T: t, by: from, lob: !!lob };
       // alley-oop: a dunker near the rim takes off as the lob is thrown and catches it in the air
-      if (lob && this.oopMates(from).includes(to)) this.ball.flight.oop = true;
+      if (lob && this.oopMates(from).includes(to)) {
+        const h = this.hoopOf(to.side), d = dist(to, h) || 1, k2 = Math.min(1, 1.3 / d);
+        const f2 = this.ball.flight; f2.oop = true; f2.catchAt = { x: h.x + (to.x - h.x) * k2, y: h.y + (to.y - h.y) * k2 }; f2.T = Math.max(f2.T, 0.75);
+      }
       this.state = 'live';
     }
     startShot(pl, userTimed) {
@@ -6225,9 +6228,12 @@ const ARC = (() => {
       const f = b.flight;
       if (f && f.kind === 'pass') {
         f.t += dt; const k = clamp(f.t / f.T, 0, 1);
-        if (f.oop && !f.jumped && f.t >= f.T - 0.42 && f.to.z === 0) { f.jumped = true; const to = f.to, h3 = this.hoopOf(to.side), d3 = dist(to, h3) || 1, go = Math.max(0, d3 - 1.2);
-          to.vz = 14.5; to.z = 0.01; to.glide = { x: to.x + (h3.x - to.x) / d3 * go, y: to.y + (h3.y - to.y) / d3 * go, sp: go / 0.42 + 1 }; to.anim = { k: 'dunk', t: 0, T: 1.2 }; }
-        b.x = f.from.x + (f.to.x - f.from.x) * k; b.y = f.from.y + (f.to.y - f.from.y) * k; b.z = 4 + (f.oop ? k * (RIM_Z - 3) : 0) + Math.sin(k * Math.PI) * (f.lob ? 9 : 2.5);
+        // alley-oop: the dunker leaves the floor as the lob comes down and rises to meet it at the rim
+        if (f.oop && !f.jumped && f.t >= f.T - 0.36 && f.to.z === 0) { f.jumped = true; const to = f.to, c2 = f.catchAt, togo = dist(to, c2);
+          to.z = 0.01; to.vz = 0; to.hang = 0.36 + 0.9; to.glide = { x: c2.x, y: c2.y, sp: togo / 0.3 + 1, z: RIM_Z + 0.6 - (this.spriteFt || 6) }; to.anim = { k: 'oopup', t: 0, T: 0.4 }; }
+        const tx2 = f.catchAt ? f.catchAt.x : f.to.x, ty2 = f.catchAt ? f.catchAt.y : f.to.y;
+        if (f.catchAt) { b.x = f.from.x + (tx2 - f.from.x) * k; b.y = f.from.y + (ty2 - f.from.y) * k; b.z = 4 + k * (RIM_Z + 1.2 - 4) + Math.sin(k * Math.PI) * 6; }
+        else { b.x = f.from.x + (f.to.x - f.from.x) * k; b.y = f.from.y + (f.to.y - f.from.y) * k; b.z = 4 + Math.sin(k * Math.PI) * (f.lob ? 9 : 2.5); }
         // defenders in the passing lane can pick it off
         f.tried = f.tried || new Set();
         if (k > (f.lob ? 0.8 : 0.2) && k < (f.lob ? 0.95 : 0.85)) for (const d of this.T[1 - f.by.side].P) if (dist(d, b) < 1.5 && !f.tried.has(d) && (f.tried.add(d), Math.random() < (0.04 + d.r.stl * 0.1) * (1.3 - f.by.r.pass) * d.r.def * (f.lob ? 0.5 : 1))) {
@@ -6235,7 +6241,7 @@ const ARC = (() => {
         }
         if (k >= 1) { this.give(f.to); this.pickCtrl();
           const h2 = this.hoopOf(f.to.side), to = f.to;
-          if (f.oop && to.z > 0 && dist(to, h2) < 9) { to.shooting = { t: 0, apex: 0.4, user: false, oop: true, rel: 0 }; this.say('Alley-oop!', 1); this.releaseShot(to); }
+          if (f.oop && to.z > 0 && dist(to, h2) < 9) { to.shooting = { t: 0, apex: 0.4, user: false, oop: true, rel: 0 }; this.say('Alley-oop!', 1.2); this.releaseShot(to); if (to.anim && to.anim.k === 'dunk') to.anim = { k: 'dunk', t: 0.05, T: 1.0 }; }
           else if (f.lob && to.r.dunk && dist(to, h2) < 9 && to.z === 0) { this.startShot(to, false); if (to.shooting) { to.shooting.oop = true; to.shooting.rel = 0.12; this.say('Alley-oop!', 1); } } }
         return;
       }
@@ -6421,7 +6427,7 @@ const ARC = (() => {
     const camPy = () => clamp(wy(camY) - PH * 0.55, 0, WORLD_H - PH);
     const toScr = (x, y, z) => [Math.round(wx(x) - camPx()), Math.round(wy(y, z) - camPy())];
     size(); window.addEventListener('resize', size);
-    game.spriteFt = 27 / (SC * 0.8);   // how tall a player sprite is in feet of height on this court (for dunks)
+    game.spriteFt = 29 / (SC * 0.8);   // how tall a player sprite is in feet of height on this court (for dunks)
     ui.className = 'arc-ui';
     ui.innerHTML = `<div class="arc-score"></div><div class="arc-msg"></div>
       <div class="arc-stick"><div class="arc-knob"></div></div>
@@ -6742,6 +6748,32 @@ const ARC = (() => {
       else if (front) { for (const ex of [2, 5]) { R(ex, eyeY, 1, 1, '#ffffff'); g.fillStyle = '#1b1209'; g.fillRect(ox + ex * sc + Math.floor(sc / 3), oy + eyeY * sc + Math.floor(sc / 3), Math.ceil(sc / 2), Math.ceil(sc * 2 / 3)); } R(3, 4, 2, 1, shade(sk, -0.3)); }
       else if (L.hair !== 1) R(faceL ? 1 : 5, eyeY, 1, 1, '#1b1209');
     }
+    // court sprites use a bigger cartoon head: 8 wide, 7 tall, two big eyes turned the way he faces
+    function toonHead(g, ox, oy, lk, band, faceL) {
+      const { sk, hc, L } = lk, R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(ox + x, oy + y, a, b); };
+      R(0, 0, 8, 7, sk); R(-1, 3, 1, 2, shade(sk, -0.1)); R(8, 3, 1, 2, shade(sk, -0.1));
+      switch (L.hair) {
+        case 0: R(0, 0, 8, 2, hc); R(0, 2, 1, 1, hc); R(7, 2, 1, 1, hc); break;
+        case 1: R(-1, -3, 10, 5, hc); R(0, -4, 8, 1, hc); R(-1, 2, 1, 2, hc); R(8, 2, 1, 2, hc); break;
+        case 2: R(0, -1, 8, 2, hc); R(-1, 0, 1, 7, hc); R(8, 0, 1, 7, hc); R(faceL ? 7 : 0, 1, 1, 4, hc); break;
+        case 3: R(2, 0, 4, 1, shade(sk, 0.2)); break;
+        case 4: R(0, 0, 8, 1, hc); break;
+        case 5: R(0, -4, 8, 5, hc); break;
+        case 6: R(0, 0, 8, 2, hc); for (const x of [1, 3, 5]) R(x, 0, 1, 2, shade(sk, -0.2)); break;
+        case 7: R(3, -3, 2, 4, hc); R(0, 0, 3, 1, shade(sk, -0.1)); R(5, 0, 3, 1, shade(sk, -0.1)); break;
+        case 8: R(0, -1, 8, 2, hc); R(-1, 0, 1, 6, hc); R(8, 0, 1, 6, hc); break;
+        case 9: R(0, -1, 8, 2, hc); R(-1, 0, 1, 3, hc); R(8, 0, 1, 3, hc); for (const x of [1, 4, 6]) R(x, -2, 1, 1, hc); break;
+        case 10: R(0, 0, 8, 2, hc); R(3, -3, 2, 3, hc); break;
+        default: R(0, 0, 8, 1, hc); for (const x of [0, 2, 4, 6]) R(x, -1, 1, 1, hc); R(1, -2, 1, 1, hc); R(5, -2, 1, 1, hc);
+      }
+      if (L.acc === 1) R(0, 1, 8, 1, band);
+      const sh2 = faceL ? -1 : 1, e1 = faceL ? 1 : 2, e2 = faceL ? 4 : 5;
+      if (L.acc === 2) { R(0, 3, 8, 2, '#2a2a2a'); R(e1, 3, 2, 1, '#8fc8e8'); R(e2, 3, 2, 1, '#8fc8e8'); }
+      else for (const ex of [e1, e2]) { R(ex, 3, 2, 2, '#ffffff'); R(ex + (sh2 > 0 ? 1 : 0), 3, 1, 2, '#1b1209'); }
+      R(faceL ? 0 : 7, 4, 1, 1, shade(sk, -0.18));   // nose on the side he faces
+      if (L.fac === 1) { R(0, 5, 8, 2, hc); R(faceL ? 2 : 4, 5, 2, 1, '#6b2a20'); } else { R(faceL ? 2 : 4, 6, 2, 1, '#6b2a20'); if (L.fac === 2) R(faceL ? 2 : 4, 6, 2, 1, hc); if (L.fac === 3) R(faceL ? 1 : 3, 5, 4, 1, hc); }
+      R(faceL ? 5 : 1, 5, 1, 1, shade(sk, 0.12));   // a little cheek shine
+    }
     function outlined(c) {
       const Wd = c.width, Hh = c.height, d = c.getContext('2d').getImageData(0, 0, Wd, Hh).data, out = document.createElement('canvas'); out.width = Wd; out.height = Hh; const oc = out.getContext('2d');
       oc.fillStyle = 'rgba(20,14,10,.85)';
@@ -6762,16 +6794,16 @@ const ARC = (() => {
       const T = game.T[pl.side], id = pl.p.id || (pl.side * 10 + pl.i), key = id + '|' + pl.side + '|' + frame + '|' + pose + '|' + (faceL ? 1 : 0) + '|' + pl.num;
       if (cache[key]) return cache[key];
       const num = pl.num != null ? pl.num : 0, lk = lookOf(pl), sk = lk.sk, LK = lk.L;
-      const tall = (pl.r.height - 6.6) * 12, leg = clamp(Math.round(tall * 0.55), -3, 5), tor = clamp(Math.round(tall * 0.3), -2, 3), H = 27 + leg + tor, Wd = 16, c = document.createElement('canvas'); c.width = Wd; c.height = H + 2;
+      const tall = (pl.r.height - 6.6) * 12, leg = clamp(Math.round(tall * 0.55), -3, 5), tor = clamp(Math.round(tall * 0.3), -2, 3), H = 30 + leg + tor, Wd = 18, c = document.createElement('canvas'); c.width = Wd; c.height = H + 2;
       const g = c.getContext('2d'), R = (x, y, a, b, col) => { g.fillStyle = col; g.fillRect(x, y, a, b); };
       const jer = T.color, trim = T.trim, shorts = T.kit === 'home' ? '#ece8df' : shade(T.color, -0.12), shoe = lk.shoe;
-      const o = 4, top = 3;
+      const o = 4, top = 6;
       // legs and shoes (two run frames)
       const ly = top + 16 + tor, ll = Math.max(3, 6 + leg), s1 = frame === 1 ? 1 : frame === 2 ? -1 : 0;
-      if (pose === 'lay' || pose === 'dunk') {   // one knee driving up (layup) or both tucked (dunk)
+      if (pose === 'lay' || pose === 'dunk' || pose === 'slam') {   // one knee driving up (layup) or both tucked (dunk)
         const kx = faceL ? o + 1 : o + 5, sx = faceL ? o + 5 : o + 1, kl = Math.max(3, ll - 3);
         R(kx, ly, 2, kl, sk); R(kx + (faceL ? -1 : 0), ly + kl - 1, 3, 2, shoe);
-        if (pose === 'dunk') { R(sx, ly, 2, kl, sk); R(sx + (faceL ? 0 : -1), ly + kl - 1, 3, 2, shoe); }
+        if (pose === 'dunk' || pose === 'slam') { R(sx, ly, 2, kl, sk); R(sx + (faceL ? 0 : -1), ly + kl - 1, 3, 2, shoe); }
         else { R(sx, ly, 2, ll, sk); R(sx, ly + ll - 2, 2, 1, '#f4f4f4'); R(sx - (faceL ? 0 : 1), ly + ll, 3, 2, shoe); }
       } else {
         R(o + 1 + s1, ly, 2, ll, sk); R(o + 5 - s1, ly, 2, ll, sk);
@@ -6788,14 +6820,15 @@ const ARC = (() => {
         else for (let k = 0; k < 2; k++) { const m = MF[ns[k]]; for (let i = 0; i < 15; i++) if (m[i] === '1') g.fillRect(o + k * 4 + (i % 3) + (k ? 1 : 0) - (k ? 1 : 0), top + 7 + Math.floor(i / 3), 1, 1); }
       }
       // arms: down, up (shooting / contesting) or one out (dribbling)
-      if (pose === 'up' || pose === 'dunk') { R(o - 1, top - 2, 2, 8, sk); R(o + 7, top - 2, 2, 8, sk); R(o - 1, top - 3, 2, 1, sk); R(o + 7, top - 3, 2, 1, sk); }
+      if (pose === 'up' || pose === 'dunk' || pose === 'hang') { R(o - 1, top - 3, 2, 9, sk); R(o + 7, top - 3, 2, 9, sk); }
+      else if (pose === 'slam') { const fx2 = faceL ? o - 4 : o + 7; R(fx2, top + 1, 5, 2, sk); R(faceL ? o - 1 : o + 7, top + 2, 2, 5, sk); R(faceL ? o + 7 : o - 1, top + 6, 2, 5, sk); }
       else if (pose === 'lay') { R(faceL ? o - 1 : o + 7, top - 3, 2, 9, sk); R(faceL ? o + 7 : o - 1, top + 6, 2, 5, sk); }
       else if (pose === 'drib') { R(faceL ? o + 7 : o - 1, top + 6, 2, 6, sk); R(faceL ? o - 2 : o + 7, top + 7, 3, 2, sk); R(faceL ? o - 3 : o + 9, top + 8, 2, 3, sk); }
       else { R(o - 1, top + 6, 2, 6 + tor, sk); R(o + 7, top + 6, 2, 6 + tor, sk); }
       if (lk.bands) { R(o - 1, top + 10 + tor, 2, 1, trim); R(o + 7, top + 10 + tor, 2, 1, trim); }   // wristbands
       if (LK.acc === 3 && pose !== 'up' && pose !== 'dunk') R(o - 1, top + 6, 2, 5 + tor, '#1f1f1f');   // shooting sleeve
       // head and hair
-      drawHead(g, o, top, 1, lk, trim === '#f4f1ea' ? '#f4f1ea' : trim, faceL, false);
+      toonHead(g, o, top - 1, lk, trim === '#f4f1ea' ? '#f4f1ea' : trim, faceL);
       const out = outlined(c);
       let res = out;
       if (faceL) { const f = document.createElement('canvas'); f.width = Wd; f.height = H + 2; const fc = f.getContext('2d'); fc.translate(Wd, 0); fc.scale(-1, 1); fc.drawImage(out, 0, 0); res = f; }
@@ -6824,7 +6857,7 @@ const ARC = (() => {
         for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
         px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
       } }
-      drawMeter(); for (const L2 of labels) { const tw = Math.round(L2.t.length * 5.6) + 8; px.fillStyle = 'rgba(6,8,16,.85)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 6, tw, 13); px.fillStyle = L2.c || '#ffffff'; px.fillRect(Math.round(L2.x - tw / 2), L2.y + 6, tw, 1); pixText(px, L2.t, L2.x, L2.y, 10, L2.c || '#ffffff', 0, '#000000'); } labels = [];
+      drawMeter(); for (const L2 of labels) { const tw = Math.round(L2.t.length * 4.6) + 6; px.fillStyle = 'rgba(6,8,16,.8)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 5, tw, 10); px.fillStyle = L2.c || '#ffffff'; px.fillRect(Math.round(L2.x - tw / 2), L2.y + 5, tw, 1); pixText(px, L2.t, L2.x, L2.y, 8, L2.c || '#ffffff', 0, '#000000'); } labels = [];
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
       if (game.rimShake > 0) game.rimShake -= 1 / 60;
       scoreboard(shift);
@@ -6863,7 +6896,7 @@ const ARC = (() => {
       const hasB = game.ball.holder === pl; let faceL = Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);
       if (pl.anim && pl.anim.k === 'spin') faceL = Math.floor(pl.anim.t / 0.1) % 2 === 0;
       const an = pl.anim && pl.anim.k;
-      const pose = an === 'dunk' ? 'dunk' : an === 'layup' ? 'lay' : an === 'pump' || an === 'charge' ? 'up' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
+      const pose = an === 'oopup' ? 'dunk' : an === 'dunk' ? (pl.anim.t < 0.15 ? 'dunk' : pl.anim.t < 0.38 ? 'slam' : 'hang') : an === 'layup' ? 'lay' : an === 'pump' || an === 'charge' ? 'up' : pl.shooting || pl.z > 0.3 || pl.blocking || (hasB && pl.oob) ? 'up' : hasB ? 'drib' : 'down';
       const sp = sprite(pl, an === 'fall' ? 0 : frame, an === 'fall' ? 'down' : pose, faceL);
       px.fillStyle = 'rgba(0,0,0,.28)'; px.beginPath(); px.ellipse(fx, fy, an === 'fall' ? 11 : 6, 2, 0, 0, Math.PI * 2); px.fill();
       if (an === 'fall') {   // knocked to the floor: the sprite lies on its side, then pops back up
@@ -7256,7 +7289,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23m';
+const APP_VERSION = '2026-11-23n';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
