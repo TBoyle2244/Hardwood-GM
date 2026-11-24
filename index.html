@@ -414,6 +414,10 @@ details.more summary { cursor: pointer; font-family: var(--cond); font-weight: 6
 .arc-match .kits .opp { color: #b9c6e8; font-size: 13px; font-weight: 600; } .arc-match .kits .go { margin-left: auto; background: #1a8f4a; border-color: #4ade80; padding: 12px 22px; font-size: 16px; }
 @media (max-width: 760px) { .arc-match .sides { flex-direction: column; gap: 6px; } .arc-match .pc img { max-width: 52px; } }
 @media (max-height: 500px) { .arc-match .sides { flex-direction: row; } .arc-match .pc img { max-width: 46px; } .arc-match .pc b { font-size: 10px; } .arc-match .banner .tm { padding: 6px 10px 16px; } }
+/* player stats card in the middle at the bottom; tips sit just above it */
+.arc-card { left: 50% !important; transform: translateX(-50%); }
+.arc-tip { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 92px) !important; }
+@media (max-height: 500px) { .arc-tip { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 84px) !important; max-width: 42vw; font-size: 12px; } .arc-card { padding: 4px 8px; } }
 
 </style>
 <style>html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -6143,7 +6147,7 @@ const ARC = (() => {
       if (close && !blocked) {   // drive to the rim: dunkers glide in and hang on the rim; layups float in with one hand
         const toward = Math.max(0, d - (dunk ? 0.9 : 1.6)), ux = (h.x - pl.x) / (d || 1), uy = (h.y - pl.y) / (d || 1);
         // the court art draws players small next to the rim, so a dunker is lifted until his hands reach it
-        pl.glide = { x: pl.x + ux * toward, y: pl.y + uy * toward, sp: toward / (dunk ? 0.22 : 0.3) + 1, z: dunk ? RIM_Z - 4.4 : RIM_Z - 6 };
+        pl.glide = { x: pl.x + ux * toward, y: pl.y + uy * toward, sp: toward / (dunk ? 0.22 : 0.3) + 1, z: dunk ? RIM_Z + 0.4 - (this.spriteFt || 4.8) : RIM_Z - 1.6 - (this.spriteFt || 4.8) };
         if (dunk) { pl.hang = 0.75; pl.anim = { k: 'dunk', t: 0, T: 1.05 }; } else { pl.hang = 0.25; pl.anim = { k: 'layup', t: 0, T: 0.6 }; }
       }
       if (blocked) { dfn.st.blk++; this.say(`Blocked by ${short(dfn.p)}!`); }
@@ -6380,11 +6384,11 @@ const ARC = (() => {
     root.appendChild(cv); root.appendChild(ui);
     let w = 0, h = 0, dpr = 1, camX = 47;
     const inp = { jx: 0, jy: 0 }, edge = {}, keys = {};
-    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; PH = clamp(Math.round(h / 1.8), 200, 440); PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW; pc.height = PH; }
+    function size() { dpr = Math.min(2, window.devicePixelRatio || 1); w = root.clientWidth; h = root.clientHeight; cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + 'px'; cv.style.height = h + 'px'; PH = clamp(Math.round(h / 2.7), 140, 320); PW = Math.max(160, Math.round(PH * w / Math.max(1, h))); pc.width = PW; pc.height = PH; }
     // Pixel-art view: everything is drawn into a small canvas (PH pixels tall) and scaled up with no smoothing.
     // 3/4 top-down camera that follows the ball along the length of the court.
     // SC = pixels per foot. Players are drawn small next to the court (about 3.5 ft tall) like classic arcade games.
-    let PH = 240; const SC = 7.5, SYF = 0.66, MARGIN = 9, CROWD = 70;
+    let PH = 240; const SC = 5, SYF = 0.66, MARGIN = 9, CROWD = 70;
     const pc = document.createElement('canvas'), px = pc.getContext('2d');
     let PW = 320, world = null, camY = 25;
     const S = () => SC, SY = () => SC * SYF;
@@ -6394,6 +6398,7 @@ const ARC = (() => {
     const camPy = () => clamp(wy(camY) - PH * 0.55, 0, WORLD_H - PH);
     const toScr = (x, y, z) => [Math.round(wx(x) - camPx()), Math.round(wy(y, z) - camPy())];
     size(); window.addEventListener('resize', size);
+    game.spriteFt = 27 / (SC * 0.8);   // how tall a player sprite is in feet of height on this court (for dunks)
     ui.className = 'arc-ui';
     ui.innerHTML = `<div class="arc-score"></div><div class="arc-msg"></div>
       <div class="arc-stick"><div class="arc-knob"></div></div>
@@ -6819,7 +6824,7 @@ const ARC = (() => {
       R(gx, g1y, gw, 1, '#ffffff'); R(gx, g2y, gw, 1, '#ffffff'); R(gx, g1y, 1, g2y - g1y, '#ffffff'); R(gx + gw - 1, g1y, 1, g2y - g1y, '#ffffff');
       R(gx + 1, g1y + Math.round((g2y - g1y) * 0.45), gw - 2, 1, '#ff6a3d');
       const shk = game.rimShake > 0 && game.hoopOf(game.madeBy != null ? game.madeBy : 0).x === hx ? Math.round(Math.sin(game.t * 60) * 1.4) : 0;
-      const [rx, ry0] = P(hx, HY, RIM_Z), ry = ry0 + shk, rw = Math.round(1.6 * SC), rh = Math.max(3, Math.round(1.6 * SC * SYF)), nl = Math.round(SC * 1.1);
+      const [rx, ry0] = P(hx, HY, RIM_Z), ry = ry0 + shk, rw = 12, rh = 5, nl = 7;
       for (let i = 0; i <= nl; i++) { const k = i / nl, half = rw / 2 - k * rw * 0.18; R(rx - half, ry + rh / 2 + i, 1, 1, '#f4f4f4'); R(rx + half - 1, ry + rh / 2 + i, 1, 1, '#f4f4f4'); if (i % 3 === 0) for (let q = rx - half + 2; q < rx + half - 1; q += 2) R(q, ry + rh / 2 + i, 1, 1, 'rgba(255,255,255,.75)'); }
       R(rx - rw / 2, ry - 1, rw, 1, '#f0641e'); R(rx - rw / 2, ry + rh - 1, rw, 1, '#c84a12'); R(rx - rw / 2 - 1, ry, 1, rh - 1, '#f0641e'); R(rx + rw / 2, ry, 1, rh - 1, '#f0641e');
     }
@@ -7219,7 +7224,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23j';
+const APP_VERSION = '2026-11-23k';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
