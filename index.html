@@ -6089,6 +6089,8 @@ const ARC = (() => {
       const d = dist(from, to), t = lob ? clamp(d / 20, 0.55, 1.4) : clamp(d / 32, 0.24, 1.1);
       this.ball.holder = null; this.ball.lastPasser = from;
       this.ball.flight = { kind: 'pass', from: { x: from.x, y: from.y }, to, t: 0, T: t, by: from, lob: !!lob };
+      // alley-oop: a dunker near the rim takes off as the lob is thrown and catches it in the air
+      if (lob && this.oopMates(from).includes(to)) this.ball.flight.oop = true;
       this.state = 'live';
     }
     startShot(pl, userTimed) {
@@ -6185,14 +6187,18 @@ const ARC = (() => {
       const f = b.flight;
       if (f && f.kind === 'pass') {
         f.t += dt; const k = clamp(f.t / f.T, 0, 1);
-        b.x = f.from.x + (f.to.x - f.from.x) * k; b.y = f.from.y + (f.to.y - f.from.y) * k; b.z = 4 + Math.sin(k * Math.PI) * (f.lob ? 9 : 2.5);
+        if (f.oop && !f.jumped && f.t >= f.T - 0.42 && f.to.z === 0) { f.jumped = true; const to = f.to, h3 = this.hoopOf(to.side), d3 = dist(to, h3) || 1, go = Math.max(0, d3 - 1.2);
+          to.vz = 14.5; to.z = 0.01; to.glide = { x: to.x + (h3.x - to.x) / d3 * go, y: to.y + (h3.y - to.y) / d3 * go, sp: go / 0.42 + 1 }; to.anim = { k: 'dunk', t: 0, T: 1.2 }; }
+        b.x = f.from.x + (f.to.x - f.from.x) * k; b.y = f.from.y + (f.to.y - f.from.y) * k; b.z = 4 + (f.oop ? k * (RIM_Z - 3) : 0) + Math.sin(k * Math.PI) * (f.lob ? 9 : 2.5);
         // defenders in the passing lane can pick it off
         f.tried = f.tried || new Set();
         if (k > (f.lob ? 0.8 : 0.2) && k < (f.lob ? 0.95 : 0.85)) for (const d of this.T[1 - f.by.side].P) if (dist(d, b) < 1.5 && !f.tried.has(d) && (f.tried.add(d), Math.random() < (0.04 + d.r.stl * 0.1) * (1.3 - f.by.r.pass) * d.r.def * (f.lob ? 0.5 : 1))) {
           d.st.stl++; f.by.st.tov++; this.say(`Picked off by ${short(d.p)}!`); this.give(d); this.poss = d.side; this.shot = 24; this.pickCtrl(true); return;
         }
         if (k >= 1) { this.give(f.to); this.pickCtrl();
-          const h2 = this.hoopOf(f.to.side); if (f.lob && f.to.r.dunk && dist(f.to, h2) < 9 && f.to.z === 0) { this.startShot(f.to, false); if (f.to.shooting) { f.to.shooting.oop = true; f.to.shooting.rel = 0.12; this.say('Alley-oop!', 1); } } }
+          const h2 = this.hoopOf(f.to.side), to = f.to;
+          if (f.oop && to.z > 0 && dist(to, h2) < 9) { to.shooting = { t: 0, apex: 0.4, user: false, oop: true, rel: 0 }; this.say('Alley-oop!', 1); this.releaseShot(to); }
+          else if (f.lob && to.r.dunk && dist(to, h2) < 9 && to.z === 0) { this.startShot(to, false); if (to.shooting) { to.shooting.oop = true; to.shooting.rel = 0.12; this.say('Alley-oop!', 1); } } }
         return;
       }
       if (f && f.kind === 'shot') {
@@ -6874,7 +6880,7 @@ const HELP = [
 <p>Play a game yourself, five on five on a pixel-art court seen from above, with your starting five against any team. It's an exhibition for now: it doesn't count in the standings or player stats. Start it from the Office tab, pick an opponent and the quarter length (1, 2, 3 or 5 minutes). Best with the iPad turned sideways.</p>
 <ul>
 <li><b>Move</b>: put a finger anywhere on the left side and drag; the stick follows your thumb.</li>
-<li><b>Offense pad</b> (bottom right): <b>Shoot</b>: hold, let go at the top of the jump (a quick tap is a pump fake). <b>Pass</b>: tap to pass toward where you're pushing, hold for a lob; lob to a dunker near the rim for an alley-oop. A <b>thought bubble with a ball</b> over a teammate means he's ready for the lob; hold Pass without pushing the stick and the lob goes to him. <b>Cross</b>: tap for a crossover, hold to hesitate. <b>Step</b>: tap for a step-back, hold to spin. Swipes on the right side work too: swipe down and hold to shoot, left/right to cross, up to spin, tap to pass, hold to lob.</li>
+<li><b>Offense pad</b> (bottom right): <b>Shoot</b>: hold, let go at the top of the jump (a quick tap is a pump fake). <b>Pass</b>: tap to pass toward where you're pushing, hold for a lob; lob to a dunker near the rim for an alley-oop. A <b>thought bubble with a ball</b> over a teammate means he's ready for the lob; hold Pass without pushing the stick and the lob goes to him. He takes off as the ball comes down, catches it in the air and slams it. <b>Cross</b>: tap for a crossover, hold to hesitate. <b>Step</b>: tap for a step-back, hold to spin. Swipes on the right side work too: swipe down and hold to shoot, left/right to cross, up to spin, tap to pass, hold to lob.</li>
 <li><b>Defense pad</b>: <b>Steal</b> swipes at the ball, <b>Block</b> jumps to contest, <b>Charge</b> plants your feet (if the driver runs into you it's an offensive foul, but a late slide is a blocking foul), <b>Switch</b> takes the defender nearest the ball.</li>
 <li><b>Moves beat defenders</b>: a crossover, hesitation, spin or step-back freezes the man guarding you for a moment. Good ball handlers and quick players win more often; a sloppy crossover against a good thief can get stripped.</li>
 <li><b>Energy and substitutions</b>: players tire on the floor (faster when they run hard) and recover on the bench. Tired players are slower and miss more. Pause (II) and open Substitutions to see each player's energy, minutes, points, fouls and ratings, and to swap players (tap a starter, then a bench player). Auto substitutions are on unless you turn them off in Settings. Six fouls and a player is out.</li>
@@ -7110,7 +7116,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23g';
+const APP_VERSION = '2026-11-23h';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
