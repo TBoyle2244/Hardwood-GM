@@ -7168,7 +7168,7 @@ const ARC = (() => {
       const me = game.user != null && game.ctrl[game.user] === pl, moving = Math.hypot(pl.vx, pl.vy) > 2 && pl.z === 0;
       const spd2 = Math.hypot(pl.vx, pl.vy);
       const now = performance.now() / 1000, dtS = Math.min(0.1, now - (pl.phT || now)); pl.phT = now;
-      if (moving && !paused) pl.ph = (pl.ph == null ? pl.i * 1.7 : pl.ph) + dtS * (4.5 + spd2 * 0.55) * clamp(0.75 + (pl.r.height - 6.25) * 0.35, 0.72, 1);   // stride rate: steady, a bit slower for small players
+      if (moving && !paused) pl.ph = (pl.ph == null ? pl.i * 1.7 : pl.ph) + dtS * (4.5 + spd2 * 0.55) * clamp(0.86 + (pl.r.height - 6.25) * 0.2, 0.84, 1);   // stride rate: steady, a bit slower for small players
       const frame = moving ? 1 + Math.floor(pl.ph || 0) % 6 : 0;
       const hasB = game.ball.holder === pl; let faceL = Math.abs(pl.vx) > 0.5 ? pl.vx < 0 : (game.hoopOf(pl.side).x < pl.x);
       if (pl.anim && pl.anim.k === 'spin') faceL = Math.floor(pl.anim.t / 0.1) % 2 === 0;
@@ -7183,7 +7183,10 @@ const ARC = (() => {
         px.save(); px.setTransform(1, 0, 0, 1, Math.round(fx * RS), Math.round(fy * RS)); px.rotate((faceL ? 1 : -1) * Math.round(ang / (Math.PI / 4)) * Math.PI / 4); px.drawImage(sp.c, -Math.round(sp.c.width / 2), -sp.foot); px.restore();
         return;
       }
-      if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 5, fy + 2, 11, 1); px.fillRect(fx - 6, fy + 1, 1, 1); px.fillRect(fx + 6, fy + 1, 1, 1); }
+      if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 5, fy + 2, 11, 1); px.fillRect(fx - 6, fy + 1, 1, 1); px.fillRect(fx + 6, fy + 1, 1, 1);
+        if (pl.side !== game.poss && ['live', 'inbound', 'shot'].includes(game.state)) { const m = game.markOf(pl); if (m) {   // defense: an arrow on your circle points at your man
+          const [mx, my] = toScr(m.x, m.y, 0), a = Math.atan2(my - fy, mx - fx0), ca = Math.cos(a), sa = Math.sin(a), bx = fx + ca * 10, by = fy + 1 + sa * 4;
+          px.fillStyle = '#ffd34d'; px.strokeStyle = 'rgba(0,0,0,.6)'; px.lineWidth = 0.5; px.beginPath(); px.moveTo(bx + ca * 6, by + sa * 6); px.lineTo(bx - sa * 3.5, by + ca * 3.5); px.lineTo(bx + sa * 3.5, by - ca * 3.5); px.closePath(); px.fill(); px.stroke(); } } }
       const x0 = Math.round(fx - sp.c.width / RS / 2), y0 = Math.round(hy - sp.foot / RS);
       px.save(); px.setTransform(1, 0, 0, 1, 0, 0); px.drawImage(sp.c, Math.round(fx * RS - sp.c.width / 2), Math.round(hy * RS - sp.foot) - (frame === 2 || frame === 5 ? 2 : frame === 3 || frame === 6 ? 1 : 0)); px.restore();
       if (me) { px.fillStyle = '#ffd34d'; px.fillRect(fx - 2, y0 - 5, 5, 1); px.fillRect(fx - 1, y0 - 4, 3, 1); px.fillRect(fx, y0 - 3, 1, 1);
@@ -7191,8 +7194,8 @@ const ARC = (() => {
         // colored by the make chance when he has the ball: green above 50%, yellow 33-50%, red below 33%
         const nm = pl.p.name.split(' '), tag = nm.length > 1 ? nm.slice(1).join(' ') : pl.p.name;
         let col = '#ffffff'; if (hasB && !pl.oob && game.state === 'live') { const ch = game.chance(pl); col = ch > 0.5 ? '#4ade80' : ch >= 0.33 ? '#facc15' : '#f87171'; }
-        let ar = null; if (pl.side !== game.poss && ['live', 'inbound', 'shot'].includes(game.state)) { const m = game.markOf(pl); if (m) { const [mx, my] = toScr(m.x, m.y, 0); ar = Math.atan2(my - fy, mx - fx0); } }
-        labels.push({ x: fx, y: fy + 9, t: tag, c: col, ar }); }
+        let ar = null; if (false && pl.side !== game.poss && ['live', 'inbound', 'shot'].includes(game.state)) { const m = game.markOf(pl); if (m) { const [mx, my] = toScr(m.x, m.y, 0); ar = Math.atan2(my - fy, mx - fx0); } }
+        labels.push({ x: fx, y: fy + 9, t: tag, c: col }); }
       // shot meter beside your shooter: fills as you rise, green at the top of the jump
       const userSide = game.user != null && pl.side === game.user;
       let mv = null, mcol = null;
@@ -7337,7 +7340,7 @@ const HELP = [
 <li><b>Pause menu</b>: Call Timeout (7 a game; only when you have the ball or play is dead; it gives your whole team a breather), Team Stats (line score by quarter and each team's top performer), Box Score, Shot Chart (made and missed shots for either team), Play by Play, Substitutions, Controls and Settings. Sim / Quit lets you sim the rest of the game or leave it.</li>
 <li><b>Movement</b>: players speed up and slow down instead of snapping to full speed. In the half court your teammates swap spots every few seconds and the big man comes up to set a screen for the ball handler, then rolls to the rim. A defender caught on the screen slows down.</li>
 <li><b>Auto defense</b> (Settings, on by default): your defender guards his man by himself until you move the joystick. You still press Block, Steal and Charge yourself.</li>
-<li><b>Who to guard</b>: on defense, a small yellow arrow beside your player's name points at the man you're guarding.</li>
+<li><b>Who to guard</b>: on defense, a small yellow arrow on the circle under your player points at the man you're guarding.</li>
 <li><b>Camera</b>: Settings → Camera switches between Close (follows the ball) and Full court (the whole floor at once).</li>
 <li><b>Rules</b>: three seconds in the key is a turnover (the ball handler is exempt), pushing fouls can be called on rebounds, and the shooter's card shows his free-throw rating and game line at the line.</li>
 <li><b>Player of the Game</b>: after the final buzzer you get the final score, the line score, the Player of the Game with his stats and shot chart, and the full box score.</li>
@@ -7579,7 +7582,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23y';
+const APP_VERSION = '2026-11-23z';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
