@@ -6055,6 +6055,11 @@ const ARC = (() => {
       p *= clamp(0.62 + open / (9 * (dfn ? dfn.r.def : 1)), 0.5, 1.1) * (dunk ? 1 : 1.12) * (0.82 + 0.18 * pl.en);
       return clamp(p, 0.02, 0.95);
     }
+    // teammates who would finish a lob with an alley-oop right now: dunkers near the rim, not smothered
+    oopMates(pl) {
+      const h = this.hoopOf(pl.side);
+      return this.T[pl.side].P.filter(m => m !== pl && m.r.dunk && m.z === 0 && !m.oob && dist(m, h) < 8 && this.openness(m) > 2.2);
+    }
     nearestDef(pl) { return this.T[1 - pl.side].P.slice().sort((a, b) => dist(a, pl) - dist(b, pl))[0]; }
     openness(pl) { const d = this.nearestDef(pl); return d ? dist(d, pl) : 20; }
     shotQuality(pl, open) {
@@ -6140,7 +6145,7 @@ const ARC = (() => {
         const me = this.ctrl[user];
         if (this.poss === user && b.holder === me && me) {
           if (inp.pass) this.pass(me, this.passDir(me, inp.jx || 0, inp.jy || 0));
-          if (inp.lob) this.pass(me, this.passDir(me, inp.jx || 0, inp.jy || 0), true);
+          if (inp.lob) { const oo = this.oopMates(me), aim = Math.abs(inp.jx || 0) + Math.abs(inp.jy || 0) > 0.2; this.pass(me, !aim && oo.length ? oo.sort((a, b) => dist(a, this.hoopOf(me.side)) - dist(b, this.hoopOf(me.side)))[0] : this.passDir(me, inp.jx || 0, inp.jy || 0), true); }
           if (inp.shootDown && me.z === 0) this.startShot(me, true);
           if (inp.pump) this.pumpFake(me);
           if (inp.cross) this.dribbleMove(me, 'cross', typeof inp.cross === 'number' ? inp.cross : -me.hand);
@@ -6687,6 +6692,13 @@ const ARC = (() => {
       items.push({ y: HY - 1.5, f: () => { drawHoop(0, shift); drawHoop(1, shift); } });
       if (game.state === 'jump') items.push({ y: HY + 3, f: () => drawRef(shift) });
       items.sort((a, bb) => a.y - bb.y).forEach(it => it.f());
+      // alley-oop hint: a thought bubble with a ball over teammates who'd catch a lob and slam it
+      if (game.user != null && game.poss === game.user && game.state === 'live') { const hb2 = game.ball.holder; if (hb2 && hb2.side === game.user && hb2 === game.ctrl[game.user]) for (const m of game.oopMates(hb2)) {
+        const sp2 = sprite(m, 0, 'down', false), [mx2, my2] = toScr(m.x, m.y, 0), bx2 = Math.round(mx2 + shift + 6), by2 = Math.round(my2 - sp2.foot - 14 + Math.sin(game.t * 5) * 1.5);
+        const BUB = ['..#######..', '.#.......#.', '#...ooo...#', '#..ohoso..#', '#..ossso..#', '#...ooo...#', '.#.......#.', '..#######..'], BC2 = { '#': '#1b1209', '.': '#ffffff', o: '#e8721c', h: '#ffb066', s: '#9a3f0c' };
+        for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
+        px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
+      } }
       drawMeter(); for (const L2 of labels) { const tw = L2.t.length * 4 + 4; px.fillStyle = 'rgba(10,12,20,.72)'; px.fillRect(Math.round(L2.x - tw / 2), L2.y - 4, tw, 9); pixText(px, L2.t, L2.x, L2.y, 7, '#ffffff'); } labels = [];
       if (meter) { meter.t += 1 / 60; if (meter.t > 0.6 && !(meter.pl.shooting)) meter = null; }
       if (game.rimShake > 0) game.rimShake -= 1 / 60;
@@ -6860,7 +6872,7 @@ const HELP = [
 <p>Play a game yourself, five on five on a pixel-art court seen from above, with your starting five against any team. It's an exhibition for now: it doesn't count in the standings or player stats. Start it from the Office tab, pick an opponent and the quarter length (1, 2, 3 or 5 minutes). Best with the iPad turned sideways.</p>
 <ul>
 <li><b>Move</b>: put a finger anywhere on the left side and drag; the stick follows your thumb.</li>
-<li><b>Offense pad</b> (bottom right): <b>Shoot</b>: hold, let go at the top of the jump (a quick tap is a pump fake). <b>Pass</b>: tap to pass toward where you're pushing, hold for a lob; lob to a dunker near the rim for an alley-oop. <b>Cross</b>: tap for a crossover, hold to hesitate. <b>Step</b>: tap for a step-back, hold to spin. Swipes on the right side work too: swipe down and hold to shoot, left/right to cross, up to spin, tap to pass, hold to lob.</li>
+<li><b>Offense pad</b> (bottom right): <b>Shoot</b>: hold, let go at the top of the jump (a quick tap is a pump fake). <b>Pass</b>: tap to pass toward where you're pushing, hold for a lob; lob to a dunker near the rim for an alley-oop. A <b>thought bubble with a ball</b> over a teammate means he's ready for the lob; hold Pass without pushing the stick and the lob goes to him. <b>Cross</b>: tap for a crossover, hold to hesitate. <b>Step</b>: tap for a step-back, hold to spin. Swipes on the right side work too: swipe down and hold to shoot, left/right to cross, up to spin, tap to pass, hold to lob.</li>
 <li><b>Defense pad</b>: <b>Steal</b> swipes at the ball, <b>Block</b> jumps to contest, <b>Charge</b> plants your feet (if the driver runs into you it's an offensive foul, but a late slide is a blocking foul), <b>Switch</b> takes the defender nearest the ball.</li>
 <li><b>Moves beat defenders</b>: a crossover, hesitation, spin or step-back freezes the man guarding you for a moment. Good ball handlers and quick players win more often; a sloppy crossover against a good thief can get stripped.</li>
 <li><b>Energy and substitutions</b>: players tire on the floor (faster when they run hard) and recover on the bench. Tired players are slower and miss more. Pause (II) and open Substitutions to see each player's energy, minutes, points, fouls and ratings, and to swap players (tap a starter, then a bench player). Auto substitutions are on unless you turn them off in Settings. Six fouls and a player is out.</li>
@@ -7096,7 +7108,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-23e';
+const APP_VERSION = '2026-11-23f';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
