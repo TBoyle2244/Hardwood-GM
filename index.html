@@ -6362,9 +6362,9 @@ const ARC = (() => {
       this.ball.flight = { kind: 'shot', by: pl, from: { x: pl.x, y: pl.y, z: pl.z + pl.r.height }, t: 0, T: dunk ? DK.hold + 0.12 : clamp(0.7 + d / 40, 0.7, 1.5), make, three, blocked, dunk, style: DK, hold: DK ? DK.hold : 0 };
       this.state = 'shot'; delete pl.shooting; this.frontcourt = false; this.backT = 0;   // a shot ends team control
       if (close && !blocked) {   // drive to the rim: dunkers glide in and hang on the rim; layups float in with one hand
-        const toward = Math.max(0, d - (dunk ? 0.9 : 1.6)), ux = (h.x - pl.x) / (d || 1), uy = (h.y - pl.y) / (d || 1);
+        const toward = Math.max(0, d - (dunk ? 0.3 : 1.6)), ux = (h.x - pl.x) / (d || 1), uy = (h.y - pl.y) / (d || 1);
         // the court art draws players small next to the rim, so a dunker is lifted until his hands reach it
-        pl.glide = { x: pl.x + ux * toward, y: pl.y + uy * toward, sp: toward / (dunk ? Math.max(0.22, DK.hold * 0.8) : 0.3) + 1, z: dunk ? RIM_Z + 0.4 - (this.spriteFt || 4.8) : RIM_Z - 1.6 - (this.spriteFt || 4.8) };
+        pl.glide = { x: pl.x + ux * toward, y: pl.y + uy * toward, sp: toward / (dunk ? Math.max(0.22, DK.hold * 0.8) : 0.3) + 1, z: dunk ? RIM_Z + 1.5 - (this.spriteFt || 4.8) : RIM_Z - 1.6 - (this.spriteFt || 4.8) };   // dunkers rise until the ball is well above the rim
         if (dunk) { pl.hang = DK.hold + 0.45 + (DK.hang || 0); pl.anim = { k: 'dunk', t: 0, T: DK.hold + 0.8 + (DK.hang || 0), style: DK }; } else { pl.hang = 0.25; pl.anim = { k: 'layup', t: 0, T: 0.6 }; }
       }
       if (blocked) { dfn.st.blk++; this.say(`Blocked by ${short(dfn.p)}!`); }
@@ -6511,7 +6511,9 @@ const ARC = (() => {
             this.say(f.dunk ? `${short(f.by.p)}: ${f.style ? f.style.name : 'slam'}!` : f.three ? `${short(f.by.p)} hits the three!` : `${short(f.by.p)} scores`);
             b.flight = null; this.ball.lastPasser = null;
             if (this.clock <= 0) return this.endQuarter();
-            this.netSwish = { side: h.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; b.x = h.x; b.y = h.y; b.z = RIM_Z - 0.5; this.state = 'made'; this.madeBy = f.by.side; this.wait = f.dunk ? 0.9 : 0.6; this.rimShake = f.dunk ? 0.4 : 0; return;
+            this.netSwish = { side: h.x > 47 ? 1 : 0, t: 0.9, T: 0.9 }; b.x = h.x; b.y = h.y; b.z = RIM_Z - 0.5; this.state = 'made'; this.madeBy = f.by.side; this.wait = f.dunk ? 1.1 : 0.6; this.rimShake = f.dunk ? 0.6 : 0;
+            if (f.dunk) { const pl = f.by; this.slam = { hx: h.x, t: this.t }; pl.glide = { x: pl.x, y: pl.y, sp: 2, z: RIM_Z + 0.3 - (this.spriteFt || 4.8) }; pl.hang = 0.55 + (f.style && f.style.hang || 0); }   // throw it down, then hang on the rim
+            return;
           }
           b.flight = null; this.ball.lastPasser = null;
           if (this.clock <= 0) return this.endQuarter();
@@ -7347,7 +7349,8 @@ const ARC = (() => {
       const lead = (game.state === 'live' || game.state === 'inbound') ? game.dir(game.poss) * 7 : 0; camX += (clamp(b.x + lead, 0, LEN) - camX) * 0.07; camY += (clamp(b.y, 0, W) - camY) * 0.07;
       px.imageSmoothingEnabled = false;
       px.setTransform(RS, 0, 0, RS, 0, 0); px.fillStyle = '#1c1f2e'; px.fillRect(0, 0, PW, PH);
-      const cp = Math.round(camPx()), off = world.width < PW ? Math.round((PW - world.width) / 2) : 0;
+      const SL = game.slam, sa = SL ? game.t - SL.t : 9, quake = sa < 0.25 ? Math.round(Math.sin(sa * 90) * 2 * (1 - sa / 0.25)) : 0;   // the floor shakes on a dunk
+      const cp = Math.round(camPx()) + quake, off = world.width < PW ? Math.round((PW - world.width) / 2) : 0;
       px.drawImage(world, off - cp, -Math.round(camPy()));
       const shift = off;
       // things sorted by depth: players, ball, hoops
@@ -7364,6 +7367,11 @@ const ARC = (() => {
         for (let r = 0; r < BUB.length; r++) for (let q = 0; q < 11; q++) { const ch = BUB[r][q]; if ((r === 0 || r === 7) && (q < 2 || q > 8)) continue; if ((r === 1 || r === 6) && (q === 0 || q === 10)) continue; px.fillStyle = BC2[ch]; px.fillRect(bx2 - 5 + q, by2 - 4 + r, 1, 1); }
         px.fillStyle = '#ffffff'; px.fillRect(bx2 - 4, by2 + 5, 2, 2); px.fillRect(bx2 - 6, by2 + 8, 1, 1); px.fillStyle = '#1b1209'; px.fillRect(bx2 - 5, by2 + 5, 1, 2); px.fillRect(bx2 - 2, by2 + 5, 1, 2); px.fillRect(bx2 - 4, by2 + 7, 2, 1);
       } }
+      if (SL && sa < 0.4) {   // sparks burst out of the rim on a dunk
+        const [sx, sy] = toScr(SL.hx, HY, RIM_Z); px.save(); px.setTransform(RS, 0, 0, RS, 0, 0);
+        for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2 + 0.3, r = 3 + sa * 38, x2 = Math.round(sx + Math.cos(a) * r), y2 = Math.round(sy + Math.sin(a) * r * 0.7);
+          px.fillStyle = i % 2 ? '#ffd34d' : '#ffffff'; px.globalAlpha = Math.max(0, 1 - sa / 0.4); px.fillRect(x2, y2, i % 3 ? 1 : 2, i % 3 ? 1 : 2); }
+        px.restore(); }
       const PO = game.pop, pa = PO ? game.t - PO.t : 9;   // "+2" floats up over the basket in the scoring team's color
       if (PO && pa < 1.2) { const [px2, py2] = toScr(PO.hx, HY, RIM_Z + 3 + pa * 5), T2 = game.T[PO.side], col = T2.pri === '#1a1a1a' ? T2.sec : T2.pri;
         px.save(); px.setTransform(1, 0, 0, 1, 0, 0); px.globalAlpha = pa > 0.8 ? Math.max(0, (1.2 - pa) / 0.4) : 1; pixText(px, '+' + PO.pts, Math.round(px2 * RS), Math.round(py2 * RS), 26, col, 0, '#ffffff'); px.restore(); }
@@ -7396,7 +7404,7 @@ const ARC = (() => {
       { const st2 = String(Math.max(0, Math.ceil(game.shot))), sw2 = microW(st2, 1) + 4, sx3 = gx + Math.round(gw / 2 - sw2 / 2), sy3 = g1y - 9;
         R(sx3 - 1, sy3 - 1, sw2 + 2, 9, '#5a5f6b'); R(sx3, sy3, sw2, 7, '#0b0c12');
         if (!(game.shot <= 5 && game.state === 'live' && Math.floor(game.t * 4) % 2)) micro(px, st2, sx3 + 2, sy3 + 1, 1, '#ff3b2f'); }
-      const shk = game.rimShake > 0 && game.hoopOf(game.madeBy != null ? game.madeBy : 0).x === hx ? Math.round(Math.sin(game.t * 60) * 1.4) : (game.rimHit && !game.rimHit.glass && game.rimHit.side === side ? Math.round(Math.sin(game.t * 70)) : 0);
+      const shk = game.rimShake > 0 && game.hoopOf(game.madeBy != null ? game.madeBy : 0).x === hx ? Math.round(Math.sin(game.t * 50) * 2.4 * Math.min(1, game.rimShake / 0.3) + (game.rimShake > 0.42 ? 2 : 0)) : (game.rimHit && !game.rimHit.glass && game.rimHit.side === side ? Math.round(Math.sin(game.t * 70)) : 0);
       const [rx, ry0] = P(hx, HY, RIM_Z), ry = ry0 + shk, rw = 12, rh = 5, nl = 7;
       // the net: on a make it snaps down as the ball goes through, then swings back and forth and settles
       const sw = game.netSwish && game.netSwish.side === side ? game.netSwish : null, sp3 = sw ? 1 - sw.t / sw.T : 1;
@@ -7830,7 +7838,7 @@ const HELP_TAB = { games: 'career', team: 'career', home: 'office', roster: 'ros
 (function () {
 'use strict';
 const G = window.HW;
-const APP_VERSION = '2026-11-24g';
+const APP_VERSION = '2026-11-24h';
 let L = null;                                              // league
 let IM = { pg: {}, adv: {}, drafts: {}, future: {} };                  // tables you imported yourself
 // Built-in data (nba-data.json, every season and draft from Basketball-Reference) merged with your own imports.
